@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "updated": "2026-10-18",
+  "note": "Lane defaults: Scenario recommend (quality priority) plus the newest models. Checked by tools/contract_check.py (free dry runs).",
+  "lanes": [
+    {
+      "id": "image",
+      "title": "Image",
+      "capability": "txt2img",
+      "importer": "texture",
+      "folder": "Images",
+      "hint": "Textures, concept art, UI pieces and decals. Lands on the selected actor's material or as a plane in front of the camera.",
+      "starter_prompts": [
+        "a carved wooden treasure chest, game prop, studio light",
+        "hand-painted fantasy potion icon, transparent background",
+        "weathered stone archway concept art, overcast light"
+      ],
+      "models": [
+        { "id": "model_openai-gpt-image-2-5-flare", "name": "GPT Image 2.5 Flare", "note": "fast, transparent backgrounds" },
+        { "id": "model_openai-gpt-image-2-5-sunburst", "name": "GPT Image 2.5 Sunburst", "note": "best quality" },
+        { "id": "model_google-gemini-3-1-flash", "name": "Gemini 3.1", "note": "up to 4K, many references" },
+        { "id": "model_bytedance-seedream-5-0-pro", "name": "Seedream 5.0 Pro", "note": "consistent sets" }
+      ]
+    },
+    {
+      "id": "3d",
+      "title": "3D",
+      "capability": "txt23d",
+      "importer": "mesh",
+      "folder": "Meshes",
+      "download_format": "glb",
+      "modes": ["text", "image", "edit"],
+      "hint": "Static and skeletal meshes with PBR materials, imported through Interchange and placed at the viewport pivot.",
+      "starter_prompts": [
+        "a mossy stone well, stylized, game-ready",
+        "a sci-fi supply crate with worn paint",
+        "a low wooden market stall with a cloth awning"
+      ],
+      "models": [
+        { "id": "model_meshy-7-1-txt23d", "name": "Meshy 7.1", "mode": "text", "note": "up to 8K PBR" },
+        { "id": "model_rodin-hyper3d-v2-5-text-to-3d", "name": "Rodin Gen-2.5", "mode": "text", "note": "PBR, quad topology" },
+        { "id": "model_tripo-p2-text-to-3d", "name": "Tripo P2", "mode": "text", "note": "fast, stable topology" },
+        { "id": "model_hunyuan-3d-pro-3-1-i23d", "name": "Hunyuan 3D 3.1 Pro", "mode": "image", "note": "from one image" },
+        { "id": "model_tripo-v3-1-image-to-3d", "name": "Tripo 3.1", "mode": "image", "note": "clean game topology" },
+        { "id": "model_meshy-7-1-img23d", "name": "Meshy 7.1", "mode": "image", "note": "remesh to a polycount" },
+        { "id": "model_scenario-claude-opus-5-5-3d", "name": "Claude Opus 5.5 3D", "mode": "image", "note": "engine-ready rigs and parts", "unreal_ready": true },
+        { "id": "model_scenario-gpt6-astra-3d", "name": "GPT-6 Astra 3D", "mode": "image", "note": "engine-ready rigs and parts", "unreal_ready": true },
+        { "id": "model_scenario-claude-opus-5-5-3d", "name": "Claude Opus 5.5 3D", "mode": "edit", "note": "edit, rig, animate", "unreal_ready": true },
+        { "id": "model_scenario-gpt6-astra-3d", "name": "GPT-6 Astra 3D", "mode": "edit", "note": "edit, rig, animate", "unreal_ready": true },
+        { "id": "model_meshy-rigging", "name": "Meshy Rigging", "mode": "edit", "note": "humanoid rig" },
+        { "id": "model_tripo-rigging-v2-5", "name": "Tripo Rigging 2.5", "mode": "edit", "note": "bipeds and creatures" },
+        { "id": "model_cartwheel-character-rigging", "name": "Cartwheel Rigging", "mode": "edit", "note": "character rig" }
+      ]
+    },
+    {
+      "id": "material",
+      "title": "Material",
+      "capability": "txt2img",
+      "importer": "material",
+      "folder": "Materials",
+      "recommend": false,
+      "hint": "Tileable PBR material set on the selected actor's material slot.",
+      "starter_prompts": [
+        "wet cobblestone street, dark mortar",
+        "brushed steel with light scratches",
+        "mossy forest floor with pebbles"
+      ],
+      "models": [
+        { "id": "model_patina-material", "name": "PATINA Material", "note": "base color, normal, roughness, metallic, height" },
+        { "id": "model_scenario-texture", "name": "Scenario Texture", "note": "one tileable color map" }
+      ]
+    },
+    {
+      "id": "audio",
+      "title": "Audio",
+      "capability": "txt2audio",
+      "importer": "sound",
+      "folder": "Audio",
+      "hint": "Sound effects and music as Sound Waves, placed as an Ambient Sound or on the open Level Sequence.",
+      "starter_prompts": [
+        "heavy wooden door creaking open",
+        "short magic chime, sparkly",
+        "calm ambient forest loop with birds"
+      ],
+      "models": [
+        { "id": "model_sonilo-v1-1-text-to-sound-effects", "name": "Sonilo V1.1 SFX", "note": "exact length, cheap" },
+        { "id": "model_elevenlabs-sound-effects-v2", "name": "ElevenLabs Sound Effects 2", "note": "loops" },
+        { "id": "model_elevenlabs-music-v2-5", "name": "ElevenLabs Music 2.5", "note": "music with structure" },
+        { "id": "model_sonilo-v1-1-text-to-music", "name": "Sonilo V1.1 Music", "note": "fast music beds" }
+      ]
+    },
+    {
+      "id": "video",
+      "title": "Video",
+      "capability": "txt2video",
+      "importer": "media",
+      "folder": "Video",
+      "hint": "Clips as MP4 with a File Media Source, shown on a Media Plate in front of the camera.",
+      "starter_prompts": [
+        "lantern flame flickering in the wind, close-up, night",
+        "slow drifting clouds over mountains, timelapse",
+        "waterfall mist with sunlight, gentle camera push"
+      ],
+      "models": [
+        { "id": "model_pruna-p-video-2-pro", "name": "P-Video 2 Pro", "note": "fast, low cost" },
+        { "id": "model_google-omni-1-1-flash", "name": "Gemini Omni 1.1 Flash", "note": "Scenario's video pick" },
+        { "id": "model_bytedance-seedance-2-5", "name": "Seedance 2.5", "note": "best motion, higher cost" }
+      ]
+    },
+    {
+      "id": "environment",
+      "title": "Environment",
+      "capability": "txt2img",
+      "importer": "sky",
+      "folder": "Environments",
+      "recommend": false,
+      "modes": ["generate", "hdri"],
+      "hint": "360 skies on a sky sphere, or HDR lighting on an HDRI Backdrop.",
+      "starter_prompts": [
+        "golden hour over rolling hills, scattered clouds",
+        "alien desert at dusk with two moons",
+        "overcast harbor morning, soft light"
+      ],
+      "models": [
+        { "id": "model_scenario-skybox-gpt", "name": "Scenario Skybox GPT", "mode": "generate", "note": "best quality" },
+        { "id": "model_scenario-skybox-flux", "name": "Scenario Skybox Flux", "mode": "generate", "note": "many styles" },
+        { "id": "model_hdri-skybox", "name": "HDRi Skybox", "mode": "hdri", "note": "HDR lighting from a panorama" }
+      ]
+    },
+    {
+      "id": "render",
+      "title": "Render",
+      "capability": "img2img",
+      "importer": "texture",
+      "folder": "Renders",
+      "needs_capture": true,
+      "hint": "Restyle the active viewport or a camera: captures the view and sends it as reference image 1.",
+      "starter_prompts": [
+        "painterly concept art, warm sunset light",
+        "photoreal, wet street at night, neon reflections",
+        "clean architectural visualization, soft daylight"
+      ],
+      "models": [
+        { "id": "model_openai-gpt-image-2-5-flare", "name": "GPT Image 2.5 Flare", "note": "fast" },
+        { "id": "model_google-gemini-3-1-flash", "name": "Gemini 3.1", "note": "keeps layout" },
+        { "id": "model_bytedance-seedream-5-0-pro", "name": "Seedream 5.0 Pro", "note": "strong restyle" }
+      ]
+    }
+  ],
+  "tools": {
+    "translate": "model_scenario-llm"
+  },
+  "presets": {
+    "model_rodin-hyper3d-v2-5-text-to-3d": { "material": "PBR" },
+    "model_hunyuan-3d-pro-3-1-i23d": { "enablePbr": true },
+    "model_sonilo-v1-1-text-to-sound-effects": { "audioFormat": "wav", "duration": 2 },
+    "model_scenario-skybox-flux": { "numOutputs": 1 }
+  },
+  "restrict": {
+    "audioFormat": ["wav", "mp3", "ogg", "flac"]
+  },
+  "unreal_ready_prompt": "Unreal Engine 5 ready: real-world scale in centimeters, Z up, +X forward, pivot at the base center, UE5 Mannequin bone names for humanoid rigs, ARKit 52 blendshape names for faces, separate meshes for parts that move."
+}
