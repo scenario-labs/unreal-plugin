@@ -34,3 +34,6 @@ tests/reports/
 
 # macOS
 .DS_Store
+
+# Host project content made during manual tests (generated assets, per-user folders)
+/Content/

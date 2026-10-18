@@ -10,5 +10,6 @@ public class ScenarioHostEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("ScenarioHost");
+		ExtraModuleNames.Add("ScenarioUiDriver");
 	}
 }

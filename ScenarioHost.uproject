@@ -8,12 +8,29 @@
 			"Name": "ScenarioHost",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ScenarioUiDriver",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
 		}
 	],
 	"Plugins": [
-		{ "Name": "Scenario", "Enabled": true },
-		{ "Name": "PythonScriptPlugin", "Enabled": true },
-		{ "Name": "MediaPlate", "Enabled": true },
-		{ "Name": "HDRIBackdrop", "Enabled": true }
+		{
+			"Name": "Scenario",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "MediaPlate",
+			"Enabled": true
+		},
+		{
+			"Name": "HDRIBackdrop",
+			"Enabled": true
+		}
 	]
 }
