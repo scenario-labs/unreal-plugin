@@ -43,6 +43,8 @@ namespace
 			return nullptr;
 		}
 		Actor->SetActorLabel(Label);
+		// Lets remove_scenario_items find what the plugin placed. A plain name tag: no plugin type is referenced.
+		Actor->Tags.AddUnique(ScenarioPlacement::ActorTag);
 		Report.SpawnedActors.Add(ScenarioPlacement::Describe(Actor));
 		return Actor;
 	}

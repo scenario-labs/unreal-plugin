@@ -64,6 +64,9 @@ namespace ScenarioAssets
 /** Actors in the editor world. Callers open the transaction. */
 namespace ScenarioPlacement
 {
+	/** Tag on every actor the plugin spawns. */
+	inline const FName ActorTag = TEXT("Scenario");
+
 	struct FView
 	{
 		bool bValid = false;

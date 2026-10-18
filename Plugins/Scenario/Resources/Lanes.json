@@ -76,7 +76,7 @@
       "capability": "txt2audio",
       "importer": "sound",
       "folder": "Audio",
-      "hint": "Sound effects and music as Sound Waves, placed as an Ambient Sound or on the open Level Sequence.",
+      "hint": "Sound effects and music as Sound Waves, placed as an Ambient Sound.",
       "starter_prompts": [
         "heavy wooden door creaking open",
         "short magic chime, sparkly",

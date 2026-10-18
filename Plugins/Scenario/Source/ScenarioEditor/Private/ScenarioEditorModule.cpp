@@ -14,10 +14,12 @@
 #include "LevelEditor.h"
 #include "Misc/CoreDelegates.h"
 #include "Modules/ModuleManager.h"
+#include "ScenarioActions.h"
 #include "ScenarioCreateModel.h"
 #include "ScenarioJson.h"
 #include "ScenarioLanes.h"
 #include "ScenarioLedger.h"
+#include "ScenarioOutputLog.h"
 #include "ScenarioProvenance.h"
 #include "ScenarioSession.h"
 #include "ScenarioSettings.h"
@@ -225,6 +227,8 @@ FScenarioEditorModule& FScenarioEditorModule::Get()
 
 void FScenarioEditorModule::StartupModule()
 {
+	FScenarioOutputLog::Get().Register();
+	FScenarioActions::Get();
 	FScenarioStyle::Register();
 	FScenarioCommands::Register();
 	BindCommands();
@@ -275,6 +279,8 @@ void FScenarioEditorModule::ShutdownModule()
 		FScenarioCreateModel::Get()->Shutdown();
 	}
 	FScenarioThumbnails::Get().Shutdown();
+	FScenarioActions::Get().Reset();
+	FScenarioOutputLog::Get().Unregister();
 	if (FSlateApplication::IsInitialized())
 	{
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(StudioTab);

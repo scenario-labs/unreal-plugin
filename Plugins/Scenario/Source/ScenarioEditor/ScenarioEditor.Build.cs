@@ -9,7 +9,9 @@ public class ScenarioEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Private", "UI"));
-		PrivateIncludePathModuleNames.Add("Settings");
+		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Private", "Actions"));
+		// Interfaces only, checked at runtime: the Python plugin stays optional.
+		PrivateIncludePathModuleNames.AddRange(new string[] { "Settings", "PythonScriptPlugin" });
 
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
