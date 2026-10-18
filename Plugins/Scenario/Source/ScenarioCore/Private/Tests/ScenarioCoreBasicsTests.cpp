@@ -12,6 +12,7 @@
 #include "ScenarioHttp.h"
 #include "ScenarioJson.h"
 #include "ScenarioRpc.h"
+#include "ScenarioTelemetry.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioJsonCanonicalTest, "Scenario.Core.Json.Canonical", SCENARIO_TEST_FLAGS)
 bool FScenarioJsonCanonicalTest::RunTest(const FString& Parameters)
@@ -149,6 +150,19 @@ bool FScenarioRpcParseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("wrong id is an error"), Wrong.bOk);
 	const FScenarioReply Notification = ScenarioRpc::ParseReply(FString(), FString(), -1);
 	TestTrue(TEXT("empty notification reply"), Notification.bOk);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioTelemetryTest, "Scenario.Core.Telemetry", SCENARIO_TEST_FLAGS)
+bool FScenarioTelemetryTest::RunTest(const FString& Parameters)
+{
+	const TMap<FString, FString> Fields = { { TEXT("lane"), TEXT("image") }, { TEXT("state"), TEXT("success") }, { TEXT("prompt"), TEXT("secret castle") }, { TEXT("model_id"), TEXT("model_x") } };
+	const TSharedRef<FJsonObject> Body = ScenarioTelemetry::BuildEvent(TEXT("job_finished"), Fields);
+	TestEqual(TEXT("allow-listed field kept"), ScenarioJson::GetString(Body, TEXT("lane")), FString(TEXT("image")));
+	TestFalse(TEXT("prompt dropped"), Body->HasField(TEXT("prompt")));
+	TestFalse(TEXT("ids dropped"), Body->HasField(TEXT("model_id")));
+	TestTrue(TEXT("versions added"), Body->HasField(TEXT("plugin")) && Body->HasField(TEXT("engine")));
+	TestTrue(TEXT("no endpoint in this version"), ScenarioTelemetry::Endpoint().IsEmpty());
 	return true;
 }
 

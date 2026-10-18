@@ -148,6 +148,8 @@ public:
 
 	/** Starts the first-run toast and the welcome card. */
 	void ShowWelcomeIfNeeded();
+	/** After the first finished generation: asks once whether to share anonymous usage statistics. */
+	void AskTelemetryOnce();
 
 private:
 	void OnFilesReady(const FString& LocalId);

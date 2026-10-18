@@ -31,6 +31,7 @@
 #include "ScenarioLanes.h"
 #include "ScenarioProvenance.h"
 #include "ScenarioSettings.h"
+#include "ScenarioTelemetry.h"
 #include "ScopedTransaction.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundWave.h"
@@ -262,6 +263,7 @@ void UScenarioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	{
 		SeenStates.Add(Row.LocalId, Row.State);
 	}
+	ScenarioTelemetry::SetEnabled(UScenarioEditorSettings::Get().bTelemetry);
 	LedgerHandle = SessionPtr->Ledger().OnChanged.AddUObject(this, &UScenarioSubsystem::OnLedgerChanged);
 	FilesHandle = SessionPtr->OnFilesReady.AddUObject(this, &UScenarioSubsystem::OnFilesReady);
 	UE_LOG(LogScenario, Log, TEXT("Scenario %s ready (credentials: %s)."), *ScenarioVersion::PluginVersion(), *SessionPtr->DescribeCredentialStore());
@@ -373,6 +375,13 @@ void UScenarioSubsystem::Notify(const FScenarioJobRow& Row, EScenarioJobState Pr
 	const FString LocalId = Row.LocalId;
 	const FText Model = FText::FromString(Row.ModelName.IsEmpty() ? (Row.ModelId.IsEmpty() ? Row.WorkflowId : Row.ModelId) : Row.ModelName);
 	const FText Prompt = FText::FromString(Row.Prompt.Left(80));
+	if (Row.IsFinal())
+	{
+		// Read each time so a change in Editor Preferences applies at once.
+		ScenarioTelemetry::SetEnabled(UScenarioEditorSettings::Get().bTelemetry);
+		ScenarioTelemetry::Event(TEXT("job_finished"), {
+			{ TEXT("lane"), Row.Lane }, { TEXT("kind"), Row.Kind }, { TEXT("state"), LexToString(Row.State) }, { TEXT("source"), Row.Source }, { TEXT("client"), Row.Client } });
+	}
 	switch (Row.State)
 	{
 	case EScenarioJobState::Queued:
@@ -394,6 +403,10 @@ void UScenarioSubsystem::Notify(const FScenarioJobRow& Row, EScenarioJobState Pr
 					[LocalId]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJob(LocalId, FScenarioPlaceOptions()); } },
 					[LocalId]() { if (UScenarioSubsystem* Self = Get()) { FScenarioPlaceOptions Options; Options.Placement = EScenarioPlacement::Auto; Self->ImportJob(LocalId, Options); } },
 				});
+		}
+		if (Row.Source == TEXT("person"))
+		{
+			AskTelemetryOnce();
 		}
 		break;
 	case EScenarioJobState::Failed:
@@ -1192,6 +1205,29 @@ bool UScenarioSubsystem::IsUploadAllowed(const FString& Path) const
 void UScenarioSubsystem::AllowUpload(const FString& Path)
 {
 	UploadAllowList.Add(FPaths::ConvertRelativePathToFull(Path));
+}
+
+void UScenarioSubsystem::AskTelemetryOnce()
+{
+	UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
+	if (Settings.bTelemetryAsked)
+	{
+		return;
+	}
+	// Asked once, after the first finished generation; ignoring the question leaves telemetry off.
+	Settings.bTelemetryAsked = true;
+	Settings.SaveConfig();
+	auto Answer = [](bool bShare)
+	{
+		UScenarioEditorSettings& Mutable = UScenarioEditorSettings::GetMutable();
+		Mutable.bTelemetry = bShare;
+		Mutable.SaveConfig();
+		ScenarioTelemetry::SetEnabled(bShare);
+	};
+	FScenarioEditorModule::Toast(LOCTEXT("TelemetryAsk", "Share anonymous usage statistics?"),
+		LOCTEXT("TelemetryAskSub", "Lane, job state and versions only: never prompts, files, names or ids. Change it any time in Editor Preferences > Plugins > Scenario."), true,
+		{ LOCTEXT("TelemetryYes", "Share"), LOCTEXT("TelemetryNo", "No thanks") },
+		{ [Answer]() { Answer(true); }, [Answer]() { Answer(false); } });
 }
 
 void UScenarioSubsystem::ShowWelcomeIfNeeded()
