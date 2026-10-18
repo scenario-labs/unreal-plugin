@@ -9,7 +9,7 @@ The plugin talks to Scenario's hosted service at `mcp.scenario.com` over HTTPS. 
 - **Your account or key identity**: an OAuth access token after "Sign in with Scenario", or your API key and secret as a Basic authorization header.
 - **What you ask for**: the model, your prompt, the settings in the form, and the workspace (team and project) you chose.
 - **Price checks**: while you edit the form, the plugin asks Scenario for the price of the current settings. These requests contain the same prompt and settings as a generation and cost nothing.
-- **Files you choose as inputs**: images, meshes, audio or video from your project or your disk, captures of a viewport or camera, and meshes exported for a 3D edit. They are uploaded only when you (or an agent you allowed) add them as an input.
+- **Files you choose as inputs**: images, meshes, audio or video from your project or your disk, captures of the level viewport, and meshes exported for a 3D edit. They are uploaded only when you, or an agent connected to the editor, add them as an input.
 - **Workflow inputs and Prompt Spark text**, when you run them.
 - **A User-Agent header** with the plugin version, the engine version and the operating system. It contains no personal or project data.
 
@@ -25,7 +25,7 @@ Scenario processes these under your Scenario account terms and privacy policy. G
 
 | Data | Where | Committed to source control? |
 |---|---|---|
-| OAuth refresh token, API secret | macOS Keychain, Windows Credential Manager, or the Linux Secret Service; a per-user file readable only by you when none is available | No |
+| OAuth refresh token, API secret | macOS Keychain or Windows Credential Manager; on Linux, a per-user file readable only by you | No |
 | OAuth access token | Memory only | No |
 | API key id, chosen team and project ids, your editor preferences | Your per-user editor settings | No |
 | Job list (ids, model, prompt, prices, states) | `<Project>/Saved/Scenario/` | No, `Saved/` is excluded by Unreal's default ignore rules |
@@ -46,18 +46,16 @@ An agent can spend Creative Units only with a price quote it asked for first: th
 
 ## Telemetry
 
-Off by default. The plugin asks once whether you want to share anonymous usage events, and you can change the answer in Editor Preferences > Plugins > Scenario. Version 0.1 sends nothing even when you agree: no collection endpoint exists yet. Before any event is sent, every field will be listed here. Events will never include prompts, file contents, asset or level names, or credentials.
+Off by default. After your first finished generation, the plugin asks once whether you want to share anonymous usage statistics; ignoring the question leaves it off. You can change the answer in Editor Preferences > Plugins > Scenario.
 
-## Logs
+Version 0.1 sends nothing even when you agree: no collection endpoint exists yet. The events the plugin is ready to send hold only these fields:
 
-The plugin logs under the `LogScenario` category. Logs contain job and asset ids, model ids, states and error messages. They never contain tokens, secrets, full signed URLs or file contents.
+| Field | Example |
+|---|---|
+| Event name | `job_finished` |
+| Lane and job kind | `3d`, `model` |
+| Job state | `success`, `failed` |
+| Who started it | `person`, `agent` or `script`, and the agent client's name such as `claude-code` |
+| Plugin version, engine version, OS family | `0.1.0`, `5.8.0`, `Mac` |
 
-## Removing your data
-
-- **Sign out** in Connection: revokes the refresh token, deletes stored secrets, clears cached private data.
-- **Local files**: delete `<Project>/Saved/Scenario/`.
-- **Generated content on Scenario**: manage it in the Scenario web app.
-
-## Contact
-
-support@scenario.com, or the in-app support in the Scenario web app.
+Events never include prompts, file contents, asset, level or model names, team, project, job or asset ids, or credentials. This page will be updated before any endpoint is turned on.
