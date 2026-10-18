@@ -239,7 +239,7 @@ void FScenarioEditorModule::StartupModule()
 	{
 		OnPostEngineInit();
 	}
-	PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
+	PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
 }
 
 void FScenarioEditorModule::OnPostEngineInit()
@@ -272,7 +272,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 
 void FScenarioEditorModule::ShutdownModule()
 {
-	FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitHandle);
+	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
 	if (bStarted)
 	{
 		SScenarioComposer::Show(false);

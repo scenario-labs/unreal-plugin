@@ -161,21 +161,38 @@ FString ScenarioJson::Canonical(const TSharedPtr<FJsonObject>& Object)
 	{
 		return TEXT("null");
 	}
-	TArray<FString> Keys;
-	Object->Values.GetKeys(Keys);
-	Keys.Sort([](const FString& A, const FString& B) { return A.Compare(B, ESearchCase::CaseSensitive) < 0; });
+	TArray<TPair<FString, TSharedPtr<FJsonValue>>> Sorted = Fields(Object);
+	Sorted.Sort([](const TPair<FString, TSharedPtr<FJsonValue>>& A, const TPair<FString, TSharedPtr<FJsonValue>>& B)
+	{
+		return A.Key.Compare(B.Key, ESearchCase::CaseSensitive) < 0;
+	});
 	FString Out = TEXT("{");
-	for (int32 Index = 0; Index < Keys.Num(); ++Index)
+	for (int32 Index = 0; Index < Sorted.Num(); ++Index)
 	{
 		if (Index > 0)
 		{
 			Out += TEXT(",");
 		}
-		Out += EscapeString(Keys[Index]);
+		Out += EscapeString(Sorted[Index].Key);
 		Out += TEXT(":");
-		Out += Canonical(Object->Values[Keys[Index]]);
+		Out += Canonical(Sorted[Index].Value);
 	}
 	return Out + TEXT("}");
+}
+
+TArray<TPair<FString, TSharedPtr<FJsonValue>>> ScenarioJson::Fields(const TSharedPtr<FJsonObject>& Object)
+{
+	TArray<TPair<FString, TSharedPtr<FJsonValue>>> Out;
+	if (Object.IsValid())
+	{
+		Out.Reserve(Object->Values.Num());
+		for (const auto& Pair : Object->Values)
+		{
+			// Keys are FString up to 5.7 and a shared string from 5.8; both give a TCHAR pointer.
+			Out.Emplace(FString(*Pair.Key), Pair.Value);
+		}
+	}
+	return Out;
 }
 
 TSharedPtr<FJsonValue> ScenarioJson::Clone(const TSharedPtr<FJsonValue>& Value)
@@ -208,7 +225,7 @@ TSharedPtr<FJsonObject> ScenarioJson::CloneObject(const TSharedPtr<FJsonObject>&
 	TSharedPtr<FJsonObject> Copy = MakeShared<FJsonObject>();
 	if (Object.IsValid())
 	{
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Object->Values)
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Object))
 		{
 			Copy->SetField(Pair.Key, Clone(Pair.Value));
 		}

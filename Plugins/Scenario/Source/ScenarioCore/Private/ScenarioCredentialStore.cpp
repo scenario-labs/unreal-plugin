@@ -66,7 +66,7 @@ TMap<FString, FString> FScenarioFileCredentialStore::Load() const
 	{
 		return Values;
 	}
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Root->Values)
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Root))
 	{
 		if (Pair.Value.IsValid() && Pair.Value->Type == EJson::String)
 		{

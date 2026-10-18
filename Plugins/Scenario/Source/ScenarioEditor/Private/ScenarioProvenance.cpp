@@ -128,7 +128,7 @@ void FScenarioProvenanceIndex::Load()
 	{
 		return;
 	}
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Assets->Values)
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Assets))
 	{
 		if (!Pair.Value.IsValid() || Pair.Value->Type != EJson::Object)
 		{

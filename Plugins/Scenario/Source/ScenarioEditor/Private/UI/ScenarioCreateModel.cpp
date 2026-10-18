@@ -409,7 +409,7 @@ void FScenarioCreateModel::SchemaLoaded(const TArray<FScenarioField>& NewFields)
 		SetPrompt(OldPrompt);
 	}
 	const FString PromptField = ScenarioSchema::PromptName(Fields);
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : OldValues->Values)
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(OldValues))
 	{
 		if (Pair.Key == PromptField)
 		{
@@ -591,7 +591,7 @@ void FScenarioCreateModel::ApplyValues(const TSharedPtr<FJsonObject>& InValues)
 		PendingValues = InValues;
 		return;
 	}
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : InValues->Values)
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(InValues))
 	{
 		const FScenarioField* Field = ScenarioSchema::Find(Fields, Pair.Key);
 		if (!Field)

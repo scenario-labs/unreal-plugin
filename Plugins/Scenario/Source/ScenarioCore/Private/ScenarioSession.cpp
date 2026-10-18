@@ -29,7 +29,7 @@ namespace
 		}
 	}
 
-	FScenarioError MakeError(EScenarioErrorKind Kind, const FString& Message, bool bNotSent = true)
+	FScenarioError SessionError(EScenarioErrorKind Kind, const FString& Message, bool bNotSent = true)
 	{
 		FScenarioError Error;
 		Error.Kind = Kind;
@@ -45,7 +45,7 @@ namespace
 		{
 			return;
 		}
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Object->Values)
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Object))
 		{
 			if (!Pair.Value.IsValid())
 			{
@@ -76,7 +76,7 @@ namespace
 		{
 			return Prompt;
 		}
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Parameters->Values)
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Parameters))
 		{
 			if (Pair.Value.IsValid() && Pair.Value->Type == EJson::String && !Pair.Value->AsString().StartsWith(TEXT("asset_")) && Pair.Value->AsString().Contains(TEXT(" ")))
 			{
@@ -211,13 +211,13 @@ void FScenarioSession::Start()
 			else if (!This->OAuth->HasRefreshToken())
 			{
 				This->AuthMode = EScenarioAuthMode::None;
-				This->SetConnection(EScenarioConnection::SignedOut, MakeError(EScenarioErrorKind::Auth, TEXT("Your Scenario session ended. Sign in again.")));
+				This->SetConnection(EScenarioConnection::SignedOut, SessionError(EScenarioErrorKind::Auth, TEXT("Your Scenario session ended. Sign in again.")));
 			}
 			else
 			{
 				// Offline: keep the sign-in, jobs resume when Scenario is reachable.
 				This->SetConnection(This->Workspace.IsSet() ? EScenarioConnection::Ready : EScenarioConnection::NeedsWorkspace,
-					MakeError(EScenarioErrorKind::Transport, FScenarioErrors::MessageFor(EScenarioErrorKind::Transport)));
+					SessionError(EScenarioErrorKind::Transport, FScenarioErrors::MessageFor(EScenarioErrorKind::Transport)));
 			}
 		});
 	}
@@ -727,17 +727,17 @@ void FScenarioSession::Price(const FScenarioRunRequest& Request, bool bAutomatic
 	using FResult = TScenarioResult<FScenarioQuote>;
 	if (!IsReady())
 	{
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Auth, TEXT("Sign in to Scenario and choose a project first."))));
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Auth, TEXT("Sign in to Scenario and choose a project first."))));
 		return;
 	}
 	if (Request.TargetId.IsEmpty())
 	{
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Invalid, TEXT("Choose a model first."))));
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("Choose a model first."))));
 		return;
 	}
 	if (bAutomatic && IsEstimateAlarmRaised())
 	{
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::EstimateJob,
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::EstimateJob,
 			TEXT("Automatic price checks are off for this session because a price check returned a job. Check the price by hand to continue."))));
 		return;
 	}
@@ -766,7 +766,7 @@ void FScenarioSession::Price(const FScenarioRunRequest& Request, bool bAutomatic
 		}
 		if (This->Scope() != QuoteScope)
 		{
-			OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Invalid, TEXT("The project changed while the price was checked. Check the price again."))));
+			OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("The project changed while the price was checked. Check the price again."))));
 			return;
 		}
 		const FScenarioQuote& Quote = This->QuoteBook.Store(Kind, Target, Params, QuoteScope, Result.Value.CU, Result.Value.Discount, This->Now());
@@ -833,7 +833,7 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 	if (!Problem.IsEmpty())
 	{
 		const EScenarioErrorKind Kind = !IsReady() ? EScenarioErrorKind::Auth : IsSpendingDisabled() ? EScenarioErrorKind::Local : EScenarioErrorKind::Invalid;
-		OnDone(FResult::Fail(MakeError(Kind, Problem)));
+		OnDone(FResult::Fail(SessionError(Kind, Problem)));
 		return;
 	}
 
@@ -843,7 +843,7 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 	const bool bTaken = QuoteId.IsEmpty() ? QuoteBook.Consume(Fp, Time, Quote) : QuoteBook.ConsumeById(QuoteId, Time, Quote);
 	if (!bTaken)
 	{
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Invalid, TEXT("The price expired a moment ago. Check it again."))));
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("The price expired a moment ago. Check it again."))));
 		return;
 	}
 
@@ -877,7 +877,7 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 	if (!LedgerPtr->Save())
 	{
 		LedgerPtr->MarkRejected(LocalId, TEXT("The job list could not be written, so nothing was sent."), Now());
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Local, TEXT("The job list in Saved/Scenario could not be written, so nothing was sent."))));
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Local, TEXT("The job list in Saved/Scenario could not be written, so nothing was sent."))));
 		return;
 	}
 
@@ -1001,7 +1001,7 @@ void FScenarioSession::Poll(double Time)
 			{
 			case EScenarioErrorKind::Auth:
 				This->bPollPaused = true;
-				This->SetConnection(EScenarioConnection::SignedOut, MakeError(EScenarioErrorKind::Auth, TEXT("Your Scenario session ended. Sign in again."), false));
+				This->SetConnection(EScenarioConnection::SignedOut, SessionError(EScenarioErrorKind::Auth, TEXT("Your Scenario session ended. Sign in again."), false));
 				break;
 			case EScenarioErrorKind::NotFound:
 			{
@@ -1425,13 +1425,13 @@ void FScenarioSession::Upload(const FString& Path, TFunction<void(const TScenari
 	const FString Kind = ScenarioFiles::UploadKindForExtension(Extension);
 	if (Kind.IsEmpty())
 	{
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Invalid, FString::Printf(TEXT("A .%s file cannot be sent to Scenario."), *Extension))));
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, FString::Printf(TEXT("A .%s file cannot be sent to Scenario."), *Extension))));
 		return;
 	}
 	const FFileStatData Stat = IFileManager::Get().GetStatData(*Path);
 	if (!Stat.bIsValid || Stat.FileSize <= 0)
 	{
-		OnDone(FResult::Fail(MakeError(EScenarioErrorKind::Local, TEXT("The file to upload is missing or empty."))));
+		OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Local, TEXT("The file to upload is missing or empty."))));
 		return;
 	}
 	const FString CacheKey = FString::Printf(TEXT("%s|%s|%lld|%s"), *Scope(), *FPaths::ConvertRelativePathToFull(Path), static_cast<long long>(Stat.FileSize), *Stat.ModificationTime.ToIso8601());

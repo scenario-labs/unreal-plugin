@@ -6,6 +6,7 @@
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyleMacros.h"
+#include "Brushes/SlateImageBrush.h"
 #include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "Scenario"
@@ -23,10 +24,10 @@ void FScenarioStyle::Register()
 	Instance->SetContentRoot(Plugin.IsValid() ? Plugin->GetBaseDir() / TEXT("Resources") : FString());
 
 	FSlateStyleSet& Style = *Instance;
-	Style.Set("Scenario.Mark", new IMAGE_BRUSH_SVG(TEXT("ScenarioMark"), FVector2D(20.0f, 20.0f)));
-	Style.Set("Scenario.Mark.Small", new IMAGE_BRUSH_SVG(TEXT("ScenarioMark"), FVector2D(16.0f, 16.0f)));
-	Style.Set("Scenario.Mark.Large", new IMAGE_BRUSH_SVG(TEXT("ScenarioMark"), FVector2D(48.0f, 48.0f)));
-	Style.Set("Scenario.Studio", new IMAGE_BRUSH_SVG(TEXT("ScenarioMark"), FVector2D(16.0f, 16.0f)));
+	Style.Set("Scenario.Mark", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(20.0f, 20.0f)));
+	Style.Set("Scenario.Mark.Small", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(16.0f, 16.0f)));
+	Style.Set("Scenario.Mark.Large", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(48.0f, 48.0f)));
+	Style.Set("Scenario.Studio", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(16.0f, 16.0f)));
 	FSlateStyleRegistry::RegisterSlateStyle(Style);
 }
 

@@ -13,6 +13,9 @@ namespace ScenarioJson
 	SCENARIOCORE_API TSharedPtr<FJsonValue> ParseValue(const FString& Text);
 
 	SCENARIOCORE_API FString Write(const TSharedPtr<FJsonObject>& Object, bool bPretty = false);
+
+	/** The object's fields with FString keys, on every supported engine version (5.8 stores keys as shared strings). */
+	SCENARIOCORE_API TArray<TPair<FString, TSharedPtr<FJsonValue>>> Fields(const TSharedPtr<FJsonObject>& Object);
 	SCENARIOCORE_API FString WriteValue(const TSharedPtr<FJsonValue>& Value, bool bPretty = false);
 
 	/** Keys sorted at every level, whole numbers written as integers, no whitespace. Used for quote fingerprints. */

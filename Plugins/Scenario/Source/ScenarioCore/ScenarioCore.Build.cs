@@ -7,6 +7,8 @@ public class ScenarioCore : ModuleRules
 	public ScenarioCore(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		// Every file compiles on its own: helpers in anonymous namespaces may share names across files.
+		bUseUnity = false;
 
 		PublicDependencyModuleNames.AddRange(new string[]
 		{

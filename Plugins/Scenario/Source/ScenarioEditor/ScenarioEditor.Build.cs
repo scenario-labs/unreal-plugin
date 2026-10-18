@@ -8,6 +8,8 @@ public class ScenarioEditor : ModuleRules
 	public ScenarioEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		// Every file compiles on its own: helpers in anonymous namespaces may share names across files.
+		bUseUnity = false;
 		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Private", "UI"));
 		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Private", "Actions"));
 		// Interfaces only, checked at runtime: the Python plugin stays optional.

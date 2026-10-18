@@ -94,7 +94,7 @@ bool FScenarioLanes::LoadFromString(const FString& Text)
 	PresetMap.Reset();
 	if (const TSharedPtr<FJsonObject> Presets = ScenarioJson::GetObject(Root, TEXT("presets")))
 	{
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Presets->Values)
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Presets))
 		{
 			if (Pair.Value.IsValid() && Pair.Value->Type == EJson::Object)
 			{
@@ -105,7 +105,7 @@ bool FScenarioLanes::LoadFromString(const FString& Text)
 	RestrictMap.Reset();
 	if (const TSharedPtr<FJsonObject> Restrict = ScenarioJson::GetObject(Root, TEXT("restrict")))
 	{
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Restrict->Values)
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Restrict))
 		{
 			RestrictMap.Add(Pair.Key, ScenarioJson::GetStringArray(Restrict, Pair.Key));
 		}
@@ -113,7 +113,7 @@ bool FScenarioLanes::LoadFromString(const FString& Text)
 	Tools.Reset();
 	if (const TSharedPtr<FJsonObject> ToolObject = ScenarioJson::GetObject(Root, TEXT("tools")))
 	{
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ToolObject->Values)
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(ToolObject))
 		{
 			Tools.Add(Pair.Key, ScenarioJson::GetString(ToolObject, Pair.Key));
 		}

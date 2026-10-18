@@ -55,7 +55,7 @@ namespace
 		TArray<FString> Unknown;
 		if (Values.IsValid())
 		{
-			for (const auto& Pair : Values->Values)
+			for (const auto& Pair : ScenarioJson::Fields(Values))
 			{
 				if (!ScenarioSchema::Find(Fields, Pair.Key))
 				{
@@ -72,7 +72,7 @@ namespace
 		TSharedRef<FJsonObject> Merged = ScenarioSchema::InitialValues(Fields, Presets);
 		if (Values.IsValid())
 		{
-			for (const auto& Pair : Values->Values)
+			for (const auto& Pair : ScenarioJson::Fields(Values))
 			{
 				Merged->SetField(Pair.Key, Pair.Value);
 			}
