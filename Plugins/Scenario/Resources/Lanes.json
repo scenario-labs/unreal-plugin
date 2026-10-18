@@ -134,7 +134,7 @@
       "importer": "texture",
       "folder": "Renders",
       "needs_capture": true,
-      "hint": "Restyle the active viewport or a camera: captures the view and sends it as reference image 1.",
+      "hint": "Restyle the active level viewport: captures the view and sends it as reference image 1.",
       "starter_prompts": [
         "painterly concept art, warm sunset light",
         "photoreal, wet street at night, neon reflections",
