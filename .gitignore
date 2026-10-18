@@ -1,0 +1,36 @@
+# Unreal build and editor output
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+.vscode/
+.idea/
+*.xcworkspace/
+*.xcodeproj/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Packaged plugin builds
+/Build/
+/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local secrets and test output (never commit)
+.env
+.env.*
+*.credentials.json
+tests/live/output/
+tests/reports/
+
+# macOS
+.DS_Store

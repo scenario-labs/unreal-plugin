@@ -1,0 +1,42 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Scenario",
+	"Description": "Every Scenario model inside Unreal: images, video, 3D, materials, audio and skies, priced before you spend and imported as native assets. For people in the editor and for AI agents over MCP.",
+	"Category": "Editor",
+	"CreatedBy": "Scenario",
+	"CreatedByURL": "https://www.scenario.com",
+	"DocsURL": "https://unreal.scenario.com",
+	"MarketplaceURL": "",
+	"SupportURL": "https://help.scenario.com",
+	"EngineVersion": "5.8.0",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "ScenarioCore",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
+		},
+		{
+			"Name": "ScenarioEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
+		},
+		{
+			"Name": "ScenarioAgent",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
+		}
+	],
+	"Plugins": [
+		{ "Name": "Interchange", "Enabled": true },
+		{ "Name": "GLTFExporter", "Enabled": true }
+	]
+}

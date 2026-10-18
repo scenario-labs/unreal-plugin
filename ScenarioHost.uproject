@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "Host project used to build and test the Scenario plugin.",
+	"Modules": [
+		{
+			"Name": "ScenarioHost",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{ "Name": "Scenario", "Enabled": true },
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
+		{ "Name": "MediaPlate", "Enabled": true },
+		{ "Name": "HDRIBackdrop", "Enabled": true }
+	]
+}
