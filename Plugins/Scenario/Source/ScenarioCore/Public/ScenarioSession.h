@@ -167,7 +167,7 @@ public:
 	bool IsSpendingDisabled() const;
 	bool IsEstimateAlarmRaised() const;
 
-	/** Prompt Spark replies by local job id (variants, recommended_call), kept for this session. */
+	/** Prompt Spark replies by local job id (prompts, calls, recommended_call), kept for this session. */
 	TSharedPtr<FJsonObject> GetSparkResult(const FString& LocalId) const;
 
 	// Jobs

@@ -1,0 +1,40 @@
+{
+ "action": "prompt_spark",
+ "mode": "contextual-v2",
+ "model_id": "model_scenario-skybox-gpt",
+ "prompts": [
+  "A serene misty mountain valley at dawn wrapping fully around the viewer, layered silhouettes fading into gray-blue haze.",
+  "A tranquil misty mountain valley at dawn surrounding the viewer, ridgelines receding into silver fog."
+ ],
+ "recommended_prompt": "A serene misty mountain valley at dawn wrapping fully around the viewer, layered silhouettes fading into gray-blue haze.",
+ "calls": [
+  {
+   "model_id": "model_scenario-skybox-gpt",
+   "parameters": {
+    "prompt": "A serene misty mountain valley at dawn wrapping fully around the viewer, layered silhouettes fading into gray-blue haze.",
+    "width": 3840,
+    "height": 1920,
+    "quality": "high"
+   }
+  },
+  {
+   "model_id": "model_scenario-skybox-gpt",
+   "parameters": {
+    "prompt": "A tranquil misty mountain valley at dawn surrounding the viewer, ridgelines receding into silver fog.",
+    "width": 3840,
+    "height": 1920,
+    "quality": "high"
+   }
+  }
+ ],
+ "recommended_call": {
+  "model_id": "model_scenario-skybox-gpt",
+  "parameters": {
+   "prompt": "A serene misty mountain valley at dawn wrapping fully around the viewer, layered silhouettes fading into gray-blue haze.",
+   "width": 3840,
+   "height": 1920,
+   "quality": "high"
+  }
+ },
+ "message": "Suggestion: use recommended_call.parameters as the parameters in model_run."
+}

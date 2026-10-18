@@ -43,6 +43,9 @@ namespace ScenarioFiles
 	/** Today's local date, "2026-10-18". */
 	SCENARIOCORE_API FString Today();
 
+	/** The local date of a Unix time, "2026-10-18": date folders follow the user's clock, not UTC. */
+	SCENARIOCORE_API FString LocalDate(double UnixTime);
+
 	/** Keeps letters, digits and underscores, so the name is a valid Unreal object name. */
 	SCENARIOCORE_API FString SafeObjectName(const FString& Name);
 }

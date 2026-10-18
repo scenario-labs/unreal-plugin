@@ -13,6 +13,7 @@
 #include "ScenarioJson.h"
 #include "ScenarioRpc.h"
 #include "ScenarioTelemetry.h"
+#include "ScenarioTypes.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioJsonCanonicalTest, "Scenario.Core.Json.Canonical", SCENARIO_TEST_FLAGS)
 bool FScenarioJsonCanonicalTest::RunTest(const FString& Parameters)
@@ -80,6 +81,7 @@ bool FScenarioFilesNamingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("unknown role is main"), ScenarioFiles::RoleFor(TEXT("inference-txt2img")), FString(TEXT("main")));
 	TestEqual(TEXT("normal suffix"), ScenarioFiles::RoleSuffix(TEXT("normal")), FString(TEXT("N")));
 	TestEqual(TEXT("safe object name"), ScenarioFiles::SafeObjectName(TEXT("T_A-b c")), FString(TEXT("T_A_b_c")));
+	TestEqual(TEXT("date folders use the local date"), ScenarioFiles::LocalDate(ScenarioNow()), ScenarioFiles::Today());
 
 	TArray<uint8> Png = { 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a };
 	TestEqual(TEXT("png"), ScenarioFiles::SniffExtension(Png), FString(TEXT("png")));

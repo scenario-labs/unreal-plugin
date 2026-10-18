@@ -232,6 +232,45 @@ bool FScenarioApi::FindEstimate(const TSharedPtr<FJsonObject>& Value, FScenarioE
 	return false;
 }
 
+TArray<FString> FScenarioApi::SparkPrompts(const TSharedPtr<FJsonObject>& Reply)
+{
+	TArray<FString> Out;
+	auto Add = [&Out](const FString& Prompt)
+	{
+		const FString Clean = Prompt.TrimStartAndEnd();
+		if (!Clean.IsEmpty())
+		{
+			Out.AddUnique(Clean);
+		}
+	};
+	for (const TSharedPtr<FJsonValue>& Item : ScenarioJson::GetArray(Reply, TEXT("prompts")))
+	{
+		if (Item->Type == EJson::String)
+		{
+			Add(Item->AsString());
+		}
+		else if (Item->Type == EJson::Object)
+		{
+			Add(ScenarioJson::GetString(Item->AsObject(), TEXT("prompt")));
+		}
+	}
+	if (Out.Num() == 0)
+	{
+		for (const TSharedPtr<FJsonValue>& Call : ScenarioJson::GetArray(Reply, TEXT("calls")))
+		{
+			if (Call->Type == EJson::Object)
+			{
+				Add(ScenarioJson::GetString(ScenarioJson::GetObject(Call->AsObject(), TEXT("parameters")), TEXT("prompt")));
+			}
+		}
+	}
+	if (Out.Num() == 0)
+	{
+		Add(ScenarioJson::GetString(Reply, TEXT("recommended_prompt")));
+	}
+	return Out;
+}
+
 void FScenarioApi::Estimate(const FString& ModelId, const TSharedPtr<FJsonObject>& Parameters, TCallback<FScenarioEstimate> OnDone)
 {
 	TSharedPtr<FJsonObject> Arguments = Args();

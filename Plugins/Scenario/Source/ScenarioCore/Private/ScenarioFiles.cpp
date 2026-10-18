@@ -347,6 +347,12 @@ FString ScenarioFiles::Today()
 	return FString::Printf(TEXT("%04d-%02d-%02d"), Now.GetYear(), Now.GetMonth(), Now.GetDay());
 }
 
+FString ScenarioFiles::LocalDate(double UnixTime)
+{
+	const FDateTime Local = FDateTime::FromUnixTimestamp(static_cast<int64>(UnixTime)) + (FDateTime::Now() - FDateTime::UtcNow());
+	return FString::Printf(TEXT("%04d-%02d-%02d"), Local.GetYear(), Local.GetMonth(), Local.GetDay());
+}
+
 FString ScenarioFiles::SafeObjectName(const FString& Name)
 {
 	FString Out;

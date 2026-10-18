@@ -6,6 +6,7 @@
 
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
+#include "ScenarioApi.h"
 #include "ScenarioCatalog.h"
 #include "ScenarioFakes.h"
 #include "ScenarioJson.h"
@@ -267,6 +268,27 @@ bool FScenarioLanesTest::RunTest(const FString& Parameters)
 	FScenarioLanes Broken;
 	TestFalse(TEXT("bad JSON refused"), Broken.LoadFromString(TEXT("{")));
 	TestFalse(TEXT("no lanes refused"), Broken.LoadFromString(TEXT("{\"lanes\":[]}")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioSparkPromptsTest, "Scenario.Core.Schema.SparkPrompts", SCENARIO_TEST_FLAGS)
+bool FScenarioSparkPromptsTest::RunTest(const FString& Parameters)
+{
+	const TSharedPtr<FJsonObject> Reply = ScenarioFixtures::LoadJson(TEXT("prompt_spark.json"));
+	if (!TestTrue(TEXT("fixture"), Reply.IsValid()))
+	{
+		return false;
+	}
+	const TArray<FString> Prompts = FScenarioApi::SparkPrompts(Reply);
+	TestEqual(TEXT("two variants from prompts"), Prompts.Num(), 2);
+	TestTrue(TEXT("first is the recommended one"), Prompts.Num() > 0 && Prompts[0].StartsWith(TEXT("A serene")));
+
+	// Without prompts: the calls, then the recommended prompt.
+	TSharedPtr<FJsonObject> CallsOnly = ScenarioJson::ParseObject(TEXT("{\"calls\":[{\"parameters\":{\"prompt\":\"a\"}},{\"parameters\":{\"prompt\":\"b\"}}]}"));
+	TestEqual(TEXT("from calls"), FScenarioApi::SparkPrompts(CallsOnly).Num(), 2);
+	TSharedPtr<FJsonObject> Recommended = ScenarioJson::ParseObject(TEXT("{\"prompts\":[],\"recommended_prompt\":\"c\"}"));
+	TestEqual(TEXT("from recommended_prompt"), FScenarioApi::SparkPrompts(Recommended).Num(), 1);
+	TestEqual(TEXT("empty reply"), FScenarioApi::SparkPrompts(ScenarioJson::ParseObject(TEXT("{\"prompts\":[]}"))).Num(), 0);
 	return true;
 }
 

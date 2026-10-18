@@ -177,7 +177,7 @@ public:
 	void EstimateWorkflow(const FString& WorkflowId, const TSharedPtr<FJsonObject>& Inputs, TCallback<FScenarioEstimate> OnDone);
 	void SubmitWorkflow(const FString& WorkflowId, const TSharedPtr<FJsonObject>& Inputs, TCallback<FScenarioSubmitted> OnDone);
 
-	/** Prompt Spark price (free) and run (paid). The run returns Scenario's reply (variants and recommended_call). */
+	/** Prompt Spark price (free) and run (paid). The run returns Scenario's reply (prompts, calls and recommended_call). */
 	void EstimatePromptSpark(const FString& ModelId, const FString& Prompt, const TArray<FString>& ImageIds, int32 NumResults, TCallback<FScenarioEstimate> OnDone);
 	void RunPromptSpark(const FString& ModelId, const FString& Prompt, const TArray<FString>& ImageIds, int32 NumResults, FScenarioReplyCallback OnDone);
 
@@ -215,6 +215,9 @@ public:
 
 	/** Finds the CU price in a dry-run reply, at the top level or one level down. */
 	static bool FindEstimate(const TSharedPtr<FJsonObject>& Value, FScenarioEstimate& Out);
+
+	/** The prompt variants of a Prompt Spark reply: prompts, else the prompts of calls, else recommended_prompt. */
+	static TArray<FString> SparkPrompts(const TSharedPtr<FJsonObject>& Reply);
 
 private:
 	static TSharedPtr<FJsonObject> Args();
