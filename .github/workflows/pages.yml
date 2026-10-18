@@ -1,0 +1,49 @@
+name: pages
+
+# Publishes the docs site to GitHub Pages: docs/USER_GUIDE.md (the handbook),
+# docs/QUICK_START.md, docs/MCP_GUIDE.md and docs/TROUBLESHOOTING.md, built by
+# tools/build_site.py. Download links point at the GitHub releases.
+# Repository settings must use "GitHub Actions" as the Pages source.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "Plugins/Scenario/Scenario.uplugin"
+      - "tools/build_site.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+# Hold the lock through build and deployment, so the newest run wins.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'scenario-labs/unreal-plugin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Build the site
+        run: uv run --no-project --with markdown==3.10.3 python tools/build_site.py --output "$RUNNER_TEMP/site"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/site
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deploy

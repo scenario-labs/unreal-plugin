@@ -1,0 +1,15 @@
+# Code owners: requested reviewers for release files, repository automation,
+# licence and security texts. Paths are root-anchored; the last match wins.
+# A team can be added once it has write access to this repository.
+
+# Release version and changelog files
+/CHANGELOG.md                       @hervenivon
+/Plugins/Scenario/Scenario.uplugin  @hervenivon
+
+# Release machinery and repository automation
+/.github/                           @hervenivon
+/tools/build.sh                     @hervenivon
+
+# Licence and security texts
+/LICENSE                            @hervenivon
+/SECURITY.md                        @hervenivon

@@ -1,0 +1,72 @@
+name: CI
+
+# Light checks that run without Unreal Engine. GitHub-hosted runners have no
+# engine install, so the plugin build and the automation tests run on a Mac
+# with tools/build.sh and tools/test.sh (see AGENTS.md).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Copyright headers, no em dashes, JSON resources, skill frontmatter, no secrets
+        run: python3 tools/lint.py
+
+  tools:
+    name: tools
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tests of the Python tools
+        run: python3 -m unittest discover -s tools/tests -v
+
+  site:
+    name: site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: The docs site builds
+        run: uv run --no-project --with markdown==3.10.3 python tools/build_site.py --output "$RUNNER_TEMP/site"
+
+  # The one check branch rules should require from this workflow, so jobs can
+  # be added or renamed without touching the rules. Do not rename it.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [lint, tools, site]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "::error::A CI job did not succeed: $RESULTS"
+              exit 1
+            fi
+          done
