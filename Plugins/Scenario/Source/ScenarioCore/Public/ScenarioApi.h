@@ -204,7 +204,8 @@ public:
 	/** CU used (after discounts) between the two ISO dates. The project id is needed even with an API key (checked 2026-10-18). */
 	void UsageTotal(const FString& ProjectId, const FString& StartDate, const FString& EndDate, TCallback<double> OnDone);
 
-	void ListWorkflows(const FString& Privacy, const FString& Status, int32 Limit, const FString& PageToken, FScenarioReplyCallback OnDone);
+	/** Tags filters the list ("featured" for Scenario's picks in the public catalog). */
+	void ListWorkflows(const FString& Privacy, const FString& Status, int32 Limit, const FString& PageToken, const TArray<FString>& Tags, FScenarioReplyCallback OnDone);
 	void GetWorkflow(const FString& WorkflowId, FScenarioReplyCallback OnDone);
 	void ListCollections(FScenarioReplyCallback OnDone);
 

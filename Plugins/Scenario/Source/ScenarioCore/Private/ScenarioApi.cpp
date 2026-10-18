@@ -802,7 +802,7 @@ void FScenarioApi::UsageTotal(const FString& ProjectId, const FString& StartDate
 	});
 }
 
-void FScenarioApi::ListWorkflows(const FString& Privacy, const FString& Status, int32 Limit, const FString& PageToken, FScenarioReplyCallback OnDone)
+void FScenarioApi::ListWorkflows(const FString& Privacy, const FString& Status, int32 Limit, const FString& PageToken, const TArray<FString>& Tags, FScenarioReplyCallback OnDone)
 {
 	TSharedPtr<FJsonObject> Arguments = Args();
 	if (!Privacy.IsEmpty())
@@ -817,6 +817,10 @@ void FScenarioApi::ListWorkflows(const FString& Privacy, const FString& Status, 
 	if (!PageToken.IsEmpty())
 	{
 		Arguments->SetStringField(TEXT("page_token"), PageToken);
+	}
+	if (Tags.Num() > 0)
+	{
+		Arguments->SetField(TEXT("tags"), ScenarioJson::StringArrayValue(Tags));
 	}
 	BackendRef->CallTool(TEXT("workflows_list"), Arguments, MoveTemp(OnDone));
 }
