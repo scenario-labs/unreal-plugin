@@ -657,10 +657,36 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 				return Menu.MakeWidget();
 			});
 	}
-	case EScenarioFieldType::Number:
 	case EScenarioFieldType::Integer:
 	{
-		const bool bInteger = Field.Type == EScenarioFieldType::Integer;
+		// Whole numbers show as "4", not "4.0".
+		auto ToInt = [](const TOptional<double>& Value) { return Value.IsSet() ? TOptional<int32>(FMath::RoundToInt(Value.GetValue())) : TOptional<int32>(); };
+		const TOptional<int32> Min = ToInt(Field.Min);
+		const TOptional<int32> Max = ToInt(Field.Max);
+		return SNew(SNumericEntryBox<int32>)
+			.AllowSpin(Min.IsSet() && Max.IsSet())
+			.MinValue(Min)
+			.MaxValue(Max)
+			.MinSliderValue(Min)
+			.MaxSliderValue(Max)
+			.Delta(Field.Step.IsSet() ? FMath::Max(1, FMath::RoundToInt(Field.Step.GetValue())) : 1)
+			.Value_Lambda([M, Name]() -> TOptional<int32>
+			{
+				const TSharedPtr<FJsonValue> Value = M->GetValue(Name);
+				double Number = 0.0;
+				return Value.IsValid() && Value->TryGetNumber(Number) ? TOptional<int32>(FMath::RoundToInt(Number)) : TOptional<int32>();
+			})
+			.OnValueCommitted_Lambda([M, Name](int32 Value, ETextCommit::Type)
+			{
+				M->SetValue(Name, MakeShared<FJsonValueNumber>(Value));
+			})
+			.OnValueChanged_Lambda([M, Name](int32 Value)
+			{
+				M->SetValue(Name, MakeShared<FJsonValueNumber>(Value));
+			});
+	}
+	case EScenarioFieldType::Number:
+	{
 		const TOptional<double> Min = Field.Min;
 		const TOptional<double> Max = Field.Max;
 		return SNew(SNumericEntryBox<double>)
@@ -669,20 +695,20 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 			.MaxValue(Max)
 			.MinSliderValue(Min)
 			.MaxSliderValue(Max)
-			.Delta(Field.Step.IsSet() ? Field.Step.GetValue() : (bInteger ? 1.0 : 0.0))
+			.Delta(Field.Step.IsSet() ? Field.Step.GetValue() : 0.0)
 			.Value_Lambda([M, Name]() -> TOptional<double>
 			{
 				const TSharedPtr<FJsonValue> Value = M->GetValue(Name);
 				double Number = 0.0;
 				return Value.IsValid() && Value->TryGetNumber(Number) ? TOptional<double>(Number) : TOptional<double>();
 			})
-			.OnValueCommitted_Lambda([M, Name, bInteger](double Value, ETextCommit::Type)
+			.OnValueCommitted_Lambda([M, Name](double Value, ETextCommit::Type)
 			{
-				M->SetValue(Name, MakeShared<FJsonValueNumber>(bInteger ? FMath::RoundToDouble(Value) : Value));
+				M->SetValue(Name, MakeShared<FJsonValueNumber>(Value));
 			})
-			.OnValueChanged_Lambda([M, Name, bInteger](double Value)
+			.OnValueChanged_Lambda([M, Name](double Value)
 			{
-				M->SetValue(Name, MakeShared<FJsonValueNumber>(bInteger ? FMath::RoundToDouble(Value) : Value));
+				M->SetValue(Name, MakeShared<FJsonValueNumber>(Value));
 			});
 	}
 	case EScenarioFieldType::Boolean:

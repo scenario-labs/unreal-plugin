@@ -9,6 +9,8 @@
 #include "ScenarioSession.h"
 #include "ScenarioSubsystem.generated.h"
 
+class SNotificationItem;
+
 class AActor;
 class FScenarioProvenanceIndex;
 class UMaterialInterface;
@@ -155,6 +157,12 @@ private:
 	void OnFilesReady(const FString& LocalId);
 	void OnLedgerChanged(const FString& LocalId);
 	void Notify(const FScenarioJobRow& Row, EScenarioJobState Previous);
+	/**
+	 * The corner notification of a job the person started: "Generating" from the
+	 * moment Scenario accepts it, then Ready with Import, or Failed. Returns
+	 * false when the job has none.
+	 */
+	bool UpdateProgress(const FScenarioJobRow& Row);
 	void FinishImport(const FString& LocalId, const FScenarioPlaceOptions& Options, FScenarioChangeReport Report, TFunction<void(const FScenarioChangeReport&)> OnDone);
 
 	TSharedPtr<FScenarioSession> SessionPtr;
@@ -163,6 +171,7 @@ private:
 	TSet<FString> Importing;
 	TMap<FString, FScenarioChangeReport> Reports;
 	TMap<FString, EScenarioJobState> SeenStates;
+	TMap<FString, TWeakPtr<SNotificationItem>> ProgressItems;
 	TSet<FString> UploadAllowList;
 	TSet<FString> TouchedPackages;
 	FDelegateHandle LedgerHandle;

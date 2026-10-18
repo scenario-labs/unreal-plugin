@@ -12,7 +12,9 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "EditorFramework/AssetImportData.h"
 #include "FileMediaSource.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Exporters/GLTFExporter.h"
+#include "Framework/Notifications/NotificationManager.h"
 #include "FileHelpers.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
@@ -32,10 +34,12 @@
 #include "ScenarioProvenance.h"
 #include "ScenarioSettings.h"
 #include "ScenarioTelemetry.h"
+#include "UI/ScenarioStyle.h"
 #include "ScopedTransaction.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundWave.h"
 #include "TextureResource.h"
+#include "Widgets/Notifications/SNotificationList.h"
 
 #define LOCTEXT_NAMESPACE "Scenario"
 
@@ -334,8 +338,7 @@ FString UScenarioSubsystem::DestinationFor(const FScenarioJobRow& Row) const
 	FString Path = Settings.RootPath() / ScenarioFiles::KindFolder(Lane);
 	if (Settings.bDateFolders)
 	{
-		const FDateTime Created = FDateTime::FromUnixTimestamp(static_cast<int64>(Row.CreatedAt > 0.0 ? Row.CreatedAt : ScenarioNow()));
-		Path /= Created.ToString(TEXT("%Y-%m-%d"));
+		Path /= ScenarioFiles::LocalDate(Row.CreatedAt > 0.0 ? Row.CreatedAt : ScenarioNow());
 	}
 	return Path;
 }
@@ -382,6 +385,15 @@ void UScenarioSubsystem::Notify(const FScenarioJobRow& Row, EScenarioJobState Pr
 		ScenarioTelemetry::Event(TEXT("job_finished"), {
 			{ TEXT("lane"), Row.Lane }, { TEXT("kind"), Row.Kind }, { TEXT("state"), LexToString(Row.State) }, { TEXT("source"), Row.Source }, { TEXT("client"), Row.Client } });
 	}
+	// A person's job keeps one notification from send to result; the toasts below are for the others.
+	if (UpdateProgress(Row))
+	{
+		if (Row.State == EScenarioJobState::Success && Row.Source == TEXT("person"))
+		{
+			AskTelemetryOnce();
+		}
+		return;
+	}
 	switch (Row.State)
 	{
 	case EScenarioJobState::Queued:
@@ -422,6 +434,117 @@ void UScenarioSubsystem::Notify(const FScenarioJobRow& Row, EScenarioJobState Pr
 	default:
 		break;
 	}
+}
+
+bool UScenarioSubsystem::UpdateProgress(const FScenarioJobRow& Row)
+{
+	if (Row.Source != TEXT("person") || Row.Kind == TEXT("prompt_spark") || !FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+	const FString LocalId = Row.LocalId;
+	TSharedPtr<SNotificationItem> Item = ProgressItems.FindRef(LocalId).Pin();
+	const bool bRunning = Row.State == EScenarioJobState::Queued || Row.State == EScenarioJobState::Running;
+	if (!Item.IsValid())
+	{
+		if (!bRunning)
+		{
+			return false;
+		}
+		const FString Model = Row.ModelName.IsEmpty() ? (Row.ModelId.IsEmpty() ? Row.WorkflowId : Row.ModelId) : Row.ModelName;
+		const FString Cost = ScenarioCU::Format(Row.QuotedCU);
+		FNotificationInfo Info(FText::GetEmpty());
+		Info.bFireAndForget = false;
+		Info.bUseThrobber = true;
+		Info.bUseSuccessFailIcons = true;
+		Info.FadeOutDuration = 1.0f;
+		Info.Image = FScenarioStyle::Get().GetBrush("Scenario.Mark");
+		// Text and sub-text read the job list, so progress and the final state show without more calls.
+		auto Find = [LocalId]() -> const FScenarioJobRow*
+		{
+			UScenarioSubsystem* Self = Get();
+			return Self ? Self->Session().Ledger().Find(LocalId) : nullptr;
+		};
+		Info.Text = TAttribute<FText>::CreateLambda([Find, Model]()
+		{
+			const FScenarioJobRow* Job = Find();
+			if (!Job || Job->State == EScenarioJobState::Queued)
+			{
+				return FText::Format(LOCTEXT("ProgressQueued", "Sent to Scenario: {0}"), FText::FromString(Model));
+			}
+			switch (Job->State)
+			{
+			case EScenarioJobState::Running:
+				return Job->Progress > 0.0
+					? FText::Format(LOCTEXT("ProgressRunning", "Generating with {0}: {1}%"), FText::FromString(Model), FText::AsNumber(FMath::RoundToInt(Job->Progress * 100.0)))
+					: FText::Format(LOCTEXT("ProgressStarted", "Generating with {0}"), FText::FromString(Model));
+			case EScenarioJobState::Success:
+				return FText::Format(LOCTEXT("ProgressReady", "Ready: {0}"), FText::FromString(Model));
+			case EScenarioJobState::Unknown:
+				return LOCTEXT("ProgressUnknown", "We do not know if Scenario received this request");
+			case EScenarioJobState::Canceled:
+				return FText::Format(LOCTEXT("ProgressCanceled", "Canceled: {0}"), FText::FromString(Model));
+			default:
+				return FText::Format(LOCTEXT("ProgressFailed", "{0} failed"), FText::FromString(Model));
+			}
+		});
+		Info.SubText = TAttribute<FText>::CreateLambda([Find, Cost, Prompt = Row.Prompt.Left(80)]()
+		{
+			const FScenarioJobRow* Job = Find();
+			if (Job && (Job->State == EScenarioJobState::Failed || Job->State == EScenarioJobState::Blocked) && !Job->Error.IsEmpty())
+			{
+				return FText::FromString(Job->Error.Left(200));
+			}
+			if (Job && Job->State == EScenarioJobState::Unknown)
+			{
+				return LOCTEXT("ProgressUnknownSub", "An identical request is blocked until you check it in Jobs.");
+			}
+			return Prompt.IsEmpty() ? FText::FromString(Cost) : FText::Format(LOCTEXT("ProgressSub", "{0} · {1}"), FText::FromString(Prompt), FText::FromString(Cost));
+		});
+		Info.Hyperlink = FSimpleDelegate::CreateLambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); });
+		Info.HyperlinkText = LOCTEXT("ProgressJobs", "Open Jobs");
+		TSharedRef<TWeakPtr<SNotificationItem>> Weak = MakeShared<TWeakPtr<SNotificationItem>>();
+		auto Button = [Weak](const FText& Label, TFunction<void()> Action, SNotificationItem::ECompletionState Shown)
+		{
+			return FNotificationButtonInfo(Label, FText::GetEmpty(), FSimpleDelegate::CreateLambda([Weak, Action]()
+			{
+				Action();
+				if (const TSharedPtr<SNotificationItem> Pinned = Weak->Pin())
+				{
+					Pinned->SetExpireDuration(0.0f);
+					Pinned->ExpireAndFadeout();
+				}
+			}), Shown);
+		};
+		Info.ButtonDetails.Add(Button(LOCTEXT("ProgressImport", "Import"),
+			[LocalId]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJob(LocalId, FScenarioPlaceOptions()); } }, SNotificationItem::CS_Success));
+		Info.ButtonDetails.Add(Button(LOCTEXT("ProgressImportPlace", "Import and place"),
+			[LocalId]() { if (UScenarioSubsystem* Self = Get()) { FScenarioPlaceOptions Options; Options.Placement = EScenarioPlacement::Auto; Self->ImportJob(LocalId, Options); } }, SNotificationItem::CS_Success));
+		Info.ButtonDetails.Add(Button(LOCTEXT("ProgressDetails", "Details"),
+			[]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); }, SNotificationItem::CS_Fail));
+		Item = FSlateNotificationManager::Get().AddNotification(Info);
+		if (!Item.IsValid())
+		{
+			return false;
+		}
+		*Weak = Item;
+		Item->SetCompletionState(SNotificationItem::CS_Pending);
+		ProgressItems.Add(LocalId, Item);
+	}
+
+	if (bRunning)
+	{
+		return true;
+	}
+	const bool bOk = Row.State == EScenarioJobState::Success;
+	const bool bStopped = Row.State == EScenarioJobState::Canceled || Row.State == EScenarioJobState::Rejected || Row.State == EScenarioJobState::Dismissed;
+	// With automatic import the result imports on its own: no Import buttons.
+	Item->SetCompletionState(bStopped || (bOk && UScenarioEditorSettings::Get().bAutoImport) ? SNotificationItem::CS_None
+		: bOk ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
+	Item->SetExpireDuration(bStopped ? 4.0f : bOk ? 12.0f : 20.0f);
+	Item->ExpireAndFadeout();
+	ProgressItems.Remove(LocalId);
+	return true;
 }
 
 void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceOptions& Options, TFunction<void(const FScenarioChangeReport&)> OnDone)

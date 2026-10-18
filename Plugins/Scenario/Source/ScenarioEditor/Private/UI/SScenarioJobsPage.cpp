@@ -406,7 +406,7 @@ TSharedRef<ITableRow> SScenarioResultsPage::MakeCloudRow(FCloud Item, const TSha
 	const FScenarioJobInfo Job = *Item;
 	const FScenarioLane* GuessLane = FScenarioLanes::Get().LaneForModel(Job.ModelId);
 	const FString LaneId = GuessLane ? GuessLane->Id : FString();
-	const FString When = Job.CreatedAt > 0.0 ? FDateTime::FromUnixTimestamp(static_cast<int64>(Job.CreatedAt)).ToString(TEXT("%Y-%m-%d %H:%M")) : FString();
+	const FString When = Job.CreatedAt > 0.0 ? (FDateTime::FromUnixTimestamp(static_cast<int64>(Job.CreatedAt)) + (FDateTime::Now() - FDateTime::UtcNow())).ToString(TEXT("%Y-%m-%d %H:%M")) : FString();
 	return SNew(STableRow<FCloud>, Owner)
 		.Padding(FMargin(8.0f, 3.0f))
 		[

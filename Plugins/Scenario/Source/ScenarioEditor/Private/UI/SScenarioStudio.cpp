@@ -238,10 +238,16 @@ TSharedRef<SWidget> SScenarioStudio::BuildRail()
 							{
 								return FText::GetEmpty();
 							}
+							// Unresolved jobs need a look first; otherwise the running ones.
+							const int32 Unresolved = CountJobs(false);
+							if (Unresolved > 0)
+							{
+								return FText::Format(LOCTEXT("JobsUnresolved", "{0} to check"), FText::AsNumber(Unresolved));
+							}
 							const int32 Active = CountJobs(true);
-							return Active > 0 ? FText::AsNumber(Active) : FText::GetEmpty();
+							return Active > 0 ? FText::Format(LOCTEXT("JobsRunning", "{0} running"), FText::AsNumber(Active)) : FText::GetEmpty();
 						})
-						.ColorAndOpacity_Lambda([Id]() { return Id == ScenarioPages::Jobs && CountJobs(false) > 0 ? FScenarioStyle::Warning() : FScenarioStyle::Muted(); })
+						.ColorAndOpacity_Lambda([Id]() { return Id == ScenarioPages::Jobs && CountJobs(false) > 0 ? FScenarioStyle::Warning() : FScenarioStyle::Accent(); })
 					]
 				]
 			]

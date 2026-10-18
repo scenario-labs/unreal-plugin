@@ -1111,7 +1111,10 @@ FText FScenarioCreateModel::GetButtonText() const
 	{
 		const FScenarioQuote* Quote = CurrentQuote();
 		const double CU = Quote ? Quote->CU : ExpectedCU;
-		return FText::Format(LOCTEXT("Generate", "Generate · {0}"), FText::FromString(ScenarioCU::Format(CU)));
+		// While the last request runs, the button says that a click sends a second, paid request.
+		return IsSentJobRunning()
+			? FText::Format(LOCTEXT("GenerateAnother", "Generate another · {0}"), FText::FromString(ScenarioCU::Format(CU)))
+			: FText::Format(LOCTEXT("Generate", "Generate · {0}"), FText::FromString(ScenarioCU::Format(CU)));
 	}
 	}
 	return FText::GetEmpty();
@@ -1160,6 +1163,47 @@ void FScenarioCreateModel::Reprice()
 	FTSTicker::GetCoreTicker().RemoveTicker(DebounceHandle);
 	DebounceHandle.Reset();
 	PriceNow(false);
+}
+
+bool FScenarioCreateModel::IsSentJobRunning() const
+{
+	FScenarioSession* Session = SessionOrNull();
+	const FScenarioJobRow* Row = Session && !LastLocalId.IsEmpty() ? Session->Ledger().Find(LastLocalId) : nullptr;
+	return Row && (Row->State == EScenarioJobState::Submitting || Row->State == EScenarioJobState::Queued || Row->State == EScenarioJobState::Running);
+}
+
+FText FScenarioCreateModel::GetSentJobText() const
+{
+	FScenarioSession* Session = SessionOrNull();
+	const FScenarioJobRow* Row = Session && !LastLocalId.IsEmpty() ? Session->Ledger().Find(LastLocalId) : nullptr;
+	if (!Row || Row->Kind == TEXT("prompt_spark"))
+	{
+		return FText::GetEmpty();
+	}
+	const FText Model = FText::FromString(Row->ModelName.IsEmpty() ? (Row->ModelId.IsEmpty() ? Row->WorkflowId : Row->ModelId) : Row->ModelName);
+	const FText Cost = FText::FromString(ScenarioCU::Format(Row->QuotedCU));
+	switch (Row->State)
+	{
+	case EScenarioJobState::Submitting:
+		return FText::Format(LOCTEXT("SentSubmitting", "Sending to {0}..."), Model);
+	case EScenarioJobState::Queued:
+		return FText::Format(LOCTEXT("SentQueued", "Sent ({0}). Queued at Scenario for {1}."), Cost, Model);
+	case EScenarioJobState::Running:
+		return Row->Progress > 0.0
+			? FText::Format(LOCTEXT("SentRunningPct", "Sent ({0}). Generating with {1}: {2}%."), Cost, Model, FText::AsNumber(FMath::RoundToInt(Row->Progress * 100.0)))
+			: FText::Format(LOCTEXT("SentRunning", "Sent ({0}). Generating with {1}..."), Cost, Model);
+	case EScenarioJobState::Success:
+		return Row->bImported
+			? FText::Format(LOCTEXT("SentImported", "Imported: {0}. It is in Results below."), Model)
+			: FText::Format(LOCTEXT("SentReady", "Ready: {0}. Import it from its card below."), Model);
+	case EScenarioJobState::Unknown:
+		return LOCTEXT("SentUnknown", "We do not know if Scenario received this request. Check it in Jobs.");
+	case EScenarioJobState::Failed:
+	case EScenarioJobState::Blocked:
+		return FText::Format(LOCTEXT("SentFailed", "{0} failed. See its card below."), Model);
+	default:
+		return FText::GetEmpty();
+	}
 }
 
 void FScenarioCreateModel::Generate()
@@ -1412,22 +1456,7 @@ void FScenarioCreateModel::RunSpark(TFunction<void(const TArray<FString>& Varian
 		}
 		FScenarioSession* Session = SessionOrNull();
 		const TSharedPtr<FJsonObject> Reply = Session ? Session->GetSparkResult(Result.Value) : nullptr;
-		TArray<FString> Variants;
-		for (const TSharedPtr<FJsonValue>& Item : ScenarioJson::GetArray(Reply, TEXT("variants")))
-		{
-			if (Item->Type == EJson::String)
-			{
-				Variants.Add(Item->AsString());
-			}
-			else if (Item->Type == EJson::Object)
-			{
-				const FString Prompt = ScenarioJson::GetString(Item->AsObject(), TEXT("prompt"));
-				if (!Prompt.IsEmpty())
-				{
-					Variants.Add(Prompt);
-				}
-			}
-		}
+		const TArray<FString> Variants = FScenarioApi::SparkPrompts(Reply);
 		OnDone(Variants, Variants.Num() == 0 ? TEXT("Prompt Spark returned no variants.") : FString());
 	});
 }

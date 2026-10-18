@@ -76,6 +76,11 @@ FSlateColor FScenarioStyle::Success()
 	return FAppStyle::Get().GetSlateColor("Colors.Success");
 }
 
+FSlateColor FScenarioStyle::Accent()
+{
+	return FAppStyle::Get().GetSlateColor("Colors.Primary");
+}
+
 FScenarioCommands::FScenarioCommands()
 	: TCommands<FScenarioCommands>(TEXT("Scenario"), LOCTEXT("Commands", "Scenario"), NAME_None, FScenarioStyle::GetStyleSetName())
 {

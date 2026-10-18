@@ -4,6 +4,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "IContentBrowserSingleton.h"
+#include "ScenarioEditorModule.h"
 #include "ScenarioCreateModel.h"
 #include "ScenarioLanes.h"
 #include "ScenarioSchema.h"
@@ -14,9 +15,11 @@
 #include "SScenarioModelPicker.h"
 #include "SScenarioPages.h"
 #include "Styling/AppStyle.h"
+#include "Widgets/Images/SThrobber.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SHyperlink.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -143,6 +146,40 @@ void SScenarioCreatePage::Construct(const FArguments& InArgs)
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				// Where the eye is after a click: the request was sent, and how it is going.
+				SNew(SHorizontalBox)
+				.Visibility_Lambda([M]() { return M->GetSentJobText().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				[
+					SNew(SThrobber)
+					.NumPieces(3)
+					.Visibility_Lambda([M]() { return M->IsSentJobRunning() ? EVisibility::Visible : EVisibility::Collapsed; })
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([M]() { return M->GetSentJobText(); })
+					.AutoWrapText(true)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SHyperlink)
+					.Text(LOCTEXT("SentJobs", "Jobs"))
+					.OnNavigate_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); })
+				]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
 			.Padding(0.0f, 6.0f, 0.0f, 0.0f)
 			[
 				SNew(STextBlock)
@@ -263,18 +300,20 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModelCard()
 			.VAlign(VAlign_Center)
 			.Padding(0.0f, 0.0f, 10.0f, 0.0f)
 			[
+				// The provider name ("OpenAI", "ByteDance", "Trained") sizes the badge, so it is never cut.
 				SNew(SBox)
-				.WidthOverride(40.0f)
+				.MinDesiredWidth(40.0f)
 				.HeightOverride(40.0f)
 				[
 					SNew(SBorder)
 					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+					.Padding(FMargin(8.0f, 0.0f))
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
 						.Text_Lambda([M]() { return FText::FromString(M->GetModelBadge()); })
-						.Font(FScenarioStyle::Font(10, true))
+						.Font(FScenarioStyle::Font(9, true))
 					]
 				]
 			]

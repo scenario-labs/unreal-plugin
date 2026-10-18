@@ -21,6 +21,8 @@ public:
 	static FSlateColor Warning();
 	static FSlateColor Error();
 	static FSlateColor Success();
+	/** The editor's primary blue, for live state such as running jobs. */
+	static FSlateColor Accent();
 
 private:
 	static TSharedPtr<FSlateStyleSet> Instance;

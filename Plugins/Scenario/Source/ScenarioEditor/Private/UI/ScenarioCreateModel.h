@@ -136,6 +136,10 @@ public:
 	const FScenarioError& GetPriceError() const { return PriceError; }
 	const FString& GetLastError() const { return LastError; }
 	const FString& GetLastLocalId() const { return LastLocalId; }
+	/** True while the job this form sent last is queued or running at Scenario. */
+	bool IsSentJobRunning() const;
+	/** One line on the job this form sent last ("Sent. Generating with X: 42%"), empty when there is none. */
+	FText GetSentJobText() const;
 	/** The quote for the form as it is now, or null. */
 	const FScenarioQuote* CurrentQuote() const;
 
