@@ -118,6 +118,10 @@ bool FScenarioSchemaWorkflowTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("label from the workflow"), Text && Text->Label == TEXT("Character & Scene Description"));
 	TestTrue(TEXT("required {always:false}"), Text && !Text->bRequired);
 	TestTrue(TEXT("required {always:true}"), Image && Image->bRequired && Image->Type == EScenarioFieldType::File);
+	if (!TestTrue(TEXT("workflow fields"), Fields.Num() > 0))
+	{
+		return false;
+	}
 	TestEqual(TEXT("prompt first"), Fields[0].Name, FString(TEXT("text1")));
 	const TSharedRef<FJsonObject> Values = ScenarioSchema::InitialValues(Fields);
 	TestTrue(TEXT("missing image blocks"), ScenarioSchema::Validate(Fields, Values).Num() == 1);
@@ -181,7 +185,8 @@ bool FScenarioCatalogRulesTest::RunTest(const FString& Parameters)
 
 	FScenarioCatalogQuery Pinned;
 	Pinned.PinnedIds = { TEXT("model_bytedance-seedance-1-pro-fast") };
-	TestEqual(TEXT("a pinned legacy model stays visible and first"), Catalog->Query(Pinned)[0].Id(), FString(TEXT("model_bytedance-seedance-1-pro-fast")));
+	const TArray<FScenarioCatalogModel> PinnedFound = Catalog->Query(Pinned);
+	TestTrue(TEXT("a pinned legacy model stays visible and first"), PinnedFound.Num() > 0 && PinnedFound[0].Id() == TEXT("model_bytedance-seedance-1-pro-fast"));
 
 	FScenarioCatalogQuery Search;
 	Search.Text = TEXT("flare");

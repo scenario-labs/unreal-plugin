@@ -80,6 +80,8 @@ struct SCENARIOCORE_API FScenarioSessionConfig
 	bool bAutoDownload = true;
 	/** Registers an FTSTicker for polling. Tests call Poll() themselves. */
 	bool bUseTicker = true;
+	/** With an injected backend: whether paid calls are refused. Unset: SCENARIO_NO_SPEND decides. */
+	TOptional<bool> SpendingDisabled;
 };
 
 DECLARE_MULTICAST_DELEGATE(FOnScenarioSessionChanged);

@@ -714,7 +714,11 @@ const FScenarioQuote* FScenarioSession::QuoteFor(const FScenarioRunRequest& Requ
 
 bool FScenarioSession::IsSpendingDisabled() const
 {
-	return Client.IsValid() ? Client->bSpendingDisabled : FPlatformMisc::GetEnvironmentVariable(TEXT("SCENARIO_NO_SPEND")) == TEXT("1");
+	if (Client.IsValid())
+	{
+		return Client->bSpendingDisabled;
+	}
+	return Config.SpendingDisabled.IsSet() ? Config.SpendingDisabled.GetValue() : FPlatformMisc::GetEnvironmentVariable(TEXT("SCENARIO_NO_SPEND")) == TEXT("1");
 }
 
 bool FScenarioSession::IsEstimateAlarmRaised() const

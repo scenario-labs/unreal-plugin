@@ -121,7 +121,7 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	FString Saved;
 	TestTrue(TEXT("refresh token stored"), Store->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_1"));
 	TestTrue(TEXT("client stored"), Store->Read(TEXT("oauth-client"), Saved) && Saved.Contains(TEXT("client_test")));
-	TestTrue(TEXT("device grant used"), Server->TokenBodies[0].Contains(TEXT("device_code")));
+	TestTrue(TEXT("device grant used"), Server->TokenBodies.Num() > 0 && Server->TokenBodies[0].Contains(TEXT("device_code")));
 
 	// Next session: restore, then refresh on demand.
 	Server->TokenCalls = 0;

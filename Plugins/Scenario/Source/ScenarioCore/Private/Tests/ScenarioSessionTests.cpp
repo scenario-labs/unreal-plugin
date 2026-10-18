@@ -47,6 +47,8 @@ namespace ScenarioSessionTests
 			Config.Store = MakeShared<FScenarioMemoryCredentialStore>();
 			Config.bUseTicker = false;
 			Config.bAutoDownload = false;
+			// The fake backend never reaches Scenario, so SCENARIO_NO_SPEND from tools/test.sh does not apply.
+			Config.SpendingDisabled = false;
 			Session = MakeShared<FScenarioSession>(Config);
 			Session->Clock = [this]() { return Time; };
 		}
@@ -188,6 +190,10 @@ bool FScenarioSessionAgentTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("exact quote and cost"), Rig.Submit(Run, Quote.Id, TEXT("11")).bOk);
 	TestEqual(TEXT("one paid call"), Rig.PaidCalls(), 1);
+	if (!TestEqual(TEXT("one row"), Rig.Session->Ledger().Rows().Num(), 1))
+	{
+		return false;
+	}
 	const FScenarioJobRow& Row = Rig.Session->Ledger().Rows()[0];
 	TestEqual(TEXT("source recorded"), Row.Source, FString(TEXT("agent")));
 	return true;

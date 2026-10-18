@@ -86,7 +86,10 @@ bool FScenarioLedgerIntentTest::RunTest(const FString& Parameters)
 	{
 		FScenarioLedger Ledger(Path);
 		Ledger.Load();
-		TestEqual(TEXT("one row"), Ledger.Rows().Num(), 1);
+		if (!TestEqual(TEXT("one row"), Ledger.Rows().Num(), 1))
+		{
+			return false;
+		}
 		const FScenarioJobRow& Row = Ledger.Rows()[0];
 		TestEqual(TEXT("submitting becomes unknown on load"), Row.State, EScenarioJobState::Unknown);
 		TestTrue(TEXT("still blocks"), Ledger.Blocks(TEXT("fp1")));

@@ -122,6 +122,10 @@ bool FScenarioMcpSessionExpiryTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("two initializes"), Rig.Count(TEXT("initialize")), 2);
 	TestEqual(TEXT("the paid call reached the server twice, once refused"), Calls, 2);
 	const TArray<FScenarioFakeRequest> ToolCalls = Rig.Transport->ToolCalls();
+	if (!TestEqual(TEXT("two tool calls"), ToolCalls.Num(), 2))
+	{
+		return false;
+	}
 	TestEqual(TEXT("same JSON-RPC id on resend"), ScenarioJson::GetNumber(ToolCalls[0].BodyJson(), TEXT("id")), ScenarioJson::GetNumber(ToolCalls[1].BodyJson(), TEXT("id")));
 	return true;
 }
@@ -276,6 +280,10 @@ bool FScenarioMcpWorkspaceArgsTest::RunTest(const FString& Parameters)
 		Rig.Call(Tool);
 	}
 	const TArray<FScenarioFakeRequest> Calls = Rig.Transport->ToolCalls();
+	if (!TestEqual(TEXT("three tool calls"), Calls.Num(), 3))
+	{
+		return false;
+	}
 	TestFalse(TEXT("teams_list has no team"), Calls[0].ToolArguments()->HasField(TEXT("team_id")));
 	TestEqual(TEXT("projects_list has the team"), ScenarioJson::GetString(Calls[1].ToolArguments(), TEXT("team_id")), FString(TEXT("team_a")));
 	TestFalse(TEXT("projects_list has no project"), Calls[1].ToolArguments()->HasField(TEXT("project_id")));
@@ -285,7 +293,8 @@ bool FScenarioMcpWorkspaceArgsTest::RunTest(const FString& Parameters)
 	Key.Client->SetWorkspace(TEXT("team_a"), TEXT("proj_b"));
 	Key.Server->On(TEXT("models_list"), [](const TSharedPtr<FJsonObject>&) { return FString(TEXT("{\"models\":[]}")); });
 	Key.Call(TEXT("models_list"));
-	TestFalse(TEXT("API keys send no workspace"), Key.Transport->ToolCalls()[0].ToolArguments()->HasField(TEXT("project_id")));
+	const TArray<FScenarioFakeRequest> KeyCalls = Key.Transport->ToolCalls();
+	TestTrue(TEXT("API keys send no workspace"), KeyCalls.Num() == 1 && !KeyCalls[0].ToolArguments()->HasField(TEXT("project_id")));
 	return true;
 }
 
