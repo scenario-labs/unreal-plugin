@@ -1,0 +1,41 @@
+{
+ "workflow": {
+  "id": "wflow_3AojVY2vQeJsdkLUammhbJNq",
+  "name": "Reference to Character",
+  "shortDescription": "Create new characters",
+  "status": "ready",
+  "privacy": "public",
+  "thumbnail": {
+   "url": "https://cdn.cloud.scenario.com/assets/example.png"
+  },
+  "outputAssetKinds": [],
+  "inputs_definition": [
+   {
+    "description": "",
+    "kind": "image",
+    "label": "Style Reference",
+    "name": "image1",
+    "costImpact": false,
+    "required": {
+     "always": true
+    },
+    "type": "file"
+   },
+   {
+    "placeholder": "Write your text here",
+    "description": "",
+    "default": "A rugged Wild West thief: a wiry outlaw with sharp, cunning eyes and a weathered, sun-beaten face shadowed by a wide-brimmed cowboy hat. He wears a dusty bandana pulled up over his nose, a worn leather duster coat, fingerless gloves, and a gun belt slung low with a holstered revolver. His clothes are patched and trail-worn, boots caked in desert dust. He carries a small bulging sack of stolen loot slung over one shoulder, standing tense and alert in a dusty frontier town at dusk, ready to bolt at the first sign of trouble.",
+    "label": "Character & Scene Description",
+    "minLength": 0,
+    "name": "text1",
+    "costImpact": false,
+    "prompt": true,
+    "required": {
+     "always": false
+    },
+    "type": "string",
+    "promptSpark": false
+   }
+  ]
+ }
+}

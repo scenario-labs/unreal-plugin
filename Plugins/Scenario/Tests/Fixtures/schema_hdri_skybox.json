@@ -1,0 +1,49 @@
+{
+ "model_id": "model_hdri-skybox",
+ "name": "HDRi Skybox",
+ "capabilities": [
+  "img2img"
+ ],
+ "parameters": [
+  {
+   "name": "image",
+   "type": "file",
+   "description": "The standard (low-dynamic-range) skybox image you want to convert into an HDRi environment.",
+   "required": true,
+   "kind": "image",
+   "cost_impact": true
+  },
+  {
+   "name": "outputExr",
+   "type": "boolean",
+   "description": "Saves the result as an OpenEXR file (.exr) - a high-dynamic-range format widely used in 3D and VFX software.",
+   "default": true,
+   "cost_impact": true,
+   "required": false
+  },
+  {
+   "name": "outputHdr",
+   "type": "boolean",
+   "description": "Saves the result as a Radiance HDR file (.hdr) - a common high-dynamic-range format for environment lighting.",
+   "default": true,
+   "cost_impact": true,
+   "required": false
+  },
+  {
+   "name": "conversionCubemapCross",
+   "type": "boolean",
+   "description": "Also outputs a cubemap in \"cross\" layout: the six faces of the environment unfolded into a single cross-shaped image. Applies to the input and all generated outputs.",
+   "default": false,
+   "cost_impact": true,
+   "required": false
+  },
+  {
+   "name": "conversionCubemapFaces",
+   "type": "boolean",
+   "description": "Also outputs a cubemap as six separate square face images. Applies to the input and all generated outputs.",
+   "default": false,
+   "cost_impact": true,
+   "required": false
+  }
+ ]
+}

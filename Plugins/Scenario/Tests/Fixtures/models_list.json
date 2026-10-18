@@ -1,0 +1,202 @@
+{
+ "models": [
+  {
+   "id": "model_hunyuan-3d-v2-1",
+   "name": "Hunyuan 3D 2.1",
+   "shortDescription": "Hunyuan 3D 2.1 by Tencent converts a single image into a textured 3D mesh with production-ready PBR materials, precise geometry, and adjustable face count.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "img23d"
+   ],
+   "tags": [
+    "Deprecated",
+    "Hunyuan",
+    "Image to 3D",
+    "PBR",
+    "Tencent",
+    "deprecated:model_hunyuan-3d-pro-3-1-i23d",
+    "sc:legacy",
+    "sc:third-party"
+   ],
+   "status": "trained",
+   "createdAt": "2025-06-27T10:21:10.139Z",
+   "complianceMetadata": {
+    "modelProvider": "Tencent"
+   }
+  },
+  {
+   "id": "model_elevenlabs-sound-effects-v2",
+   "name": "ElevenLabs Sound Effects 2",
+   "shortDescription": "ElevenLabs Sound Effects 2 by ElevenLabs generates custom SFX from text descriptions, with clips up to 30 seconds, seamless looping, and adjustable guidance.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "txt2audio"
+   ],
+   "tags": [
+    "Audio",
+    "ElevenLabs",
+    "SFX",
+    "sc:third-party",
+    "sound-effects"
+   ],
+   "status": "trained",
+   "createdAt": "2025-09-04T15:15:54.541Z",
+   "complianceMetadata": {
+    "modelProvider": "ElevenLabs"
+   }
+  },
+  {
+   "id": "model_photoroom-background-removal",
+   "name": "Photoroom Background Removal",
+   "shortDescription": "Photoroom Background Removal by Photoroom. Clean, precise subject cutouts from any photo, with optional shadow effects and HD mode for high-resolution images.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "img2img"
+   ],
+   "tags": [
+    "Image",
+    "Photoroom",
+    "remove-background",
+    "sc:third-party",
+    "sc:tool",
+    "tool",
+    "tools"
+   ],
+   "status": "trained",
+   "createdAt": "2025-12-18T12:33:49.959Z",
+   "complianceMetadata": {
+    "modelProvider": "Photoroom"
+   }
+  },
+  {
+   "id": "model_bytedance-seedance-1-pro-fast",
+   "name": "Seedance 1 (Pro Fast)",
+   "shortDescription": "Seedance 1 (Pro Fast) by ByteDance generates 1080p cinematic video from text or a first-frame image, at 3x the speed of the standard Pro model.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "txt2video",
+    "img2video"
+   ],
+   "tags": [
+    "Bytedance",
+    "Deprecated",
+    "First Frame",
+    "I2V",
+    "T2V",
+    "Video",
+    "deprecated:model_bytedance-seedance-2-5",
+    "sc:legacy",
+    "sc:third-party"
+   ],
+   "status": "trained",
+   "createdAt": "2025-10-24T13:16:14.820Z",
+   "complianceMetadata": {
+    "modelProvider": "Bytedance"
+   }
+  },
+  {
+   "id": "model_meshy-7-1-txt23d",
+   "name": "Meshy 7.1 - Text-to-3D",
+   "shortDescription": "Generate a fully textured 3D model from a text prompt alone. New geometry resolution tiers (standard, 2K, 4K) add finer surface detail than Meshy 7, with 2K-8K PBR texturing.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "txt23d"
+   ],
+   "tags": [
+    "3d",
+    "Meshy",
+    "Meshy 7.1",
+    "PBR",
+    "game-ready",
+    "sc:third-party",
+    "text-to-3d"
+   ],
+   "status": "trained",
+   "createdAt": "2026-09-22T08:28:42.547Z",
+   "complianceMetadata": {
+    "modelProvider": "Meshy"
+   }
+  },
+  {
+   "id": "model_openai-gpt-image-2-5-flare",
+   "name": "GPT Image 2.5 Flare",
+   "shortDescription": "OpenAI GPT Image 2.5 Flare: fast, high-quality text-to-image generation and editing for everyday content, from social posts to product shots and quick creative concepts.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "txt2img",
+    "img2img"
+   ],
+   "tags": [
+    "Character Design",
+    "GPT-Image",
+    "Image to Image",
+    "OpenAI",
+    "Product Photography",
+    "Text Rendering",
+    "Text to Image",
+    "editing",
+    "sc:featured",
+    "sc:third-party"
+   ],
+   "status": "trained",
+   "createdAt": "2026-09-09T10:01:30.954Z",
+   "complianceMetadata": {
+    "modelProvider": "OpenAI"
+   }
+  },
+  {
+   "id": "model_YQrES2iPys22nYwh3YhVfMh8",
+   "name": "Neo3D Realism ",
+   "shortDescription": "A Flux.1 LoRA for 3D-style renders. Generates detailed figurines, props, game collectibles, and sculptures with realistic textures and lighting.",
+   "type": "flux.1-lora",
+   "privacy": "public",
+   "capabilities": [
+    "txt2img",
+    "img2img",
+    "img2img_texture",
+    "txt2img_texture",
+    "inpaint",
+    "outpaint"
+   ],
+   "tags": [
+    "3D",
+    "Flux.1 LoRA",
+    "sc:scenario"
+   ],
+   "status": "trained",
+   "createdAt": "2025-02-05T07:02:56.495Z",
+   "complianceMetadata": {
+    "modelProvider": "Other"
+   }
+  },
+  {
+   "id": "model_elevenlabs-tts-v3",
+   "name": "ElevenLabs 3 ",
+   "shortDescription": "ElevenLabs 3 (Alpha) is an expressive text-to-speech model for 70+ languages, using inline tags like [whispers] or [excited] to steer emotion, emphasis, and delivery.",
+   "type": "custom",
+   "privacy": "public",
+   "capabilities": [
+    "txt2audio"
+   ],
+   "tags": [
+    "Audio",
+    "ElevenLabs",
+    "TTS",
+    "Text to Speech",
+    "sc:third-party"
+   ],
+   "status": "trained",
+   "createdAt": "2025-09-09T10:03:19.179Z",
+   "complianceMetadata": {
+    "modelProvider": "ElevenLabs"
+   }
+  }
+ ],
+ "nextPaginationToken": null
+}

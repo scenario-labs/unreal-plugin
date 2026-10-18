@@ -1,0 +1,55 @@
+{
+ "model_id": "model_sonilo-v1-1-text-to-sound-effects",
+ "name": "Sonilo V1.1 Text to SFX",
+ "capabilities": [
+  "txt2audio"
+ ],
+ "parameters": [
+  {
+   "name": "prompt",
+   "type": "string",
+   "description": "Describe the sound you want to create \u2014 for example: 'Deep rolling thunder rumbling across the sky with heavy rain pouring on the ground'.",
+   "required": true,
+   "max_length": 90000,
+   "prompt_spark": true,
+   "prompt": true
+  },
+  {
+   "name": "duration",
+   "type": "number",
+   "description": "How long the audio should be, in seconds. Longer clips cost more.",
+   "default": 8,
+   "min": 1,
+   "max": 180,
+   "step": 1,
+   "cost_impact": true,
+   "required": false
+  },
+  {
+   "name": "audioFormat",
+   "type": "string",
+   "description": "Format of the returned audio file.",
+   "default": "aac",
+   "allowed_values": [
+    "aac",
+    "mp3",
+    "wav",
+    "flac"
+   ],
+   "required": false
+  }
+ ],
+ "prompting": {
+  "prompt_spark_fields": [
+   "prompt"
+  ],
+  "next_step": {
+   "tool": "prompt_spark",
+   "optional": true,
+   "instructions": "Optional: prompt_spark rewrites a short or underspecified prompt into an on-model one \u2014 pass your draft or the user intent as prompt (model_id is required), then use its recommended_call.parameters as the model_run parameters, as-is or edited. Skip it when the user wants their exact prompt used verbatim.",
+   "suggested_arguments": {
+    "model_id": "model_sonilo-v1-1-text-to-sound-effects"
+   }
+  }
+ }
+}

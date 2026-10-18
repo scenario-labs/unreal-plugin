@@ -1,0 +1,59 @@
+{
+ "model_id": "model_scenario-claude-opus-5-5-3d",
+ "name": "Claude Opus 5.5 3D",
+ "capabilities": [
+  "img23d",
+  "3d23d"
+ ],
+ "parameters": [
+  {
+   "name": "images",
+   "type": "file_array",
+   "description": "1 to 8 photos of the object to build. Leave empty when editing a 3D model.",
+   "max_length": 8,
+   "kind": "image",
+   "required": false,
+   "array": true,
+   "array_note": "Pass an array, even for a single value \u2014 a bare value is ignored."
+  },
+  {
+   "name": "sceneFile",
+   "type": "file",
+   "description": "Optional. Add any 3D model to edit it instead of building a new one. It comes back in the same format.",
+   "kind": "3d",
+   "cost_impact": true,
+   "required": false
+  },
+  {
+   "name": "prompt",
+   "type": "string",
+   "description": "Building: name the object, like \"a tugboat\". Editing: describe the change, like \"open the lid\".",
+   "max_length": 2000,
+   "prompt": true,
+   "required": false
+  },
+  {
+   "name": "buildEffort",
+   "type": "string",
+   "description": "Standard for simple objects or small edits like a recolor. High or Maximum for detailed objects, or edits that add or reshape parts. When editing, match it to the change, not the model.",
+   "default": "high",
+   "allowed_values": [
+    "standard",
+    "high",
+    "maximum"
+   ],
+   "cost_impact": true,
+   "required": false
+  },
+  {
+   "name": "faceBudget",
+   "type": "number",
+   "description": "Max triangles for a new model: 10k\u201350k for games, 250k for fine detail. Not used when editing.",
+   "default": 250000,
+   "min": 1000,
+   "max": 2000000,
+   "step": 10000,
+   "required": false
+  }
+ ]
+}
