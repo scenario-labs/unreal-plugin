@@ -33,10 +33,10 @@ def _require_sequencer():
 
 
 def _subject(focus):
-    """Center (cm), footprint radius and height of what the film is about."""
+    """Center (cm), footprint radius, height and actor (or None) of what the film is about."""
     if isinstance(focus, (list, tuple)) and len(focus) >= 2:
         z = float(focus[2]) * 100.0 if len(focus) > 2 else 150.0
-        return (float(focus[0]) * 100.0, float(focus[1]) * 100.0, z), 300.0, 300.0
+        return (float(focus[0]) * 100.0, float(focus[1]) * 100.0, z), 300.0, 300.0, None
     candidates = []
     if isinstance(focus, str) and focus:
         candidates = [a for a in common.actors().get_all_level_actors() if a.get_actor_label() == focus]
@@ -45,8 +45,22 @@ def _subject(focus):
     candidates = candidates or common.tagged("ScenarioKit.Landmark") or common.tagged("ScenarioKit.Game")
     if candidates:
         origin, extent = candidates[0].get_actor_bounds(False)
-        return (origin.x, origin.y, origin.z), max(extent.x, extent.y, 200.0), max(extent.z * 2.0, 200.0)
-    return (0.0, 0.0, 150.0), 300.0, 300.0
+        return (origin.x, origin.y, origin.z), max(extent.x, extent.y, 200.0), max(extent.z * 2.0, 200.0), candidates[0]
+    return (0.0, 0.0, 150.0), 300.0, 300.0, None
+
+
+def _clear_angle(preferred, camera_at, target, ignore, samples=(0.0,)):
+    """The angle nearest preferred from which the camera sees target at every sample point of its move.
+    camera_at(angle, t) gives the camera position; foliage or a building in the way rules an angle out."""
+    best, best_clear = preferred, -1
+    for step in range(13):
+        angle = preferred + (step + 1) // 2 * 0.35 * (1 if step % 2 else -1)
+        clear = sum(1 for t in samples if common.trace(camera_at(angle, t), target, ignore) is None)
+        if clear == len(samples):
+            return angle
+        if clear > best_clear:
+            best, best_clear = angle, clear
+    return best
 
 
 def _half_size():
@@ -65,8 +79,9 @@ def _ease(t):
     return 0.5 * t + 0.5 * (t * t * (3.0 - 2.0 * t))
 
 
-def _path(kind, subject, radius, height, half, front, rng):
-    """Returns f(t) -> (camera position, look-at point) for t in 0..1, in centimeters."""
+def _path(kind, subject, radius, height, half, front, rng, actor=None, focused=False):
+    """Returns f(t) -> (camera position, look-at point) for t in 0..1, in centimeters.
+    focused: the shot names its subject, so a detail shot frames it instead of a random prop."""
     sx, sy, sz = subject
     ground = sz - height * 0.5
     eye = (sx, sy, ground + height * 0.55)
@@ -80,7 +95,11 @@ def _path(kind, subject, radius, height, half, front, rng):
     if kind == "crane_down":
         return lambda t: (around(front + 0.45, radius * (3.6 - 1.4 * t), ground + height * (2.6 - 2.0 * t) + 160.0), eye)
     if kind == "orbit":
-        return lambda t: (around(front + 1.0 + 1.7 * t, max(radius * 2.4, 900.0), ground + height * 0.45 + 150.0), eye)
+        # Far enough for a 35 mm lens to hold the whole subject; start where the arc sees it most.
+        d, z = max(radius * 3.6, 900.0), ground + height * 0.45 + 150.0
+        start = _clear_angle(front + 1.0, lambda a, t: around(a + 1.7 * t, d, z), eye, [actor] if actor else [],
+                             samples=(0.0, 0.25, 0.5, 0.75, 1.0))
+        return lambda t: (around(start + 1.7 * t, d, z), eye)
     if kind == "walk":
         start = common.first_of(unreal.PlayerStart)
         if start:
@@ -94,15 +113,27 @@ def _path(kind, subject, radius, height, half, front, rng):
         far = min(max(dist, near + 1500.0), near + 4000.0)
         return lambda t: (around(angle + 0.05 * t, far + (near - far) * t, ground + 165.0), (sx, sy, ground + height * 0.5))
     if kind == "detail":
-        props = common.tagged("ScenarioKit.Prop") or common.tagged("ScenarioKit.Game")
+        props = [] if focused else (common.tagged("ScenarioKit.Prop") or common.tagged("ScenarioKit.Game"))
+        if focused and actor is not None:
+            props = [actor]
         if props:
             prop = rng.choice(props)
             origin, extent = prop.get_actor_bounds(False)
             r = max(extent.x, extent.y, 80.0)
-            a = rng.uniform(0, 2 * math.pi)
             target = (origin.x, origin.y, origin.z)
-            return lambda t: ((origin.x + math.cos(a) * r * (3.4 - 1.2 * t), origin.y + math.sin(a) * r * (3.4 - 1.2 * t),
-                               origin.z + extent.z * 0.4 + 40.0), target)
+            z = origin.z + extent.z * 0.4 + 40.0
+
+            def camera_at(angle, t):
+                return (origin.x + math.cos(angle) * r * (3.4 - 1.2 * t), origin.y + math.sin(angle) * r * (3.4 - 1.2 * t), z)
+
+            # Seen from the side people arrive from when it can be; never through bamboo or a wall.
+            facing = rng.uniform(0, 2 * math.pi)
+            if focused:
+                start = common.first_of(unreal.PlayerStart)
+                p = start.get_actor_location() if start else None
+                facing = math.atan2(p.y - origin.y, p.x - origin.x) if p else front
+            a = _clear_angle(facing, camera_at, target, [prop], samples=(0.0, 0.5, 1.0))
+            return lambda t: (camera_at(a, t), target)
         return lambda t: (around(front - 0.3, radius * (1.8 - 0.4 * t), ground + 120.0), (sx, sy, ground + 120.0))
     if kind == "rise":
         return lambda t: (around(front + 0.15 * t, radius * (1.8 + 2.6 * t), ground + height * (0.4 + 2.2 * t)), eye)
@@ -134,7 +165,7 @@ def make_film(name, duration_s=24.0, shots=None, music=None, music_volume=0.9, s
     _require_sequencer()
     rng = random.Random(seed)
     duration_s = max(6.0, min(float(duration_s), 120.0))
-    subject, radius, height = _subject(focus)
+    subject, radius, height, subject_actor = _subject(focus)
     half = _half_size()
     start = common.first_of(unreal.PlayerStart)
     front = math.atan2(start.get_actor_location().y - subject[1], start.get_actor_location().x - subject[0]) if start else -math.pi / 2
@@ -166,8 +197,8 @@ def make_film(name, duration_s=24.0, shots=None, music=None, music_volume=0.9, s
     shots_report = []
     for index, (kind, length, shot_focus) in enumerate(plan):
         frames = int(round(length * fps)) if index < len(plan) - 1 else end_frame - frame
-        s_subject, s_radius, s_height = _subject(shot_focus) if shot_focus else (subject, radius, height)
-        move = _path(kind, s_subject, s_radius, s_height, half, front, rng)
+        s_subject, s_radius, s_height, s_actor = _subject(shot_focus) if shot_focus else (subject, radius, height, subject_actor)
+        move = _path(kind, s_subject, s_radius, s_height, half, front, rng, s_actor, bool(shot_focus))
         pos0, look0 = move(0.0)
         pitch0, yaw0 = common.look_at(pos0, look0)
         camera = common.spawn(unreal.CineCameraActor, pos0, yaw0, label=f"{final} {index + 1} {kind}",
