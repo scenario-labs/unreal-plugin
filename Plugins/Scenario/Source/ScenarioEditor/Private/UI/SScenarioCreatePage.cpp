@@ -197,6 +197,12 @@ void SScenarioCreatePage::Construct(const FArguments& InArgs)
 		]
 	];
 	RefreshTray();
+	// The job list does not announce every new row: a sent job joins the tray within half a second.
+	RegisterActiveTimer(0.5f, FWidgetActiveTimerDelegate::CreateLambda([this](double, float)
+	{
+		RefreshTray();
+		return EActiveTimerReturnType::Continue;
+	}));
 }
 
 SScenarioCreatePage::~SScenarioCreatePage()
