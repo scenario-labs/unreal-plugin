@@ -1,5 +1,7 @@
 # Scenario for Unreal Engine
 
+![A shrine level built in Unreal Engine 5.8 by an agent: Scenario 3D models, materials, sky and lighting](docs/images/hero-shrine.jpg)
+
 Every Scenario model inside the Unreal Editor: images, video, 3D, PBR materials, audio and skies. Each request is priced before you send it, and each result lands as a native Unreal asset, placed in your level in one undo step. For games, virtual production, film, architecture and previs.
 
 People use the Studio tab and a quick composer in the viewport. Agents (Claude Code, Codex, Cursor, Claude Desktop) use the same features through the plugin's local Scenario MCP server.
@@ -13,6 +15,8 @@ People use the Studio tab and a quick composer in the viewport. Agents (Claude C
 ## The Studio
 
 The **Scenario** button in the level editor toolbar opens the Studio, a tab you can dock anywhere. Six pages sit on its left rail.
+
+![The six Studio pages in turn: Create, Library, Jobs, Workflows, Agent and Settings](docs/images/studio-tour.gif)
 
 | | | |
 | --- | --- | --- |
@@ -29,6 +33,13 @@ Agents reach the plugin through its local Scenario MCP server. Besides generatin
 - `make_game`: pickups, a goal, a timer and music on the open level.
 - `make_film` and `render_film`: a Level Sequence with cine cameras around the landmark, rendered with Movie Render Queue.
 - `play_level` and `kit_status`: play the result in the editor and check what was built.
+
+The three clips below come from one level, rendered in Unreal 5.8 with Movie Render Queue at 720p. An agent built the level from one prompt: Scenario made the shrine, torii, lantern, bamboo and rock models, the ground and path materials, the sky and the ambience; `build_world` and `dress_world` laid them out, and a few Python steps placed the torii and lit the lanterns. The game and the film were then made with the kit tools through the local Scenario MCP, with music from Scenario. Click a preview for the video.
+
+| | | |
+| --- | --- | --- |
+| [![Walking up the path through the torii to the shrine](docs/images/world-flythrough.gif)](docs/media/world-flythrough.mp4) | [![Glowing lantern pickups around the shrine](docs/images/game-lantern-hunt.gif)](docs/media/game-lantern-hunt.mp4) | [![Cuts between the shrine, a lantern and the torii](docs/images/film-misty-shrine.gif)](docs/media/film-misty-shrine.mp4) |
+| **World.** A walk up the path and an orbit around the shrine (`make_film`, `render_film`). | **Game.** `make_game` turned the level into Lantern Hunt: eight lantern pickups, a goal at the shrine, a timer and Scenario music. Play it with `play_level`. | **Film.** Six shots with cuts, fades and a Scenario score (`make_film`, `render_film`). |
 
 The [Scenario MCP guide](docs/MCP_GUIDE.md) lists every tool and the permissions they need.
 
