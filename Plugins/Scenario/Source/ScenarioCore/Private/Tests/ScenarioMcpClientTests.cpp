@@ -295,6 +295,23 @@ bool FScenarioMcpWorkspaceArgsTest::RunTest(const FString& Parameters)
 	Key.Call(TEXT("models_list"));
 	const TArray<FScenarioFakeRequest> KeyCalls = Key.Transport->ToolCalls();
 	TestTrue(TEXT("API keys send no workspace"), KeyCalls.Num() == 1 && !KeyCalls[0].ToolArguments()->HasField(TEXT("project_id")));
+
+	// A catalog read carries the workspace inside the parameters of the tool it runs.
+	FRig Catalog(true);
+	Catalog.Client->SetWorkspace(TEXT("team_a"), TEXT("proj_b"));
+	Catalog.Server->On(TEXT("scenario_tool_execute_read"), [](const TSharedPtr<FJsonObject>&) { return FString(TEXT("{\"assets\":[]}")); });
+	Catalog.Call(TEXT("scenario_tool_execute_read"), TEXT("{\"name\":\"assets_list\",\"parameters\":{\"limit\":5}}"));
+	const TArray<FScenarioFakeRequest> CatalogCalls = Catalog.Transport->ToolCalls();
+	if (TestEqual(TEXT("one catalog read"), CatalogCalls.Num(), 1))
+	{
+		const TSharedPtr<FJsonObject> Inner = ScenarioJson::GetObject(CatalogCalls[0].ToolArguments(), TEXT("parameters"));
+		TestFalse(TEXT("no workspace at the top"), CatalogCalls[0].ToolArguments()->HasField(TEXT("project_id")));
+		TestEqual(TEXT("team in parameters"), ScenarioJson::GetString(Inner, TEXT("team_id")), FString(TEXT("team_a")));
+		TestEqual(TEXT("project in parameters"), ScenarioJson::GetString(Inner, TEXT("project_id")), FString(TEXT("proj_b")));
+		TestEqual(TEXT("parameters kept"), ScenarioJson::GetNumber(Inner, TEXT("limit")), 5.0);
+	}
+	TestTrue(TEXT("a catalog read is retried"), FScenarioMcpClient::IsRetryable(TEXT("scenario_tool_execute_read"), MakeShared<FJsonObject>()));
+	TestFalse(TEXT("a catalog read never spends"), FScenarioMcpClient::IsSubmission(TEXT("scenario_tool_execute_read"), MakeShared<FJsonObject>()));
 	return true;
 }
 
@@ -352,6 +369,38 @@ bool FScenarioApiEstimateTest::RunTest(const FString& Parameters)
 	});
 	TestTrue(TEXT("api estimate"), bPriced);
 	TestTrue(TEXT("estimate sends dry_run"), ScenarioJson::GetBool(Backend->Calls.Last().Value, TEXT("dry_run")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioApiListAssetsTest, "Scenario.Core.Api.ListAssets", SCENARIO_TEST_FLAGS)
+bool FScenarioApiListAssetsTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FScenarioFakeBackend> Backend = MakeShared<FScenarioFakeBackend>();
+	Backend->OnJson(TEXT("scenario_tool_execute_read"), TEXT("{\"assets\":[")
+		TEXT("{\"id\":\"asset_mesh\",\"kind\":\"3d\",\"modelId\":\"model_x\",\"prompt\":\"asset_text\",\"url\":\"https://cdn.example.test/m\"},")
+		TEXT("{\"id\":\"asset_image\",\"kind\":\"image\",\"prompt\":\"a mossy arch\"}")
+		TEXT("],\"nextPaginationToken\":\"next_1\"}"));
+	FScenarioApi Api(Backend);
+	FScenarioAssetPage Page;
+	bool bListed = false;
+	Api.ListAssets(TEXT("3d"), 20, TEXT("page_0"), [&Page, &bListed](const TScenarioResult<FScenarioAssetPage>& Result)
+	{
+		bListed = Result.bOk;
+		Page = Result.Value;
+	});
+	if (!TestTrue(TEXT("listed"), bListed) || !TestEqual(TEXT("two assets"), Page.Assets.Num(), 2))
+	{
+		return false;
+	}
+	const TSharedPtr<FJsonObject> Sent = Backend->Calls.Last().Value;
+	const TSharedPtr<FJsonObject> Inner = ScenarioJson::GetObject(Sent, TEXT("parameters"));
+	TestEqual(TEXT("runs assets_list"), ScenarioJson::GetString(Sent, TEXT("name")), FString(TEXT("assets_list")));
+	TestEqual(TEXT("passes the page token"), ScenarioJson::GetString(Inner, TEXT("page_token")), FString(TEXT("page_0")));
+	TestEqual(TEXT("filters 3D types"), ScenarioJson::GetArray(ScenarioJson::GetObject(Inner, TEXT("filters")), TEXT("types")).Num(), 4);
+	TestEqual(TEXT("next token"), Page.NextPageToken, FString(TEXT("next_1")));
+	TestEqual(TEXT("flattened model id"), Page.Assets[0].ModelId, FString(TEXT("model_x")));
+	TestTrue(TEXT("a prompt kept as an asset id is no title"), Page.Assets[0].Prompt.IsEmpty());
+	TestEqual(TEXT("flattened prompt"), Page.Assets[1].Prompt, FString(TEXT("a mossy arch")));
 	return true;
 }
 

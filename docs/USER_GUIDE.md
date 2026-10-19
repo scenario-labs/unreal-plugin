@@ -18,6 +18,8 @@ Open the Studio with the **Scenario** button in the level editor toolbar (Alt+Sh
 
 Credentials are kept in the macOS Keychain or the Windows Credential Manager. On Linux, version 0.1 keeps them in a file in your user config folder that only you can read. They are never written to project files. **Settings** shows where they are stored and has **Sign out**.
 
+On build machines, `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` in the editor's environment take precedence over the saved sign-in, and the editor works in the key's project.
+
 After signing in, choose the **Team** and **Project** to generate in, then **Use this project**. Unreal remembers the choice per project. **Settings** and the footer of **Jobs** show the Creative Units the project used this month, across all members and tools.
 
 ## 2. The Studio
@@ -50,6 +52,8 @@ On macOS, Ctrl is Cmd.
 | Ctrl+I | Import and place the newest result |
 
 ## 3. Create
+
+<p><img src="images/studio-create.png" alt="The Create page: lanes, model, prompt, inputs, settings and the newest results" width="420"></p>
 
 1. **Lane.** Image, 3D, Material, Sky, Audio, Video or Restyle, and **Workflow** for workflows (see Workflows). Each lane has picks: recommended models that work well in Unreal.
 2. **Model.** **Change** lists the lane's recommended models, **Suggest for my prompt** and **Browse all models...**, which opens the model picker (Ctrl+M) with every Scenario model and your team's trained models. In the picker, filter by type and category, search, pin favorites to the top of the list, and turn on **Show older models** when you need one that Scenario has replaced. **Suggest for my prompt** asks Scenario which models fit your prompt best; it is free.
@@ -99,6 +103,8 @@ Notes:
 A bar at the bottom of the level viewport for fast requests without the Studio: lane (Image, 3D, Material, Sky, Audio, Video, Restyle), model, prompt, and the priced **Generate** button. **Open in Studio** opens the full form in the Studio. Show or hide it with Alt+Shift+Space or the toolbar menu.
 
 ## 6. Jobs and recovery
+
+<p><img src="images/studio-jobs.png" alt="The Jobs page: every request by day, with its state, price and actions" width="420"></p>
 
 Every request is written to the project's job list (`Saved/Scenario/`) before it is sent, so nothing is lost when the editor closes. On the next start, running jobs resume and partial downloads continue where they stopped.
 
@@ -154,10 +160,14 @@ None of them sends anything to Scenario until you press **Generate**.
 
 ## 10. Library
 
+<p><img src="images/studio-library.png" alt="The Library page: the Scenario project's assets, ready to import" width="420"></p>
+
 - **On Scenario**: search your Scenario project's assets, made in Unreal or anywhere else, and filter them by type or **Not imported yet**. **Import** downloads an asset into Unreal with its provenance, free; the **...** menu also has **Import and place** and **Copy asset id**. **Send to > Use as reference in Create** adds it to the Create form without uploading it again.
 - **In this project**: every asset in this Unreal project that was generated with Scenario, with **Show**, **Reuse settings** and **Send to**.
 
 ## 11. Agents
+
+<p><img src="images/studio-agent.png" alt="The Agent page: the local Scenario MCP server, client setup, permissions and activity" width="420"></p>
 
 The plugin runs a local Scenario MCP server inside the editor, on `http://127.0.0.1:9877/mcp`. Agents use it to read the level, price and run Scenario models, and land results. The **Agent** page has the server's on and off switch, a **Set up** button for Claude Code, Codex, Cursor and Claude Desktop, the permission switches and an activity log.
 
@@ -204,9 +214,11 @@ UnrealEditor-Cmd MyProject.uproject -run=ScenarioEditor.Scenario -Generate \
   -Destination=/Game/Scenario/Batch -Import -Save
 ```
 
-`-MaxCU` is required: the run stops before sending if the quoted price is higher. `-Params=@file.json` reads the settings from a file. `-run=ScenarioEditor.Scenario -Action=<name> -Args=<json>` runs any single action. Each step prints one JSON line. Sign in once in the editor (or with an API key) before using it.
+`-MaxCU` is required: the run stops before sending if the quoted price is higher. `-Params=@file.json` reads the settings from a file. `-run=ScenarioEditor.Scenario -Action=<name> -Args=<json>` runs any single action. Each step prints one JSON line. Sign in once in the editor (or with an API key) before using it. On macOS, the first run asks once to let `UnrealEditor-Cmd` read that sign-in from the keychain. Build machines pass `-unattended`, which never shows that dialog, and set `SCENARIO_API_KEY` and `SCENARIO_API_SECRET`.
 
 ## 13. Settings
+
+<p><img src="images/studio-settings.png" alt="The Settings page: output folder, import, spending and privacy options" width="420"></p>
 
 The Studio's **Settings** page edits the most used ones under **Output**, **Import**, **Spending** and **Viewport and privacy**; **All settings** there opens Project Settings.
 

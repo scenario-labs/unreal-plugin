@@ -2,6 +2,7 @@
 
 #include "ScenarioCommandlet.h"
 
+#include "AssetCompilingManager.h"
 #include "Async/TaskGraphInterfaces.h"
 #include "Containers/Ticker.h"
 #include "HttpManager.h"
@@ -17,7 +18,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogScenarioCommandlet, Display, All);
 
 namespace
 {
-	/** Pumps the game thread (tickers, HTTP, queued tasks) until Done or the deadline. */
+	/** Pumps the game thread (tickers, HTTP, queued tasks, asset builds) until Done or the deadline. */
 	bool Pump(const TFunction<bool()>& Done, double Seconds)
 	{
 		const double Deadline = FPlatformTime::Seconds() + Seconds;
@@ -34,6 +35,8 @@ namespace
 			FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
 			FHttpModule::Get().GetHttpManager().Tick(Delta);
 			FTSTicker::GetCoreTicker().Tick(Delta);
+			// Mesh and texture builds finish here; the engine loop that usually ticks them does not run in a commandlet.
+			FAssetCompilingManager::Get().ProcessAsyncTasks(true);
 			FPlatformProcess::Sleep(0.02f);
 		}
 		return true;
@@ -228,10 +231,16 @@ int32 UScenarioCommandlet::Main(const FString& Params)
 		{
 			return 1;
 		}
-		if (FParse::Param(*Params, TEXT("Save")))
+		// With "Save imported assets" on (the default) the import has saved its files already: -Save has nothing left to do.
+		const TArray<TSharedPtr<FJsonValue>>* AlreadySaved = nullptr;
+		const bool bImportSaved = Applied.Data.IsValid() && Applied.Data->TryGetArrayField(TEXT("saved_files"), AlreadySaved) && AlreadySaved->Num() > 0;
+		if (FParse::Param(*Params, TEXT("Save")) && !bImportSaved)
 		{
 			FScenarioActionResult Saved;
-			RunAction(TEXT("save_changes"), MakeShared<FJsonObject>(), Saved);
+			if (!RunAction(TEXT("save_changes"), MakeShared<FJsonObject>(), Saved))
+			{
+				return 1;
+			}
 		}
 	}
 	return 0;

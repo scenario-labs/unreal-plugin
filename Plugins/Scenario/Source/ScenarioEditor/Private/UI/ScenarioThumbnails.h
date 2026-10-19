@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 class FAssetThumbnailPool;
+struct FAssetData;
 struct FSlateBrush;
 struct FSlateDynamicImageBrush;
 
@@ -27,6 +28,12 @@ public:
 
 	/** The pool behind real asset thumbnails (meshes, materials) of imported results. */
 	TSharedPtr<FAssetThumbnailPool> AssetPool();
+	/**
+	 * Loads an asset in the background when it is not in memory, then calls Done on the game
+	 * thread. Unreal draws an unloaded asset from the thumbnail saved in its package; a package saved
+	 * without one (imported by the commandlet, say) shows only its class icon until the asset loads.
+	 */
+	void LoadForThumbnail(const FAssetData& Asset, TFunction<void()> Done);
 
 	/** Fires on the game thread when a brush becomes available. */
 	FSimpleMulticastDelegate OnLoaded;

@@ -505,40 +505,60 @@ void SScenarioLibraryPage::Search(bool bAppend)
 	const int32 Ticket = ++Generation;
 	bLoading = true;
 	const TWeakPtr<SScenarioLibraryPage> Weak = SharedThis(this);
+	if (Query.IsEmpty())
+	{
+		// Browsing reads the project itself; typed queries go to the search index.
+		Session->Api().ListAssets(CloudKind(Kind), PageSize, bAppend ? NextPageToken : FString(), [Weak, Ticket](const TScenarioResult<FScenarioAssetPage>& Result)
+		{
+			if (const TSharedPtr<SScenarioLibraryPage> This = Weak.Pin())
+			{
+				This->AddCloudPage(Ticket, Result.bOk, Result.Error.Message, Result.Value.Assets, !Result.Value.NextPageToken.IsEmpty(), Result.Value.NextPageToken);
+			}
+		});
+		return;
+	}
 	Session->Api().SearchAssets(Query, CloudKind(Kind), PageSize, bAppend ? Cloud.Num() : 0, [Weak, Ticket](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result)
 	{
-		const TSharedPtr<SScenarioLibraryPage> This = Weak.Pin();
-		if (!This.IsValid() || Ticket != This->Generation)
+		if (const TSharedPtr<SScenarioLibraryPage> This = Weak.Pin())
 		{
-			return;
+			This->AddCloudPage(Ticket, Result.bOk, Result.Error.Message, Result.Value, Result.Value.Num() == PageSize, FString());
 		}
-		This->bLoading = false;
-		if (!Result.bOk)
-		{
-			This->Error = Result.Error.Message;
-			This->bMore = false;
-			This->ApplyFilter();
-			return;
-		}
-		for (const FScenarioAssetInfo& Asset : Result.Value)
-		{
-			if (!IsImportable(Asset.Kind))
-			{
-				continue;
-			}
-			const FItem Item = MakeShared<FTile>();
-			Item->Asset = Asset;
-			Item->AssetId = Asset.AssetId;
-			Item->Kind = TileKind(Asset.Kind);
-			Item->ModelName = Asset.ModelId.IsEmpty() ? FString() : ScenarioUI::ModelName(Asset.ModelId);
-			Item->Title = TitleFor(Asset.Name, Asset.Prompt, Item->Kind, Item->ModelName);
-			Item->CreatedAt = Asset.Raw.IsValid() ? ParseTime(ScenarioJson::GetString(Asset.Raw, TEXT("createdAt"))) : 0.0;
-			Item->ThumbnailUrl = ThumbnailUrl(Asset);
-			This->Cloud.Add(Item);
-		}
-		This->bMore = Result.Value.Num() == PageSize;
-		This->ApplyFilter();
 	});
+}
+
+void SScenarioLibraryPage::AddCloudPage(int32 Ticket, bool bOk, const FString& ErrorMessage, const TArray<FScenarioAssetInfo>& Assets, bool bMoreAfter, const FString& NextToken)
+{
+	if (Ticket != Generation)
+	{
+		return;
+	}
+	NextPageToken = NextToken;
+	bLoading = false;
+	if (!bOk)
+	{
+		Error = ErrorMessage;
+		bMore = false;
+		ApplyFilter();
+		return;
+	}
+	for (const FScenarioAssetInfo& Asset : Assets)
+	{
+		if (!IsImportable(Asset.Kind))
+		{
+			continue;
+		}
+		const FItem Item = MakeShared<FTile>();
+		Item->Asset = Asset;
+		Item->AssetId = Asset.AssetId;
+		Item->Kind = TileKind(Asset.Kind);
+		Item->ModelName = Asset.ModelId.IsEmpty() ? FString() : ScenarioUI::ModelName(Asset.ModelId);
+		Item->Title = TitleFor(Asset.Name, Asset.Prompt, Item->Kind, Item->ModelName);
+		Item->CreatedAt = Asset.Raw.IsValid() ? ParseTime(ScenarioJson::GetString(Asset.Raw, TEXT("createdAt"))) : 0.0;
+		Item->ThumbnailUrl = ThumbnailUrl(Asset);
+		Cloud.Add(Item);
+	}
+	bMore = bMoreAfter;
+	ApplyFilter();
 }
 
 void SScenarioLibraryPage::OnSessionChanged()
@@ -744,6 +764,14 @@ TSharedRef<SWidget> SScenarioLibraryPage::TileThumbnail(const FItem& Item, float
 			if (Data.IsValid())
 			{
 				Item->Thumbnail = MakeShared<FAssetThumbnail>(Data, 128, 128, FScenarioThumbnails::Get().AssetPool());
+				// Drawn again once loaded, for packages saved without a thumbnail.
+				FScenarioThumbnails::Get().LoadForThumbnail(Data, [Thumbnail = Item->Thumbnail]()
+				{
+					if (const TSharedPtr<FAssetThumbnailPool> Pool = FScenarioThumbnails::Get().AssetPool())
+					{
+						Pool->RefreshThumbnail(Thumbnail);
+					}
+				});
 			}
 		}
 		if (Item->Thumbnail.IsValid())

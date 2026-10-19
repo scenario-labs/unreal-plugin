@@ -18,6 +18,8 @@ Start with **Settings > Diagnostics** in the Scenario Studio. **Copy diagnostics
 | The browser opens but Unreal keeps waiting | The browser could not reach the editor's local sign-in address, often a different browser profile or a remote session. Use **Copy link** in the right profile, or **Sign in with a code**. |
 | "Scenario did not accept this API key and secret." | Copy both values again from scenario.com (API keys page). An API key belongs to one project. |
 | "Your Scenario session ended. Sign in again." (HTTP 401) | The session expired or the key was revoked. Sign in again; jobs and imported assets stay. |
+| The Studio opens on another project than the one you chose | `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` are set in the editor's environment: they take precedence over your sign-in and select the key's project. On macOS, an editor started from the Dock or Finder sees variables set with `launchctl setenv`; check with `launchctl getenv SCENARIO_API_KEY`, and clear them with `launchctl unsetenv` before restarting the editor. |
+| macOS: a dialog asks for the "login" keychain password when you run the commandlet | The keychain trusts the app that saved your sign-in, the editor; `UnrealEditor-Cmd` is another app. Click **Always Allow** once. With `-unattended` there is no dialog: the saved sign-in is skipped, so set `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` for that run. |
 | Credentials stored in a file, not the keychain | On Linux, version 0.1 uses a file only you can read. On macOS and Windows, it means the system store refused the write: check the Output Log. |
 
 ## Prices and generation

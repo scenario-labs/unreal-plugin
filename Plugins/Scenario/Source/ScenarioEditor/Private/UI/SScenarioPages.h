@@ -136,6 +136,8 @@ private:
 	void SetSource(bool bInLocal);
 	void ScheduleSearch();
 	void Search(bool bAppend);
+	/** Adds one page of Scenario assets, unless a newer search started (Ticket). */
+	void AddCloudPage(int32 Ticket, bool bOk, const FString& ErrorMessage, const TArray<FScenarioAssetInfo>& Assets, bool bMoreAfter, const FString& NextToken);
 	/** The scope, query and type the cloud tiles were searched with. */
 	FString SearchKey() const;
 	void OnSessionChanged();
@@ -163,6 +165,8 @@ private:
 	TSharedPtr<class SBox> FooterBox;
 	FString Error;
 	FString SearchedKey;
+	/** Where the next page of the project's assets starts, while browsing without a query. */
+	FString NextPageToken;
 	int32 LocalCount = -1;
 	int32 Generation = 0;
 	bool bLoading = false;

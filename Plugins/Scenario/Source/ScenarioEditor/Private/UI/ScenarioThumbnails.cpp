@@ -2,6 +2,7 @@
 
 #include "ScenarioThumbnails.h"
 
+#include "AssetRegistry/AssetData.h"
 #include "AssetThumbnail.h"
 #include "Async/Async.h"
 #include "Brushes/SlateDynamicImageBrush.h"
@@ -42,6 +43,22 @@ TSharedPtr<FAssetThumbnailPool> FScenarioThumbnails::AssetPool()
 		Pool = MakeShared<FAssetThumbnailPool>(64);
 	}
 	return Pool;
+}
+
+void FScenarioThumbnails::LoadForThumbnail(const FAssetData& Asset, TFunction<void()> Done)
+{
+	if (!Asset.IsValid() || Asset.IsAssetLoaded())
+	{
+		return;
+	}
+	LoadPackageAsync(Asset.PackageName.ToString(), FLoadPackageAsyncDelegate::CreateLambda(
+		[Done = MoveTemp(Done)](const FName&, UPackage* Package, EAsyncLoadingResult::Type Result)
+		{
+			if (Result == EAsyncLoadingResult::Succeeded && Package && Done)
+			{
+				Done();
+			}
+		}));
 }
 
 const FSlateBrush* FScenarioThumbnails::ForFile(const FString& Path)

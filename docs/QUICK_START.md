@@ -24,6 +24,8 @@ Build machines and shared accounts can use **Use an API key instead**. The key i
 
 ## 3. Generate
 
+<p><img src="images/studio-create.png" alt="The Create page with the Image lane and GPT Image 2.5 Flare" width="420"></p>
+
 1. In **Create**, keep the **Image** lane and its first recommended model.
 2. Type a prompt, for example `weathered bronze shield, front view, plain background`.
 3. Wait a second: the **Generate** button shows the price of these exact settings in Creative Units (CU). Checking the price is free.
