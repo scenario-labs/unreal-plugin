@@ -1072,10 +1072,18 @@ void UScenarioSubsystem::TrackPackage(UPackage* Package)
 FScenarioChangeReport UScenarioSubsystem::SaveChanges(bool bIncludeLevels)
 {
 	TArray<UPackage*> Packages;
+	FScenarioChangeReport Report;
+	const auto Add = [&Packages](UPackage* Package)
+	{
+		if (Package && Package->IsDirty() && !FPackageName::IsTempPackage(Package->GetName()))
+		{
+			Packages.AddUnique(Package);
+		}
+	};
 	for (const FString& Name : TouchedPackages)
 	{
 		UPackage* Package = FindPackage(nullptr, *Name);
-		if (!Package || !Package->IsDirty())
+		if (!Package)
 		{
 			continue;
 		}
@@ -1084,12 +1092,39 @@ FScenarioChangeReport UScenarioSubsystem::SaveChanges(bool bIncludeLevels)
 		{
 			continue;
 		}
-		Packages.Add(Package);
+		Add(Package);
 	}
-	FScenarioChangeReport Report;
+	if (bIncludeLevels)
+	{
+		// Kit tools and scripts change the level and the shared assets without
+		// going through the import path, so the open level (with its World
+		// Partition actor files) and dirty assets under the Scenario folder are
+		// saved as a whole.
+		TArray<UPackage*> WorldPackages;
+		FEditorFileUtils::GetDirtyWorldPackages(WorldPackages);
+		for (UPackage* Package : WorldPackages)
+		{
+			if (FPackageName::IsTempPackage(Package->GetName()))
+			{
+				Report.Warnings.AddUnique(TEXT("The open level is untitled and was not saved: save it once with File > Save Current Level As."));
+				continue;
+			}
+			Add(Package);
+		}
+		TArray<UPackage*> ContentPackages;
+		FEditorFileUtils::GetDirtyContentPackages(ContentPackages);
+		const FString Root = UScenarioProjectSettings::Get().RootPath() + TEXT("/");
+		for (UPackage* Package : ContentPackages)
+		{
+			if (Package->GetName().StartsWith(Root))
+			{
+				Add(Package);
+			}
+		}
+	}
 	if (Packages.Num() == 0)
 	{
-		return FScenarioChangeReport::Fail(TEXT("Nothing to save: the plugin has no unsaved changes."));
+		return FScenarioChangeReport::Fail(Report.Warnings.Num() > 0 ? Report.Warnings[0] : FString(TEXT("Nothing to save: the plugin has no unsaved changes.")));
 	}
 	if (!UEditorLoadingAndSavingUtils::SavePackages(Packages, true))
 	{
