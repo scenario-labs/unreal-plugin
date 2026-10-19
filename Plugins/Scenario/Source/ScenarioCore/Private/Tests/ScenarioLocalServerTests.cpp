@@ -39,6 +39,26 @@ bool FScenarioLocalServerChecksTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioLocalServerPortTest, "Scenario.Core.LocalServer.PortInUse", SCENARIO_TEST_FLAGS)
+bool FScenarioLocalServerPortTest::RunTest(const FString& Parameters)
+{
+	// A second server must not share the first one's port, even where the socket allows port reuse.
+	auto Handler = [](const FScenarioLocalRequest&, FScenarioLocalRespond Respond) { Respond(FScenarioLocalResponse::Text(200, TEXT("ok"))); };
+	TSharedRef<FScenarioLocalHttpServer> First = MakeShared<FScenarioLocalHttpServer>(TEXT("PortTestA"), Handler);
+	if (!First->Start(0))
+	{
+		AddError(TEXT("the first server did not start"));
+		return false;
+	}
+	const int32 Taken = First->GetPort();
+	TSharedRef<FScenarioLocalHttpServer> Second = MakeShared<FScenarioLocalHttpServer>(TEXT("PortTestB"), Handler);
+	TestTrue(TEXT("second server starts on a later port"), Second->Start(Taken, 20));
+	TestNotEqual(TEXT("ports differ"), Second->GetPort(), Taken);
+	Second->Stop();
+	First->Stop();
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioLocalServerParseTest, "Scenario.Core.LocalServer.Parse", SCENARIO_TEST_FLAGS)
 bool FScenarioLocalServerParseTest::RunTest(const FString& Parameters)
 {
