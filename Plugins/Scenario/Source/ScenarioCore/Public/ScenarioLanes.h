@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 
+struct FScenarioField;
+
 struct SCENARIOCORE_API FScenarioLaneModel
 {
 	FString Id;
@@ -62,6 +64,12 @@ public:
 	/** Allowed values per field name that Unreal can import (audioFormat...). */
 	const TMap<FString, TArray<FString>>& Restrict() const { return RestrictMap; }
 	const FString& UnrealReadyPrompt() const { return UnrealReady; }
+	/**
+	 * Applies the "field_labels" block to a model's fields: names, units and
+	 * value names people read. Entries for the model id win over the lane's,
+	 * which win over "*".
+	 */
+	void ApplyFieldLabels(const FString& LaneId, const FString& ModelId, TArray<FScenarioField>& Fields) const;
 	FString ToolModel(const FString& Tool) const;
 
 private:
@@ -72,4 +80,6 @@ private:
 	TMap<FString, TArray<FString>> RestrictMap;
 	TMap<FString, FString> Tools;
 	FString UnrealReady;
+	/** Scope ("*", a lane id or a model id) to field name to its entry. */
+	TMap<FString, TSharedPtr<FJsonObject>> FieldLabels;
 };

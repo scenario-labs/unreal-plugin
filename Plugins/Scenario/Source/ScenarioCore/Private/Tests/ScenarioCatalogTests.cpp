@@ -301,4 +301,55 @@ bool FScenarioSparkPromptsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioFieldLabelsTest, "Scenario.Core.Schema.Labels", SCENARIO_TEST_FLAGS)
+bool FScenarioFieldLabelsTest::RunTest(const FString& Parameters)
+{
+	FScenarioField Plain;
+	TestEqual(TEXT("lowercase word"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueString>(TEXT("standard"))), FString(TEXT("Standard")));
+	TestEqual(TEXT("upper case word"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueString>(TEXT("HIGH"))), FString(TEXT("High")));
+	TestEqual(TEXT("snake case"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueString>(TEXT("original_image"))), FString(TEXT("Original image")));
+	TestEqual(TEXT("empty value"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueString>(TEXT(""))), FString(TEXT("Default")));
+	TestEqual(TEXT("ratio kept"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueString>(TEXT("16:9"))), FString(TEXT("16:9")));
+	TestEqual(TEXT("resolution kept"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueString>(TEXT("1080p"))), FString(TEXT("1080p")));
+	TestEqual(TEXT("number kept"), ScenarioSchema::OptionText(Plain, MakeShared<FJsonValueNumber>(4)), FString(TEXT("4")));
+
+	FScenarioLanes Lanes;
+	TestTrue(TEXT("lanes with labels parse"), Lanes.LoadFromString(TEXT(
+		"{\"lanes\":[{\"id\":\"video\",\"models\":[{\"id\":\"model_v\"}]}],"
+		"\"field_labels\":{\"*\":{\"numOutputs\":\"Results\",\"duration\":{\"label\":\"Length\",\"unit\":\"s\",\"values\":{\"-1\":\"Auto\"}},\"image\":\"Image\"},"
+		"\"video\":{\"image\":\"Start frame\"},\"model_v\":{\"numOutputs\":\"Takes\"}}}")));
+	TArray<FScenarioField> Fields;
+	for (const TCHAR* Name : { TEXT("numOutputs"), TEXT("duration"), TEXT("image"), TEXT("seed") })
+	{
+		FScenarioField Field;
+		Field.Name = Name;
+		Field.Label = ScenarioSchema::Humanize(Name);
+		Fields.Add(Field);
+	}
+	Lanes.ApplyFieldLabels(TEXT("video"), TEXT("model_other"), Fields);
+	TestEqual(TEXT("global label"), Fields[0].Label, FString(TEXT("Results")));
+	TestEqual(TEXT("label with unit"), Fields[1].Label, FString(TEXT("Length")));
+	TestEqual(TEXT("unit"), Fields[1].Unit, FString(TEXT("s")));
+	TestEqual(TEXT("value name"), ScenarioSchema::OptionText(Fields[1], MakeShared<FJsonValueString>(TEXT("-1"))), FString(TEXT("Auto")));
+	TestEqual(TEXT("lane label wins over global"), Fields[2].Label, FString(TEXT("Start frame")));
+	TestEqual(TEXT("no entry keeps the humanized name"), Fields[3].Label, FString(TEXT("Seed")));
+	Lanes.ApplyFieldLabels(TEXT("video"), TEXT("model_v"), Fields);
+	TestEqual(TEXT("model label wins over lane and global"), Fields[0].Label, FString(TEXT("Takes")));
+
+	// The shipped file names the settings the review called out.
+	TArray<FScenarioField> Shipped;
+	for (const TCHAR* Name : { TEXT("numOutputs"), TEXT("maps"), TEXT("upscaleFactor") })
+	{
+		FScenarioField Field;
+		Field.Name = Name;
+		Field.Label = ScenarioSchema::Humanize(Name);
+		Shipped.Add(Field);
+	}
+	FScenarioLanes::Get().ApplyFieldLabels(TEXT("material"), FString(), Shipped);
+	TestEqual(TEXT("Results"), Shipped[0].Label, FString(TEXT("Results")));
+	TestEqual(TEXT("Metallic"), ScenarioSchema::OptionText(Shipped[1], MakeShared<FJsonValueString>(TEXT("metalness"))), FString(TEXT("Metallic")));
+	TestEqual(TEXT("Upscale Off"), ScenarioSchema::OptionText(Shipped[2], MakeShared<FJsonValueString>(TEXT("0"))), FString(TEXT("Off")));
+	return true;
+}
+
 #endif

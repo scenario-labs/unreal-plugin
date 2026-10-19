@@ -7,6 +7,7 @@
 #include "Misc/Paths.h"
 #include "ScenarioCoreModule.h"
 #include "ScenarioJson.h"
+#include "ScenarioSchema.h"
 
 TArray<FScenarioLaneModel> FScenarioLane::ModelsFor(const FString& Mode) const
 {
@@ -119,7 +120,54 @@ bool FScenarioLanes::LoadFromString(const FString& Text)
 		}
 	}
 	UnrealReady = ScenarioJson::GetString(Root, TEXT("unreal_ready_prompt"));
+	FieldLabels.Reset();
+	if (const TSharedPtr<FJsonObject> Labels = ScenarioJson::GetObject(Root, TEXT("field_labels")))
+	{
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : ScenarioJson::Fields(Labels))
+		{
+			if (Pair.Value.IsValid() && Pair.Value->Type == EJson::Object)
+			{
+				FieldLabels.Add(Pair.Key, Pair.Value->AsObject());
+			}
+		}
+	}
 	return true;
+}
+
+void FScenarioLanes::ApplyFieldLabels(const FString& LaneId, const FString& ModelId, TArray<FScenarioField>& Fields) const
+{
+	for (FScenarioField& Field : Fields)
+	{
+		for (const FString& Scope : { FString(TEXT("*")), LaneId, ModelId })
+		{
+			const TSharedPtr<FJsonObject>* Entries = FieldLabels.Find(Scope);
+			const TSharedPtr<FJsonValue> Entry = Entries ? (*Entries)->TryGetField(Field.Name) : nullptr;
+			if (!Entry.IsValid())
+			{
+				continue;
+			}
+			// "numOutputs": "Results" or {"label", "unit", "values"}.
+			if (Entry->Type == EJson::String)
+			{
+				Field.Label = Entry->AsString();
+				continue;
+			}
+			if (Entry->Type != EJson::Object)
+			{
+				continue;
+			}
+			const TSharedPtr<FJsonObject> Object = Entry->AsObject();
+			Field.Label = ScenarioJson::GetString(Object, TEXT("label"), Field.Label);
+			Field.Unit = ScenarioJson::GetString(Object, TEXT("unit"), Field.Unit);
+			if (const TSharedPtr<FJsonObject> Values = ScenarioJson::GetObject(Object, TEXT("values")))
+			{
+				for (const TPair<FString, TSharedPtr<FJsonValue>>& Value : ScenarioJson::Fields(Values))
+				{
+					Field.OptionLabels.Add(Value.Key, ScenarioJson::GetString(Values, Value.Key));
+				}
+			}
+		}
+	}
 }
 
 void FScenarioLanes::LoadDefaults()

@@ -43,6 +43,10 @@ struct SCENARIOCORE_API FScenarioField
 	bool bPromptSpark = false;
 	FString Group;
 	FString Placeholder;
+	/** Shown after numbers: "s", "px", "m", "fps". */
+	FString Unit;
+	/** Display names of enum and multi values ("basecolor" -> "Base color"). */
+	TMap<FString, FString> OptionLabels;
 
 	bool IsFile() const { return Type == EScenarioFieldType::File || Type == EScenarioFieldType::Files; }
 	/** Shown above "More settings": prompt, required fields, files, and fields that change the price. */
@@ -66,6 +70,8 @@ namespace ScenarioSchema
 
 	/** camelCase or snake_case to "Sentence case". */
 	SCENARIOCORE_API FString Humanize(const FString& Name);
+	/** An enum or multi value as people read it: the field's label for it, else "standard" -> "Standard", "HIGH" -> "High", "" -> "Default". */
+	SCENARIOCORE_API FString OptionText(const FScenarioField& Field, const TSharedPtr<FJsonValue>& Value);
 
 	/** Schema defaults, then presets on top. */
 	SCENARIOCORE_API TSharedRef<FJsonObject> InitialValues(const TArray<FScenarioField>& Fields, const TSharedPtr<FJsonObject>& Presets = nullptr);

@@ -326,6 +326,42 @@ FString ScenarioSchema::Humanize(const FString& Name)
 	return Text.Left(1).ToUpper() + Text.Mid(1);
 }
 
+FString ScenarioSchema::OptionText(const FScenarioField& Field, const TSharedPtr<FJsonValue>& Value)
+{
+	const FString Raw = ScenarioJson::ValueText(Value);
+	if (const FString* Label = Field.OptionLabels.Find(Raw))
+	{
+		return *Label;
+	}
+	if (Raw.IsEmpty())
+	{
+		return TEXT("Default");
+	}
+	bool bLetters = true;
+	bool bUpper = true;
+	bool bDigit = false;
+	for (const TCHAR Char : Raw)
+	{
+		bLetters &= FChar::IsAlpha(Char) || Char == TEXT('_') || Char == TEXT('-') || Char == TEXT(' ');
+		bUpper &= !FChar::IsLower(Char);
+		bDigit |= FChar::IsDigit(Char);
+	}
+	if (bDigit || !bLetters)
+	{
+		return Raw;
+	}
+	if (bUpper)
+	{
+		return Raw.Left(1) + Raw.Mid(1).ToLower();
+	}
+	if (FChar::IsLower(Raw[0]))
+	{
+		const FString Spaced = Raw.Replace(TEXT("_"), TEXT(" "));
+		return Spaced.Left(1).ToUpper() + Spaced.Mid(1);
+	}
+	return Raw;
+}
+
 TSharedRef<FJsonObject> ScenarioSchema::InitialValues(const TArray<FScenarioField>& Fields, const TSharedPtr<FJsonObject>& Presets)
 {
 	TSharedRef<FJsonObject> Values = MakeShared<FJsonObject>();
