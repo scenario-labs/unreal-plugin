@@ -15,6 +15,10 @@
 //   scroll          {x, y, delta}
 //   tab             {id}: opens a registered tab
 //   windows         titles and rectangles of the open windows
+//   shot            {path, widget | window}: renders a widget (by type, for
+//                   example SScenarioStudio) or a window (title contains) to
+//                   a PNG through Slate, so it works with the editor in the
+//                   background
 // Text read from {fifo} (a named pipe) never touches the disk.
 
 #include "Containers/Ticker.h"
@@ -22,6 +26,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
 #include "HAL/FileManager.h"
+#include "ImageUtils.h"
 #include "InputCoreTypes.h"
 #include "Layout/ArrangedChildren.h"
 #include "Misc/CommandLine.h"
@@ -131,6 +136,24 @@ namespace ScenarioUiDriver
 		return Out;
 	}
 
+	TSharedPtr<SWidget> FindType(const FArrangedWidget& Node, const FString& Type)
+	{
+		if (Node.Widget->GetType().ToString() == Type)
+		{
+			return Node.Widget;
+		}
+		FArrangedChildren Children(EVisibility::Visible);
+		Node.Widget->ArrangeChildren(Node.Geometry, Children, true);
+		for (int32 Index = 0; Index < Children.Num(); ++Index)
+		{
+			if (TSharedPtr<SWidget> Found = FindType(Children[Index], Type))
+			{
+				return Found;
+			}
+		}
+		return nullptr;
+	}
+
 	TSharedRef<FJsonObject> ToJson(const FFound& F)
 	{
 		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
@@ -148,9 +171,23 @@ namespace ScenarioUiDriver
 		return J;
 	}
 
+	/**
+	 * Paints every window now. macOS stops drawing an editor that is hidden
+	 * behind other apps, and Slate hit-tests against the last painted frame,
+	 * so a click after a page change would land on the old layout.
+	 */
+	void Repaint()
+	{
+		for (const TSharedRef<SWindow>& Window : Windows())
+		{
+			FSlateApplication::Get().ForceRedrawWindow(Window);
+		}
+	}
+
 	void Click(const FVector2D& Pos, const FKey& Button)
 	{
 		FSlateApplication& App = FSlateApplication::Get();
+		Repaint();
 		const FModifierKeysState Mods;
 		const uint32 Pointer = FSlateApplication::CursorPointerIndex;
 		App.ProcessMouseMoveEvent(FPointerEvent(Pointer, Pos, Pos, TSet<FKey>(), EKeys::Invalid, 0.0f, Mods));
@@ -190,6 +227,7 @@ namespace ScenarioUiDriver
 
 		if (Op == TEXT("dump"))
 		{
+			Repaint();
 			TArray<TSharedPtr<FJsonValue>> Items;
 			for (const FFound& F : Collect())
 			{
@@ -236,7 +274,18 @@ namespace ScenarioUiDriver
 			}
 			else
 			{
-				Click(FVector2D(Matches[Nth].Rect.GetCenter()), Button);
+				const FVector2D Pos(Matches[Nth].Rect.GetCenter());
+				Repaint();
+				// What the click will hit, and who holds the mouse: for tests that fail to click.
+				const FWidgetPath Path = App.LocateWindowUnderMouse(Pos, App.GetInteractiveTopLevelWindows(), false, FSlateApplication::CursorUserIndex);
+				FString Hit;
+				for (int32 Index = FMath::Max(0, Path.Widgets.Num() - 4); Index < Path.Widgets.Num(); ++Index)
+				{
+					Hit += Path.Widgets[Index].Widget->GetType().ToString() + TEXT(" ");
+				}
+				Out->SetStringField(TEXT("hit"), Hit.TrimEnd());
+				Out->SetBoolField(TEXT("captured"), App.HasAnyMouseCaptor());
+				Click(Pos, Button);
 				Out->SetObjectField(TEXT("clicked"), ToJson(Matches[Nth]));
 			}
 		}
@@ -265,9 +314,52 @@ namespace ScenarioUiDriver
 		}
 		else if (Op == TEXT("scroll"))
 		{
+			Repaint();
 			const FVector2D Pos(Cmd->GetNumberField(TEXT("x")), Cmd->GetNumberField(TEXT("y")));
 			App.ProcessMouseMoveEvent(FPointerEvent(FSlateApplication::CursorPointerIndex, Pos, Pos, TSet<FKey>(), EKeys::Invalid, 0.0f, FModifierKeysState()));
 			App.ProcessMouseWheelOrGestureEvent(FPointerEvent(FSlateApplication::CursorPointerIndex, Pos, Pos, TSet<FKey>(), EKeys::Invalid, (float)Cmd->GetNumberField(TEXT("delta")), FModifierKeysState()), nullptr);
+		}
+		else if (Op == TEXT("shot"))
+		{
+			const FString Type = Cmd->HasField(TEXT("widget")) ? Cmd->GetStringField(TEXT("widget")) : FString();
+			const FString Title = Cmd->HasField(TEXT("window")) ? Cmd->GetStringField(TEXT("window")) : FString();
+			TSharedPtr<SWidget> Target;
+			TArray<TSharedRef<SWindow>> All = Windows();
+			Algo::Reverse(All);
+			for (const TSharedRef<SWindow>& Window : All)
+			{
+				if (!Type.IsEmpty())
+				{
+					Target = FindType(FArrangedWidget(Window, Window->GetWindowGeometryInScreen()), Type);
+				}
+				else if (Window->GetTitle().ToString().Contains(Title))
+				{
+					Target = Window;
+				}
+				if (Target.IsValid())
+				{
+					break;
+				}
+			}
+			TArray<FColor> Pixels;
+			FIntVector Size;
+			if (!Target.IsValid() || !App.TakeScreenshot(Target.ToSharedRef(), Pixels, Size) || Size.X <= 0 || Size.Y <= 0)
+			{
+				Out->SetBoolField(TEXT("ok"), false);
+				Out->SetStringField(TEXT("error"), Target.IsValid() ? TEXT("screenshot failed") : TEXT("no such widget"));
+			}
+			else
+			{
+				for (FColor& Pixel : Pixels)
+				{
+					Pixel.A = 255;
+				}
+				TArray64<uint8> Png;
+				FImageUtils::PNGCompressImageArray(Size.X, Size.Y, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+				Out->SetBoolField(TEXT("ok"), FFileHelper::SaveArrayToFile(Png, *Cmd->GetStringField(TEXT("path"))));
+				Out->SetNumberField(TEXT("width"), Size.X);
+				Out->SetNumberField(TEXT("height"), Size.Y);
+			}
 		}
 		else if (Op == TEXT("tab"))
 		{
