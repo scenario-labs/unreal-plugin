@@ -20,13 +20,24 @@ How Scenario for Unreal Engine is built, for contributors and reviewers. The cod
  Hosted Scenario MCP (mcp.scenario.com)
 ```
 
-Three editor-only modules. Nothing is compiled into a packaged game.
+Three editor modules and one small runtime module. Only `ScenarioGameplay` is compiled into a packaged game.
 
 | Module | Loading phase | Depends on the editor | Role |
 |---|---|---|---|
 | `ScenarioCore` | Default | No | Talks to Scenario. Owns every money rule. Unit-tested against a fake transport and a fake Scenario. |
 | `ScenarioEditor` | PostEngineInit | Yes | Studio and composer, imports, placement, provenance, settings, the action registry, scripting entry points and the commandlet. |
 | `ScenarioAgent` | PostEngineInit | Yes | The local Scenario MCP server, client setup, permissions UI and activity log. Can be removed without touching the others. |
+| `ScenarioGameplay` | Default (runtime) | No | Pickup, goal and game rules actors (timer, music, Slate HUD) used by games the kit builds. No network code. |
+
+## Kit
+
+The kit turns Scenario results that are already imported into a walkable level, a game or a film. It is Python (`Content/Python/scenario_unreal`) because it drives editor APIs (levels, Sequencer, Movie Render Queue, materials) that Python reaches without a C++ wrapper per call, and it can change without a rebuild.
+
+- `Resources/Kit.json` declares each tool: name, description, JSON schema, permission kind, whether it runs inside one undo step. `ScenarioKitActions` registers them in the action registry, so agents, scripts and the commandlet see them like any other action.
+- A call runs `scenario_unreal.recipes.run(name, arguments)` through the Python plugin; the result comes back as one marked JSON line. Errors the caller can fix come back as `Kit: <message>`.
+- The kit never talks to Scenario and never spends: assets come from the money-checked tools first.
+- Tools that open a level or start a render run outside an undo step. The kit saves the levels it created (under `/Game/Scenario`) and never saves other levels.
+- Films render with Movie Render Queue in the editor (image sequence), then ffmpeg, when installed, encodes the MP4 with the film's sounds.
 
 ## Backend
 

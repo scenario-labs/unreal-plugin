@@ -156,6 +156,16 @@ The plugin runs a local Scenario MCP server inside the editor, on `http://127.0.
 
 By default an agent can read your level and spend Creative Units with a price quote it requested first, and every agent spend shows a notification. It cannot change your project or run Python until you allow it; until then its changes become proposals you apply or decline.
 
+### One prompt to a world, a game or a film
+
+With **Allow agents to change this project** on, an agent can lay its Scenario results out for you. Ask it, for example, "make me a walkable misty mountain shrine at golden hour", "turn it into a game where I collect lanterns before sunset", or "make a 20-second film of it with music". The agent generates the assets (you see each price first in its notifications), then uses the kit tools:
+
+- **Walkable world**: a new level under `/Game/Scenario/Worlds` with light for the time of day, the Scenario sky and ground, a landmark, props laid out with a clear path, ambient sound and the project's third-person game mode. Press **Play** to walk it.
+- **Game**: pickups to collect, a goal, a timer, music and a HUD, on a kit world or on a copy of an Epic template level dressed with Scenario materials, meshes, sky and music. The game actors (Scenario Pickup, Goal and Game Rules) also work in a packaged build.
+- **Film**: a Level Sequence with camera moves, cuts, fades and Scenario music, rendered with Movie Render Queue to `Saved/Scenario/Films`, and encoded to MP4 when ffmpeg is installed.
+
+The kit saves the levels it creates and never saves your other levels. Films need the Sequencer Scripting and Movie Render Queue plugins.
+
 Setup, tools and examples: [Scenario MCP guide](MCP_GUIDE.md).
 
 ## 12. Scripting and automation
@@ -223,13 +233,14 @@ Set `SCENARIO_NO_SPEND=1` in the editor's environment to check prices without ev
 
 ## 14. Privacy
 
-Prompts and the files you choose as inputs go to Scenario. Nothing from the plugin ships in a packaged game. Details: [Privacy](PRIVACY.md).
+Prompts and the files you choose as inputs go to Scenario. Only the three gameplay actors ship in a packaged game, and they send nothing. Details: [Privacy](PRIVACY.md).
 
 ## 15. Limits in version 0.1
 
 - macOS is the only tested platform. Windows and Linux builds are compiled but not tested yet.
-- Render captures the active level viewport only; cameras and Movie Render Queue come later.
-- Audio is placed as an Ambient Sound; adding it to a Level Sequence is not supported yet.
+- The Render lane captures the active level viewport only. Films made by the kit use cameras and Movie Render Queue.
+- Audio from the Studio is placed as an Ambient Sound; the kit's films put it in a Level Sequence.
+- Kit worlds are flat ground with props; there is no landscape sculpting.
 - Smoothness maps are imported as they are (see Lanes).
 - Prompt Spark proposals and uploaded references are kept for the editor session only.
 - **Results > Load from Scenario** lists the 50 most recent jobs.

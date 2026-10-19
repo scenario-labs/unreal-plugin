@@ -34,7 +34,7 @@ Scenario processes these under your Scenario account terms and privacy policy. G
 | Imported assets | `/Game/Scenario/...` in your project | Yes, like any asset you import |
 | Provenance on each imported asset: asset id, job id, model, prompt, settings, price, date, workspace ids | Editor-only metadata inside the asset | Yes, with the asset. A Project Setting leaves the prompt out. The metadata is removed when the game is cooked, so it never ships in a build |
 
-Nothing from the plugin is compiled into a packaged game.
+Only the Scenario Gameplay module (pickup, goal and game rules actors) is compiled into a packaged game. It has no network code and holds no Scenario data.
 
 ## Agents
 

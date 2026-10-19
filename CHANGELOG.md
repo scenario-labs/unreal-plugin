@@ -12,3 +12,5 @@ First version.
 - Sign-in with the browser, a device code or an API key; credentials in the system credential store.
 - Local Scenario MCP server for agents, with Connect buttons for Claude Code, Codex, Cursor and Claude Desktop, permissions, approvals and an activity log; the `scenario-unreal` agent skill.
 - Python, Blueprint and command-line access to the same actions.
+- Kit tools for agents: a walkable world, a game (pickups, goal, timer, music, HUD) or a dressed Epic template level, and a short film rendered with Movie Render Queue, from Scenario results.
+- Scenario Gameplay runtime module: pickup, goal and game rules actors.

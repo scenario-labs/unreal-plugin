@@ -16,8 +16,9 @@ a local MCP server inside the editor.
 
 The repository root is a small host project (`ScenarioHost.uproject`, module
 `Source/ScenarioHost`) used to build and test the plugin. A release zip holds
-`Plugins/Scenario/` alone. Nothing from the plugin is compiled into a packaged
-game: every module is `Type: Editor`.
+`Plugins/Scenario/` alone. Every module is `Type: Editor` except
+`ScenarioGameplay`: three small runtime actors that games made with the kit
+use. Nothing else from the plugin is compiled into a packaged game.
 
 ## Code map
 
@@ -71,7 +72,9 @@ game: every module is `Type: Editor`.
   - `ScenarioSettings`: Editor Preferences > Plugins > Scenario.
   - `Actions/`: the action registry shared by agents, Blueprints, Python and the
     commandlet (`ScenarioActions`, `ScenarioScenarioActions`,
-    `ScenarioLevelActions`, `ScenarioOutputLog`).
+    `ScenarioLevelActions`, `ScenarioOutputLog`), and `ScenarioKitActions`, which
+    registers the kit tools declared in `Resources/Kit.json` and runs them in
+    the editor's Python.
   - `ScenarioScriptLibrary`: Blueprint and Python entry points (start and poll,
     plus the async node "Run Scenario Action").
   - `ScenarioCommandlet`: `-run=Scenario` for scripted generations.
@@ -89,8 +92,14 @@ game: every module is `Type: Editor`.
   - `ScenarioAgentModule`, `SScenarioAgentsSection`: server lifecycle, token,
     activity log, Connection > Agents.
   - `Private/Tests/`: automation tests `Scenario.Agent.*`.
+- `ScenarioGameplay/` (Runtime, loading phase Default): `AScenarioPickup`,
+  `AScenarioGoal` and `AScenarioGameRules` (timer, music, a Slate HUD) for the
+  kit's games. No network code and no Scenario data.
 
-Also in `Plugins/Scenario/`: `Resources/Lanes.json` (lanes, picks, presets),
+Also in `Plugins/Scenario/`: `Content/Python/scenario_unreal/` (the kit: worlds,
+games and films from Scenario results; `recipes.py` is the entry point),
+`Resources/Kit.json` (the kit tools' names, descriptions and schemas),
+`Resources/Lanes.json` (lanes, picks, presets),
 `Resources/AgentSkill/SKILL.md` (the agent skill the Connect section installs),
 `Tests/Fixtures/` (recorded Scenario replies), `Config/FilterPlugin.ini`.
 

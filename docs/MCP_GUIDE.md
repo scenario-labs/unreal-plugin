@@ -84,7 +84,7 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | `recommend_models` | Asks Scenario for the best models for a request |
 | `estimate_cost` | Free price check; returns the quote |
 | `generate` | SPENDS: runs the quoted request; returns `job_id` |
-| `job_status`, `wait_for_job` | State and files of a job; `wait_for_job` returns `still_running` after about 150 seconds, call it again |
+| `job_status`, `wait_for_job` | State and files of a job; `wait_for_job` returns `still_running` after 45 seconds by default, call it again |
 | `list_local_jobs`, `list_generations` | This project's job list; recent jobs on Scenario from any tool |
 | `cancel_job` | Asks Scenario to stop a job |
 | `recover_local_job` | `check` an `unknown` request against Scenario, or `dismiss` a row |
@@ -108,6 +108,19 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | `apply_result_application` | Applies the plan, or returns `pending_approval` when changes are off; returns what changed and the import checks |
 | `save_changes` | Saves what the plugin created; `include_levels: true` also saves the level |
 | `remove_scenario_items` | Removes actors the plugin placed and assets it imported, after Unreal's reference check |
+
+**Kit: worlds, games and films** (need "Allow agents to change this project"; distances in meters)
+
+| Tool | Does |
+|---|---|
+| `build_world` | New level with light for a time of day, ground, invisible walls, player start and the template game mode |
+| `dress_world` | Landmark, props with spacing and a clear path, ground material, sky and ambient sound on a `build_world` level |
+| `make_game` | Pickups, an optional goal, timer, music and HUD on the open level |
+| `dress_template` | Copies an Epic template level (platforming, combat...) and dresses the copy with Scenario materials, meshes, sky and music |
+| `make_film` | Level Sequence: camera moves (aerial, crane, orbit, walk, detail, rise), cuts, fades, music and sound effects |
+| `render_film`, `film_status` | Movie Render Queue render, then MP4 with sound when ffmpeg is installed; poll the status |
+| `kit_status` | What the kit made in the open level |
+| `play_level` | Starts or stops Play in the editor |
 
 ## 5. A session, step by step
 
