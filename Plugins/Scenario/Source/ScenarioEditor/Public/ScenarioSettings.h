@@ -11,7 +11,7 @@ enum class EScenarioMeshCollision : uint8
 {
 	None UMETA(DisplayName = "None"),
 	Simple UMETA(DisplayName = "Simple box"),
-	ComplexAsSimple UMETA(DisplayName = "Use complex as simple"),
+	ComplexAsSimple UMETA(DisplayName = "Mesh shape (complex as simple)"),
 };
 
 /**
@@ -44,9 +44,14 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Provenance")
 	bool bOmitPromptFromAssets = false;
 
-	/** Collision for imported meshes. */
+	/**
+	 * Collision for imported static meshes. Mesh shape (the default) blocks
+	 * where the mesh is, so the player walks through gates, arches and doors;
+	 * Simple box is cheaper but closes them. Neither suits meshes that simulate
+	 * physics: add simple shapes in the Static Mesh editor for those.
+	 */
 	UPROPERTY(config, EditAnywhere, Category = "Import|Meshes")
-	EScenarioMeshCollision MeshCollision = EScenarioMeshCollision::Simple;
+	EScenarioMeshCollision MeshCollision = EScenarioMeshCollision::ComplexAsSimple;
 
 	/** Builds imported static meshes as Nanite. */
 	UPROPERTY(config, EditAnywhere, Category = "Import|Meshes")

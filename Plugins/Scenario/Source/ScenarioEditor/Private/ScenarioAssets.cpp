@@ -41,6 +41,7 @@
 #include "ScenarioFiles.h"
 #include "ScenarioSettings.h"
 #include "ScenarioSubsystem.h"
+#include "StaticMeshCompiler.h"
 #include "UObject/Package.h"
 
 namespace
@@ -461,6 +462,8 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh)
 		return;
 	}
 	const UScenarioProjectSettings& Settings = UScenarioProjectSettings::Get();
+	// The importer ends with an async build: wait for it so the bounds and the body setup are final before editing them.
+	FStaticMeshCompilingManager::Get().FinishCompilation({ StaticMesh });
 	StaticMesh->Modify();
 	if (Settings.MeshCollision != EScenarioMeshCollision::None)
 	{
@@ -470,18 +473,30 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh)
 			Body->Modify();
 			if (Settings.MeshCollision == EScenarioMeshCollision::ComplexAsSimple)
 			{
+				// Queries and the player use the triangles, so openings (gates, arches, doors) stay open.
 				Body->CollisionTraceFlag = CTF_UseComplexAsSimple;
+				Body->bNeverNeedsCookedCollisionData = false;
 			}
-			else if (Body->AggGeom.GetElementCount() == 0)
+			else
 			{
-				const FBox Box = StaticMesh->GetBoundingBox();
-				FKBoxElem Element(Box.GetSize().X, Box.GetSize().Y, Box.GetSize().Z);
-				Element.Center = Box.GetCenter();
-				Body->AggGeom.BoxElems.Add(Element);
+				Body->CollisionTraceFlag = CTF_UseDefault;
+				if (Body->AggGeom.GetElementCount() == 0)
+				{
+					const FBox Box = StaticMesh->GetBoundingBox();
+					FKBoxElem Element(Box.GetSize().X, Box.GetSize().Y, Box.GetSize().Z);
+					Element.Center = Box.GetCenter();
+					Body->AggGeom.BoxElems.Add(Element);
+				}
 			}
 			Body->InvalidatePhysicsData();
 			Body->CreatePhysicsMeshes();
 		}
+		// A reimport keeps this collision.
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+		StaticMesh->bCustomizedCollision = true;
+#else
+		StaticMesh->SetCustomizedCollision(true);
+#endif
 	}
 	if (Settings.bNanite)
 	{
