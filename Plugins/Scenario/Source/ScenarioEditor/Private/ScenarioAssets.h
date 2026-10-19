@@ -33,8 +33,16 @@ namespace ScenarioAssets
 	/** Imports one file into a content folder without any dialog: Interchange's async path when it reads the format, else the asset tools. */
 	void ImportFile(const FString& File, const FString& PackagePath, FImportDone OnDone);
 
-	/** sRGB, compression, mips and size for the map's role (albedo, normal, roughness, metallic, height, ao, panorama, main). */
+	/** sRGB, compression, mips and size for the map's role (albedo, normal, roughness, metallic, height, ao, panorama, main). An empty role keeps the importer's color settings. */
 	void ConfigureTexture(UTexture* Texture, const FString& Role, int32 MaxSize);
+
+	/**
+	 * Mesh imports: textures that a material samples as metallic, roughness,
+	 * occlusion or packed masks become linear (glTF metallic-roughness maps
+	 * arrive as data, not color). Reads the material instances among the
+	 * objects and the meshes' slots. Returns how many textures changed.
+	 */
+	int32 FixMeshTextures(const TArray<UObject*>& Objects);
 
 	/** The project's copy of a master material under <root>/_Shared, created on first use. */
 	UMaterialInterface* Master(EScenarioMaster Which, FScenarioChangeReport& Report);

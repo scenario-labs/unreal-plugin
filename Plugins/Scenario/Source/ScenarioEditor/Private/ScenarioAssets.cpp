@@ -30,7 +30,9 @@
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
+#include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceConstant.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -282,6 +284,10 @@ void ScenarioAssets::ConfigureTexture(UTexture* Texture, const FString& Role, in
 		Texture->MaxTextureSize = 0;
 		Texture->SRGB = !bHdr;
 	}
+	else if (Role.IsEmpty())
+	{
+		// Mesh textures: the importer set sRGB from the material slot that uses each map. FixMeshTextures corrects the masks.
+	}
 	else if (!bHdr)
 	{
 		Texture->SRGB = true;
@@ -291,6 +297,80 @@ void ScenarioAssets::ConfigureTexture(UTexture* Texture, const FString& Role, in
 		Texture->MaxTextureSize = MaxSize;
 	}
 	Texture->PostEditChange();
+}
+
+namespace
+{
+	/** Material parameters that sample data, not color: metallic, roughness, occlusion and packed masks. */
+	bool IsMaskParameter(const FString& Parameter)
+	{
+		const FString Name = Parameter.ToLower();
+		if (Name.Contains(TEXT("normal")) || Name.Contains(TEXT("basecolor")) || Name.Contains(TEXT("albedo")) || Name.Contains(TEXT("emissive")) || Name.Contains(TEXT("diffuse")))
+		{
+			return false;
+		}
+		for (const TCHAR* Token : { TEXT("metallic"), TEXT("roughness"), TEXT("occlusion"), TEXT("orm"), TEXT("specular") })
+		{
+			if (Name.Contains(Token))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void AddInstance(UMaterialInterface* Material, TSet<UMaterialInstance*>& Out)
+	{
+		if (UMaterialInstance* Instance = Cast<UMaterialInstance>(Material))
+		{
+			Out.Add(Instance);
+		}
+	}
+}
+
+int32 ScenarioAssets::FixMeshTextures(const TArray<UObject*>& Objects)
+{
+	TSet<UMaterialInstance*> Instances;
+	for (UObject* Object : Objects)
+	{
+		if (UMaterialInterface* Material = Cast<UMaterialInterface>(Object))
+		{
+			AddInstance(Material, Instances);
+		}
+		else if (const UStaticMesh* StaticMesh = Cast<UStaticMesh>(Object))
+		{
+			for (const FStaticMaterial& Slot : StaticMesh->GetStaticMaterials())
+			{
+				AddInstance(Slot.MaterialInterface, Instances);
+			}
+		}
+		else if (const USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(Object))
+		{
+			for (const FSkeletalMaterial& Slot : SkeletalMesh->GetMaterials())
+			{
+				AddInstance(Slot.MaterialInterface, Instances);
+			}
+		}
+	}
+	TSet<UTexture*> Changed;
+	for (const UMaterialInstance* Instance : Instances)
+	{
+		for (const FTextureParameterValue& Value : Instance->TextureParameterValues)
+		{
+			UTexture* Texture = Value.ParameterValue;
+			if (!Texture || Changed.Contains(Texture) || !Texture->SRGB || !IsMaskParameter(Value.ParameterInfo.Name.ToString()))
+			{
+				continue;
+			}
+			// Linear only: the compression stays what the importer chose, so it still matches the material's sampler.
+			Texture->Modify();
+			Texture->SRGB = false;
+			Texture->PostEditChange();
+			Texture->MarkPackageDirty();
+			Changed.Add(Texture);
+		}
+	}
+	return Changed.Num();
 }
 
 UMaterialInterface* ScenarioAssets::Master(EScenarioMaster Which, FScenarioChangeReport& Report)

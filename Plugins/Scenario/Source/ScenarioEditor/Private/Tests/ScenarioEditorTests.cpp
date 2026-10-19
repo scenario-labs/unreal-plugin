@@ -128,6 +128,12 @@ bool FScenarioEditorTextureRolesTest::RunTest(const FString& Parameters)
 		TestEqual(FString::Printf(TEXT("%s uses mask compression"), Role), static_cast<int32>(Mask->CompressionSettings), static_cast<int32>(TC_Masks));
 	}
 
+	// Mesh imports pass no role: the importer's choice per material slot stays.
+	UTexture2D* Kept = Make();
+	Kept->SRGB = false;
+	ScenarioAssets::ConfigureTexture(Kept, FString(), 0);
+	TestFalse(TEXT("an empty role keeps the importer's sRGB"), Kept->SRGB);
+
 	UTexture2D* Albedo = Make();
 	Albedo->SRGB = false;
 	ScenarioAssets::ConfigureTexture(Albedo, TEXT("albedo"), 1024);

@@ -675,6 +675,13 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 				FileOf.Add(Asset, Pair.Key);
 			}
 		}
+		if (Importer == TEXT("mesh"))
+		{
+			if (const int32 Linear = ScenarioAssets::FixMeshTextures(Created))
+			{
+				Report.Checks.Add(FString::Printf(TEXT("%d metallic, roughness or occlusion map%s set to linear."), Linear, Linear == 1 ? TEXT("") : TEXT("s")));
+			}
+		}
 
 		// Lane assets built from the imported files.
 		FImportedSet Set;
