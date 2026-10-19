@@ -61,6 +61,7 @@ private:
 
 	TSharedPtr<FUICommandList> Commands;
 	FDelegateHandle PostEngineInitHandle;
+	FDelegateHandle PreExitHandle;
 	FTSTicker::FDelegateHandle StartTicker;
 	bool bStarted = false;
 };

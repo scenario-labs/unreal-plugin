@@ -239,6 +239,8 @@ void FScenarioEditorModule::StartupModule()
 	// a module's editor subsystems are created after its StartupModule: start on
 	// the first tick where the subsystem exists.
 	PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
+	// Asset thumbnails hold engine objects: release them before the object system shuts down, not in ShutdownModule.
+	PreExitHandle = FCoreDelegates::OnEnginePreExit.AddLambda([]() { FScenarioThumbnails::Get().Shutdown(); });
 	StartTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
 	{
 		OnPostEngineInit();
@@ -278,6 +280,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 void FScenarioEditorModule::ShutdownModule()
 {
 	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
+	FCoreDelegates::OnEnginePreExit.Remove(PreExitHandle);
 	FTSTicker::GetCoreTicker().RemoveTicker(StartTicker);
 	if (bStarted)
 	{
