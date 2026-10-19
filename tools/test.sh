@@ -9,22 +9,22 @@
 #   tools/test.sh Scenario.Core       one group
 # Build the editor target first: tools/build.sh --host
 # Engine: $UE_ROOT, default /Users/Shared/Epic Games/UE_5.8.
+# SCENARIO_TEST_PROJECT=<path to a .uproject> runs the tests in another project
+# that loads this plugin, so they never share a job list with an editor that
+# has the host project open.
 #
 # The tests use fake Scenario replies (0 CU). SCENARIO_NO_SPEND=1 is set unless
 # the caller sets it, so a call that reaches the real service by mistake cannot
 # spend; the client tests set the switch themselves where they need it.
-#
-# Unverified until Unreal 5.8 is installed on the development Mac: the
-# arguments follow Epic's documented headless automation command line.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UE_ROOT="${UE_ROOT:-/Users/Shared/Epic Games/UE_5.8}"
-PROJECT="$ROOT/ScenarioHost.uproject"
+PROJECT="${SCENARIO_TEST_PROJECT:-$ROOT/ScenarioHost.uproject}"
 filter="${1:-Scenario}"
 
 case "$filter" in
-  -h|--help) sed -n '4,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '4,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
 editor="$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd"
