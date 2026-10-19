@@ -208,7 +208,7 @@ UnrealEditor-Cmd MyProject.uproject -run=Scenario -Generate \
 | Output root | `/Game/Scenario` | Content folder for everything Scenario imports. Shared parent materials go in its `_Shared` folder |
 | Date folders | On | A folder per day under each kind folder |
 | Omit prompt from assets | Off | Keeps the prompt out of the provenance stored in imported assets |
-| Mesh collision | Simple box | Collision for imported meshes |
+| Mesh collision | Mesh shape | Collision for imported static meshes. Mesh shape lets the player walk through gates, arches and doors; Simple box is cheaper but closes them |
 | Nanite | Off | Builds imported static meshes as Nanite |
 | Max texture size | 0 (source size) | Largest size for imported textures; panoramas keep their size |
 | Save imported assets | On | Saves new asset packages right after import |

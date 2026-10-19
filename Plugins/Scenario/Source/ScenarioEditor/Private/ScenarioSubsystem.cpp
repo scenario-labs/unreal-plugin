@@ -2,8 +2,10 @@
 
 #include "ScenarioSubsystem.h"
 
+#include "AssetCompilingManager.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "ContentStreaming.h"
 #include "Editor.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
@@ -675,6 +677,13 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 				FileOf.Add(Asset, Pair.Key);
 			}
 		}
+		if (Importer == TEXT("mesh"))
+		{
+			if (const int32 Linear = ScenarioAssets::FixMeshTextures(Created))
+			{
+				Report.Checks.Add(FString::Printf(TEXT("%d metallic, roughness or occlusion map%s set to linear."), Linear, Linear == 1 ? TEXT("") : TEXT("s")));
+			}
+		}
 
 		// Lane assets built from the imported files.
 		FImportedSet Set;
@@ -1065,10 +1074,18 @@ void UScenarioSubsystem::TrackPackage(UPackage* Package)
 FScenarioChangeReport UScenarioSubsystem::SaveChanges(bool bIncludeLevels)
 {
 	TArray<UPackage*> Packages;
+	FScenarioChangeReport Report;
+	const auto Add = [&Packages](UPackage* Package)
+	{
+		if (Package && Package->IsDirty() && !FPackageName::IsTempPackage(Package->GetName()))
+		{
+			Packages.AddUnique(Package);
+		}
+	};
 	for (const FString& Name : TouchedPackages)
 	{
 		UPackage* Package = FindPackage(nullptr, *Name);
-		if (!Package || !Package->IsDirty())
+		if (!Package)
 		{
 			continue;
 		}
@@ -1077,12 +1094,39 @@ FScenarioChangeReport UScenarioSubsystem::SaveChanges(bool bIncludeLevels)
 		{
 			continue;
 		}
-		Packages.Add(Package);
+		Add(Package);
 	}
-	FScenarioChangeReport Report;
+	if (bIncludeLevels)
+	{
+		// Kit tools and scripts change the level and the shared assets without
+		// going through the import path, so the open level (with its World
+		// Partition actor files) and dirty assets under the Scenario folder are
+		// saved as a whole.
+		TArray<UPackage*> WorldPackages;
+		FEditorFileUtils::GetDirtyWorldPackages(WorldPackages);
+		for (UPackage* Package : WorldPackages)
+		{
+			if (FPackageName::IsTempPackage(Package->GetName()))
+			{
+				Report.Warnings.AddUnique(TEXT("The open level is untitled and was not saved: save it once with File > Save Current Level As."));
+				continue;
+			}
+			Add(Package);
+		}
+		TArray<UPackage*> ContentPackages;
+		FEditorFileUtils::GetDirtyContentPackages(ContentPackages);
+		const FString Root = UScenarioProjectSettings::Get().RootPath() + TEXT("/");
+		for (UPackage* Package : ContentPackages)
+		{
+			if (Package->GetName().StartsWith(Root))
+			{
+				Add(Package);
+			}
+		}
+	}
 	if (Packages.Num() == 0)
 	{
-		return FScenarioChangeReport::Fail(TEXT("Nothing to save: the plugin has no unsaved changes."));
+		return FScenarioChangeReport::Fail(Report.Warnings.Num() > 0 ? Report.Warnings[0] : FString(TEXT("Nothing to save: the plugin has no unsaved changes.")));
 	}
 	if (!UEditorLoadingAndSavingUtils::SavePackages(Packages, true))
 	{
@@ -1101,17 +1145,31 @@ FScenarioChangeReport UScenarioSubsystem::SaveChanges(bool bIncludeLevels)
 	return Report;
 }
 
-FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription)
+FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription, const FScenarioCaptureCamera* Camera)
 {
 	UWorld* World = ScenarioPlacement::EditorWorld();
-	const ScenarioPlacement::FView View = ScenarioPlacement::ActiveView();
+	ScenarioPlacement::FView View;
+	if (Camera)
+	{
+		View.bValid = true;
+		View.Location = Camera->Location;
+		View.Rotation = Camera->Rotation;
+		View.Fov = FMath::Clamp(Camera->Fov, 5.0f, 170.0f);
+	}
+	else
+	{
+		View = ScenarioPlacement::ActiveView();
+	}
 	if (!World || !View.bValid)
 	{
-		OutError = TEXT("No perspective level viewport to capture.");
+		OutError = Camera ? TEXT("No editor world to capture.") : TEXT("No perspective level viewport to capture: pass a camera.");
 		return FString();
 	}
 	Width = FMath::Clamp(Width, 64, 4096);
 	Height = FMath::Clamp(Height, 64, 4096);
+	// Meshes still building render as rough proxies and textures as low mips: finish both first (bounded).
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	IStreamingManager::Get().StreamAllResources(2.0f);
 
 	UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage());
 	Target->RenderTargetFormat = RTF_RGBA8_SRGB;
@@ -1125,8 +1183,13 @@ FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& 
 	Capture->TextureTarget = Target;
 	Capture->FOVAngle = View.Fov;
 	Capture->SetWorldLocationAndRotation(View.Location, View.Rotation);
+	// A few frames of history settle anti-aliasing and volumetric fog, as in the viewport.
+	Capture->bAlwaysPersistRenderingState = true;
 	Capture->RegisterComponentWithWorld(World);
-	Capture->CaptureScene();
+	for (int32 Frame = 0; Frame < 8; ++Frame)
+	{
+		Capture->CaptureScene();
+	}
 
 	TArray<FColor> Pixels;
 	FTextureRenderTargetResource* Resource = Target->GameThread_GetRenderTargetResource();
@@ -1144,7 +1207,7 @@ FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& 
 	}
 	TArray64<uint8> Png;
 	FImageUtils::PNGCompressImageArray(Width, Height, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
-	const FString Path = FPaths::Combine(StateDir(), TEXT("Captures"), FString::Printf(TEXT("viewport_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
+	const FString Path = FPaths::Combine(StateDir(), TEXT("Captures"), FString::Printf(TEXT("viewport_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S_%s"))));
 	if (!FFileHelper::SaveArrayToFile(Png, *Path))
 	{
 		OutError = TEXT("Could not write the capture to Saved/Scenario/Captures.");
@@ -1153,8 +1216,9 @@ FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& 
 	AllowUpload(Path);
 	if (OutDescription)
 	{
-		*OutDescription = FString::Printf(TEXT("Editor world, level viewport camera at (%.0f, %.0f, %.0f), FOV %.0f, %d x %d"),
-			View.Location.X, View.Location.Y, View.Location.Z, View.Fov, Width, Height);
+		*OutDescription = FString::Printf(TEXT("Editor world, %s at (%.2f, %.2f, %.2f) m, pitch %.0f, yaw %.0f, FOV %.0f, %d x %d"),
+			Camera ? TEXT("requested camera") : TEXT("level viewport camera"), View.Location.X / 100.0, View.Location.Y / 100.0, View.Location.Z / 100.0,
+			View.Rotation.Pitch, View.Rotation.Yaw, View.Fov, Width, Height);
 	}
 	return Path;
 }

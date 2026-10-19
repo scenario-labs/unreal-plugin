@@ -75,13 +75,13 @@ Work in this order so generation time overlaps with building:
 2. Pick a theme and write every prompt. Then `estimate_cost` for each asset and `generate` them all at once (each quote lasts 120 s, so generate right after its estimate). Tell the person the total first.
 3. While the jobs run: `build_world` (or `dress_template`).
 4. `wait_for_job` each job, then `prepare_result_application` with purpose `import` and `apply_result_application`. Keep the paths from `created_assets`: the static mesh for 3D (its import folder also works), the material instance for materials, the material or texture for skies, the sound wave for audio.
-5. Lay out with the kit tool, `screenshot_viewport`, fix what looks wrong (`front_yaw`, `height_m`, `seed`), and tell the person what to do next (press Play, open the MP4).
+5. Lay out with the kit tool, then look with `screenshot_viewport` and its `camera` (the player's eye from the start, an aerial view) so the person's viewport stays put. Fix what looks wrong (`front_yaw`, `height_m`, `seed`), and tell the person what to do next (press Play, open the MP4). After `play_level`, call `kit_status` a few seconds later: it reports the player character once it has spawned.
 
 Assets per recipe (lane picks from `list_models` are good defaults):
 
 | Recipe | Generate | Then |
 | --- | --- | --- |
-| Walkable world | 1 sky (environment), 1 ground material, 1 landmark and 3 or 4 props (3D), 1 ambient loop (audio, sound effects model, 20 to 30 s) | `build_world`, `dress_world` with `landmark`, `props`, `ground_material`, `sky`, `ambient` |
+| Walkable world | 1 sky (environment), 1 ground material, 1 path material, 1 landmark and 3 or 4 props (3D), 1 ambient loop (audio, sound effects model, 20 to 30 s) | `build_world`, `dress_world` with `landmark`, `path`, `props`, `ground_material`, `sky`, `mist`, `ambient` |
 | Game you build | the world assets, plus 1 small pickup (3D), 1 pickup sound, 1 music track; optionally a goal mesh | world recipe, then `make_game` with `title`, `pickups` (mesh, count, name, sound), `goal`, `music`, `time_limit_s` |
 | Template game | 1 floor material, 1 block material, 1 crate or prop (3D), 1 sky, 1 music track | `dress_template` with `template` (platforming, combat...), `floor_material`, `block_material`, `swaps` ([{"replace": "boxes", "mesh": ...}]), `sky`, `music` |
 | Short film | the world assets (or an existing world), 1 music track as long as the film | world recipe, `make_film` with `music`, then `render_film` and `film_status` every 20 s until `done`; give the person the `mp4` path |
@@ -95,8 +95,12 @@ Prompt tips:
 
 Layout tips:
 
-- Landmark 4 to 10 m high; props 0.5 to 4 m (use `[min, max]` for variety); `path_sides` for things lining the path (lanterns, fences); `edges` for tall things framing the area (trees, cliffs).
-- If the landmark faces away from the player, call `dress_world` again with `landmark.front_yaw` 180 (or 90, -90); `replace` true keeps the layout clean.
+- Landmark 4 to 10 m high; props 0.5 to 4 m (use `[min, max]` for variety); `path_sides` for things lining the path (lanterns, fences), evenly spaced; `on_path` for gates and arches the player walks through (torii, archways): they straddle the path; `edges` for tall things framing the area (trees, cliffs).
+- `path` lays a paved strip from the player start to the landmark: `{ "material": <material>, "width_m": 3.5 }`.
+- Lanterns, braziers and lit windows: add `"light": true` to the prop (a warm 2200 K light inside each, 48 at most per world).
+- `mist` from 0 to 1 (0.6 to 0.9 for a misty morning or a shrine at golden hour) thickens the ground fog and makes it volumetric, so light shafts and lantern glow show.
+- With a `sky`, the sun is aimed from the sun in the panorama when it shows a clear one; the result's `sun` says which (sky panorama or time_of_day preset).
+- The landmark faces the player start by default (Scenario 3D models face +Y, so `front_yaw` defaults to -90). If it faces away, call `dress_world` again with `landmark.front_yaw` 90 (or 0, 180); `replace` true keeps the layout clean.
 - `size_m` 80 to 150 is a good walk. More than 120 props slows the editor.
 - A film needs the world first. 20 to 30 s with six shots is the default; renders take a few minutes at 720p draft.
 
@@ -107,5 +111,7 @@ Layout tips:
 - Assuming the level is saved after placing: it is not until `save_changes` with `include_levels: true`.
 - Re-running `generate` after a timeout instead of checking `job_status` or `recover_local_job`.
 - Approving a different number than `cu_cost_exact` ("12.0" for "12").
+- In `execute_python`, building `unreal.Rotator(pitch, yaw, roll)` positionally: the order is roll, pitch, yaw. Use keywords: `unreal.Rotator(roll=0.0, pitch=-10.0, yaw=90.0)`.
+- Moving the person's viewport to look at something: pass `camera` to `screenshot_viewport` instead.
 
 For general Unreal editing (Blueprints, Sequencer, lighting), use Epic's Unreal MCP or your Unreal skills, and come back to these tools for Scenario generation and landing.

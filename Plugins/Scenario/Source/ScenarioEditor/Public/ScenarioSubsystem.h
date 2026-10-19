@@ -40,6 +40,14 @@ struct SCENARIOEDITOR_API FScenarioChangeReport
 	static FScenarioChangeReport Fail(const FString& Error);
 };
 
+/** A camera for a capture, in centimeters and degrees. */
+struct FScenarioCaptureCamera
+{
+	FVector Location = FVector::ZeroVector;
+	FRotator Rotation = FRotator::ZeroRotator;
+	float Fov = 90.0f;
+};
+
 UENUM()
 enum class EScenarioPlacement : uint8
 {
@@ -126,8 +134,12 @@ public:
 
 	// Captures
 
-	/** Renders the active level viewport's camera (no editor gizmos) to a PNG under Saved/Scenario/Captures. */
-	FString CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription = nullptr);
+	/**
+	 * Renders the active level viewport's camera (no editor gizmos), or Camera
+	 * when given, to a PNG under Saved/Scenario/Captures. A camera leaves the
+	 * person's viewport where it is.
+	 */
+	FString CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription = nullptr, const FScenarioCaptureCamera* Camera = nullptr);
 	/** Exports the selected actors (or one actor) to a GLB under Saved/Scenario/Captures, for 3D edits. */
 	FString ExportActorsToGlb(const TArray<AActor*>& Actors, FString& OutError);
 	/**

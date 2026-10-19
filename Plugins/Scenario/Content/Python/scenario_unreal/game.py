@@ -292,6 +292,9 @@ def dress_template(name, template="platforming", floor_material=None, block_mate
             placed += 1
         placed_props.append({"mesh": mesh.get_path_name().split(".")[0], "placed": placed, "asked": count})
     report["props"] = placed_props
+    if common.mesh_fixes:
+        report["mesh_fixes"] = list(common.mesh_fixes)
+        common.mesh_fixes.clear()
     mode = common.world().get_world_settings().get_editor_property("default_game_mode")
     report["game_mode"] = mode.get_name() if mode else "project default"
     common.save_level()

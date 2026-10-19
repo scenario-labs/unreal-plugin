@@ -1,19 +1,29 @@
 # Copyright (c) 2026 Scenario Inc. Licensed under the MIT License.
 """Light, sky and surfaces: time-of-day presets, the Scenario sky sphere and
 world-aligned copies of Scenario materials (no stretching on scaled meshes)."""
+import re
+
 import unreal
 
 from . import common
 
-# Sun angle, light in lux, sky light, fog density and exposure bias per time of day.
+# Per time of day: sun angle (used when the sky shows no clear sun), sun in lux and its
+# color temperature (or a color at night), sky light, fog density and colors (ambient and
+# toward the sun), exposure bias, light shafts and the sun's disc size (softer shadows low down).
 # Tuned from the engine's Basic level (6 lux, real-time sky light, fog 0.044).
 PRESETS = {
-    "day": dict(pitch=-48, yaw=-25, lux=6.0, color=(1.0, 0.97, 0.92), sky=1.0, fog=0.03, clouds=True, bias=0.4),
-    "morning": dict(pitch=-20, yaw=55, lux=5.0, color=(1.0, 0.9, 0.78), sky=1.0, fog=0.05, clouds=True, bias=0.8),
-    "golden": dict(pitch=-9, yaw=105, lux=5.0, color=(1.0, 0.78, 0.55), sky=1.1, fog=0.045, clouds=True, bias=1.3),
-    "dusk": dict(pitch=-3, yaw=120, lux=3.0, color=(1.0, 0.6, 0.45), sky=1.4, fog=0.05, clouds=True, bias=1.8),
-    "night": dict(pitch=-40, yaw=200, lux=0.35, color=(0.6, 0.72, 1.0), sky=0.5, fog=0.04, clouds=False, bias=2.4, atmosphere=False),
-    "overcast": dict(pitch=-62, yaw=10, lux=2.5, color=(0.92, 0.95, 1.0), sky=1.5, fog=0.07, clouds=True, bias=1.0),
+    "day": dict(pitch=-48, yaw=-25, lux=6.5, temperature=5900, sky=1.0, fog=0.03, fog_color=(0.42, 0.52, 0.66),
+                sun_fog=(0.8, 0.75, 0.62), clouds=True, bias=0.4, shafts=False, angle=0.6),
+    "morning": dict(pitch=-20, yaw=55, lux=6.0, temperature=5000, sky=1.0, fog=0.05, fog_color=(0.5, 0.52, 0.58),
+                    sun_fog=(0.95, 0.75, 0.5), clouds=True, bias=0.8, shafts=True, angle=1.0),
+    "golden": dict(pitch=-9, yaw=105, lux=8.5, temperature=4300, sky=1.1, fog=0.045, fog_color=(0.52, 0.42, 0.34),
+                   sun_fog=(1.0, 0.62, 0.32), clouds=True, bias=1.3, shafts=True, angle=1.5),
+    "dusk": dict(pitch=-3, yaw=120, lux=4.0, temperature=3300, sky=1.4, fog=0.05, fog_color=(0.3, 0.24, 0.3),
+                 sun_fog=(0.9, 0.42, 0.25), clouds=True, bias=1.8, shafts=True, angle=2.0),
+    "night": dict(pitch=-40, yaw=200, lux=0.35, color=(0.6, 0.72, 1.0), sky=0.5, fog=0.04, fog_color=(0.02, 0.03, 0.06),
+                  sun_fog=(0.04, 0.05, 0.09), clouds=False, bias=2.4, atmosphere=False, shafts=False, angle=0.5),
+    "overcast": dict(pitch=-62, yaw=10, lux=2.5, temperature=6800, sky=1.5, fog=0.07, fog_color=(0.55, 0.57, 0.6),
+                     sun_fog=(0.2, 0.2, 0.2), clouds=True, bias=1.0, shafts=False, angle=3.0),
 }
 
 SKY_SPHERE = "/Engine/BasicShapes/Sphere"
@@ -21,25 +31,67 @@ SKY_SCALE = 2000.0  # the basic sphere has a 50 cm radius: the sky sits 1 km awa
 WORLD_MASTER = "M_ScenarioKit_WorldAligned"
 WAT = "/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedTexture"
 WAN = "/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedNormal"
+SUN_CLEAR = 3.0  # panorama sun brightness over the sky's median above which the sky's sun leads
+_panorama_suns = {}
 
 
-def apply_time_of_day(name):
+def _set(obj, name, value):
+    """Sets a property that some engine versions name or expose differently; False when it is not there."""
+    try:
+        obj.set_editor_property(name, value)
+        return True
+    except Exception:
+        return False
+
+
+def _tag(actor, key, value):
+    tags = [t for t in actor.tags if not str(t).startswith(key + "=")]
+    actor.set_editor_property("tags", tags + [unreal.Name(f"{key}={value}")])
+
+
+def current_time_of_day():
+    sun = common.first_of(unreal.DirectionalLight)
+    name = common.tag_value(sun, "ScenarioKit.TimeOfDay") if sun else None
+    return name if name in PRESETS else None
+
+
+def current_mist():
+    fog = common.first_of(unreal.ExponentialHeightFog)
+    try:
+        return float(common.tag_value(fog, "ScenarioKit.Mist", "0")) if fog else 0.0
+    except ValueError:
+        return 0.0
+
+
+def apply_time_of_day(name, mist=None):
+    """Light, fog and exposure for a time of day. mist None keeps the level's mist. Returns where the sun came from."""
     if name not in PRESETS:
         raise common.KitError(f"time_of_day must be one of {', '.join(PRESETS)}.")
     p = PRESETS[name]
     sun = common.first_of(unreal.DirectionalLight)
     if sun:
-        sun.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=float(p["pitch"]), yaw=float(p["yaw"])), False)
+        _tag(sun, "ScenarioKit.TimeOfDay", name)
         light = sun.light_component
         light.set_intensity(p["lux"])
-        light.set_light_color(unreal.LinearColor(*p["color"], 1.0))
+        if p.get("temperature"):
+            _set(light, "use_temperature", True)
+            _set(light, "temperature", float(p["temperature"]))
+            light.set_light_color(unreal.LinearColor(1.0, 1.0, 1.0, 1.0))
+        else:
+            _set(light, "use_temperature", False)
+            light.set_light_color(unreal.LinearColor(*p["color"], 1.0))
         light.set_editor_property("atmosphere_sun_light", p.get("atmosphere", True))
+        _set(light, "light_source_angle", float(p["angle"]))
+        _set(light, "enable_light_shaft_occlusion", bool(p["shafts"]))
+        _set(light, "enable_light_shaft_bloom", bool(p["shafts"]))
+        if p["shafts"]:
+            _set(light, "bloom_scale", 0.2)
+            _set(light, "bloom_threshold", 4.0)
+            _set(light, "occlusion_mask_darkness", 0.4)
     sky_light = common.first_of(unreal.SkyLight)
     if sky_light:
         sky_light.light_component.set_intensity(p["sky"])
-    fog = common.first_of(unreal.ExponentialHeightFog)
-    if fog:
-        fog.component.set_fog_density(p["fog"])
+    set_mist(current_mist() if mist is None else mist, name)
     if not p["clouds"]:
         common.remove(common.all_of(unreal.VolumetricCloud))
     post = _post_volume()
@@ -47,6 +99,104 @@ def apply_time_of_day(name):
     settings.set_editor_property("override_auto_exposure_bias", True)
     settings.set_editor_property("auto_exposure_bias", p["bias"])
     post.set_editor_property("settings", settings)
+    sun_source = aim_sun(name)
+    recapture()
+    return sun_source
+
+
+def set_mist(mist, time_of_day=None):
+    """Height fog for the time of day, thickened by mist from 0 (clear air) to 1 (dense ground mist).
+    Above 0 the fog is volumetric, so light shafts and lantern glow show in it."""
+    fog = common.first_of(unreal.ExponentialHeightFog)
+    if fog is None:
+        fog = common.spawn(unreal.ExponentialHeightFog, (0.0, 0.0, 0.0), label="Scenario Fog", folder="Scenario/Lighting")
+    m = max(0.0, min(float(mist or 0.0), 1.0))
+    p = PRESETS[time_of_day or current_time_of_day() or "day"]
+    _tag(fog, "ScenarioKit.Mist", round(m, 2))
+    # Height fog is densest at the actor's height: keep it on a kit world's ground (z 0).
+    if common.tagged("ScenarioKit.Ground"):
+        location = fog.get_actor_location()
+        fog.set_actor_location(unreal.Vector(location.x, location.y, 0.0), False, False)
+    c = fog.component
+    c.set_fog_density(p["fog"] + m * 0.095)
+    c.set_fog_height_falloff(0.2 + m * 0.5)
+    c.set_fog_max_opacity(1.0 - m * 0.1)
+    c.set_start_distance(m * 250.0)
+    ambient = unreal.LinearColor(*p["fog_color"], 1.0)
+    toward_sun = unreal.LinearColor(*p["sun_fog"], 1.0)
+    if not _set(c, "fog_inscattering_luminance", ambient):
+        c.set_fog_inscattering_color(ambient)
+    if not _set(c, "directional_inscattering_luminance", toward_sun):
+        c.set_directional_inscattering_color(toward_sun)
+    _set(c, "directional_inscattering_exponent", 6.0)
+    c.set_volumetric_fog(m > 0.0)
+    if m > 0.0:
+        c.set_volumetric_fog_scattering_distribution(0.2 + m * 0.625)
+        c.set_volumetric_fog_extinction_scale(1.0 + m * 2.5)
+        c.set_volumetric_fog_distance(6000.0 + m * 2500.0)
+    return m
+
+
+def _panorama_texture():
+    """The panorama of the Scenario sky in the level, or None."""
+    for sky in common.tagged("ScenarioKit.Sky") + scenario_skies():
+        material = sky.static_mesh_component.get_material(0)
+        if material is None:
+            continue
+        if isinstance(material, unreal.MaterialInstance):
+            try:
+                texture = unreal.MaterialEditingLibrary.get_material_instance_texture_parameter_value(material, "Panorama")
+            except Exception:
+                texture = None
+            if isinstance(texture, unreal.Texture2D):
+                return texture
+    return None
+
+
+def panorama_sun(texture):
+    """(azimuth, elevation, strength) of the sun in a panorama, or None."""
+    key = texture.get_path_name()
+    if key not in _panorama_suns:
+        found = None
+        finder = getattr(unreal, "ScenarioScriptLibrary", None)
+        if finder is not None and hasattr(finder, "find_panorama_sun"):
+            # (azimuth, elevation, strength), or None when the texture has no source image.
+            result = finder.find_panorama_sun(texture)
+            if result and len(result) == 3:
+                found = tuple(float(v) for v in result)
+        _panorama_suns[key] = found
+    return _panorama_suns[key]
+
+
+def aim_sun(time_of_day=None):
+    """Points the sun from the sky's own sun when the panorama shows a clear one, else from the preset."""
+    sun = common.first_of(unreal.DirectionalLight)
+    if sun is None:
+        return {"source": "none", "note": "The level has no directional light."}
+    p = PRESETS[time_of_day or current_time_of_day() or "day"]
+    pitch, yaw = float(p["pitch"]), float(p["yaw"])
+    report = {"source": "time_of_day preset"}
+    texture = _panorama_texture()
+    found = panorama_sun(texture) if texture is not None else None
+    if found is not None:
+        azimuth, elevation, strength = found
+        if strength >= SUN_CLEAR:
+            # Light travels away from the sun: pitch down by its elevation, yaw opposite its azimuth.
+            pitch, yaw = -max(4.0, min(elevation, 80.0)), azimuth + 180.0
+            report = {"source": "sky panorama", "azimuth": round(azimuth, 1), "elevation": round(elevation, 1),
+                      "strength": round(strength, 1)}
+        else:
+            report = {"source": "time_of_day preset", "note": f"the sky shows no clear sun (strength {strength:.1f}, needs {SUN_CLEAR})"}
+    sun.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=pitch, yaw=yaw), False)
+    report["pitch"], report["yaw"] = round(pitch, 1), round(yaw % 360.0, 1)
+    return report
+
+
+def recapture():
+    """Updates the sky light from the current sky and sun."""
+    sky_light = common.first_of(unreal.SkyLight)
+    if sky_light is not None:
+        sky_light.light_component.recapture_sky()
 
 
 def _post_volume():
@@ -84,7 +234,8 @@ def sky_material(path):
 
 
 def set_sky(path, yaw=0.0):
-    """Puts the Scenario sky around the level and lights the level from it."""
+    """Puts the Scenario sky around the level, points the sun from it and lights the level from it.
+    Returns where the sun came from. (The sky material maps by world direction: yaw does not turn it.)"""
     material = sky_material(path)
     common.remove(common.tagged("ScenarioKit.Sky"))
     sphere = unreal.load_asset(SKY_SPHERE)
@@ -93,10 +244,14 @@ def set_sky(path, yaw=0.0):
     component = sky.static_mesh_component
     component.set_material(0, material)
     component.set_cast_shadow(False)
+    # The player spawns inside the sphere: no collision at all, and nothing to step on.
+    component.set_collision_profile_name("NoCollision")
     component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+    _set(component, "can_character_step_up_on", unreal.CanBeCharacterBase.ECB_NO)
     _hide_engine_skies(keep=sky)
+    sun_source = aim_sun()
     light_from_sky()
-    return sky
+    return sun_source
 
 
 def _hide_engine_skies(keep):
@@ -216,7 +371,11 @@ def world_material(path, tile_m=4.0, tint=None):
         # Not a Scenario PBR material: use it as it is.
         return source
     folder = source.get_path_name().rsplit("/", 1)[0]
-    name = f"{source.get_name()}_World{int(round(tile_m * 100))}"
+    # A world-aligned copy can be the source too (a new tint for the ground): name from the original.
+    base = re.sub(r"_World\d+(_[0-9A-F]{6})?$", "", source.get_name())
+    name = f"{base}_World{int(round(tile_m * 100))}"
+    if tint:
+        name += "_" + "".join(f"{max(0, min(int(round(float(c) * 255)), 255)):02X}" for c in tint[:3])
     target = f"{folder}/{name}"
     if common.assets().does_asset_exist(target):
         mi = unreal.load_asset(target)
