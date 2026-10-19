@@ -1,0 +1,225 @@
+{
+  "about": "Kit tools: Scenario MCP tools that lay Scenario results out as a walkable world, a game or a film. Each runs scenario_unreal.recipes in the editor's Python (Content/Python). kind: read, editor or change. undo: run inside one undo step (false for tools that open a level or start a render).",
+  "tools": [
+    {
+      "name": "build_world",
+      "kind": "change",
+      "undo": false,
+      "time_limit": 180,
+      "description": "Creates and opens a new walkable level under /Game/Scenario/Worlds: sun, sky light and fog for the time of day, a ground, invisible walls around the play area, a player start and the project's third-person game mode. Generate the Scenario assets first or in parallel; pass them here or to dress_world. Fails if the open level has unsaved changes.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "World name, also the level name (\"Misty Bamboo Temple\")." },
+          "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"], "default": "day" },
+          "size_m": { "type": "number", "description": "Side of the square play area in meters (40 to 600). Default 120: about a minute to walk across." },
+          "ground_material": { "type": "string", "description": "Material from a Scenario material result (created_assets path). Tiled in world space." },
+          "ground_tile_m": { "type": "number", "description": "Meters per texture tile on the ground. Default 4." },
+          "sky": { "type": "string", "description": "Material or panorama texture from a Scenario environment (skybox) result." },
+          "game_mode": { "type": "string", "description": "Blueprint game mode path. Default auto: the project's Third Person, First Person or Top Down template game mode." }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "dress_world",
+      "kind": "change",
+      "undo": true,
+      "time_limit": 300,
+      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), props scattered with spacing and a clear path from the player start to the landmark, plus ground material, sky and looping ambient sound. Meshes are scaled to height_m and rest on the ground. Call again with replace true to redo the layout.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "landmark": {
+            "type": "object",
+            "description": "The hero object at the center: what the player walks to and the film circles.",
+            "properties": {
+              "mesh": { "type": "string", "description": "Static mesh path (or its import folder)." },
+              "height_m": { "type": "number", "description": "Default 6." },
+              "at_m": { "type": "array", "items": { "type": "number" }, "description": "[x, y] in meters. Default [0, 0]." },
+              "front_yaw": { "type": "number", "description": "Degrees to add if the mesh's front does not face the player." }
+            },
+            "required": ["mesh"]
+          },
+          "props": {
+            "type": "array",
+            "description": "One entry per Scenario mesh. 300 props at most in total.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mesh": { "type": "string" },
+                "count": { "type": "integer", "description": "Default 6." },
+                "height_m": { "description": "Height in meters, or [min, max] for variety. Default 1.5.", "oneOf": [ { "type": "number" }, { "type": "array", "items": { "type": "number" } } ] },
+                "area": { "type": "string", "enum": ["anywhere", "edges", "center", "around_landmark", "path_sides"], "description": "path_sides lines both sides of the path (lanterns, fences). Default anywhere." },
+                "spacing_m": { "type": "number", "description": "Free space between props. Default 1.5." },
+                "yaw": { "description": "\"random\" (default), \"face_center\" or degrees.", "oneOf": [ { "type": "string" }, { "type": "number" } ] },
+                "sink_m": { "type": "number", "description": "Sinks the prop into the ground (rocks, roots). Default 0." }
+              },
+              "required": ["mesh"]
+            }
+          },
+          "ground_material": { "type": "string" },
+          "ground_tile_m": { "type": "number" },
+          "sky": { "type": "string" },
+          "ambient": { "type": "string", "description": "Sound from a Scenario audio result, looped over the whole world." },
+          "ambient_volume": { "type": "number", "description": "Default 0.5." },
+          "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
+          "seed": { "type": "integer", "description": "Change it for another layout. Default 7." },
+          "replace": { "type": "boolean", "description": "Removes the props and landmark of the previous call first. Default true." }
+        }
+      }
+    },
+    {
+      "name": "make_game",
+      "kind": "change",
+      "undo": true,
+      "time_limit": 180,
+      "description": "Turns the open level (a kit world or a dressed template) into a small game: Scenario pickups spread over free floor (they spin and glow), an optional goal (in front of the landmark when there is one), a timer, looping music and a HUD. Winning: collect every pickup, then reach the goal. Uses the plugin's Scenario Pickup, Goal and Game Rules actors, so the game also works in a packaged build.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Shown on the HUD (\"Lantern Hunt\")." },
+          "pickups": {
+            "type": "object",
+            "properties": {
+              "mesh": { "type": "string" },
+              "count": { "type": "integer", "description": "1 to 40. Default 8." },
+              "name": { "type": "string", "description": "Plural, for the HUD (\"lanterns\")." },
+              "height_m": { "type": "number", "description": "Default 0.7." },
+              "hover_m": { "type": "number", "description": "Height above the floor. Default 1." },
+              "sound": { "type": "string", "description": "Short Scenario sound played on pickup." }
+            },
+            "required": ["mesh", "name"]
+          },
+          "goal": {
+            "type": "object",
+            "description": "Omit for a game won by collecting everything.",
+            "properties": {
+              "mesh": { "type": "string", "description": "Optional mesh (portal, shrine, boat). Without it the goal is a glow." },
+              "height_m": { "type": "number", "description": "Default 3." },
+              "at_m": { "type": "array", "items": { "type": "number" } },
+              "needs_all_pickups": { "type": "boolean", "description": "Default true." }
+            }
+          },
+          "time_limit_s": { "type": "number", "description": "0: no limit. Default 25 s per pickup plus 30." },
+          "music": { "type": "string", "description": "Scenario music, looped." },
+          "music_volume": { "type": "number" },
+          "win_sound": { "type": "string" },
+          "lose_sound": { "type": "string" },
+          "objective": { "type": "string", "description": "One HUD line. Default: \"Collect every <name>, then reach the goal.\"" },
+          "accent": { "type": "array", "items": { "type": "number" }, "description": "HUD and glow color, [r, g, b] 0 to 1." },
+          "seed": { "type": "integer" },
+          "replace": { "type": "boolean", "description": "Removes the previous game's actors first. Default true." }
+        },
+        "required": ["title", "pickups"]
+      }
+    },
+    {
+      "name": "dress_template",
+      "kind": "change",
+      "undo": false,
+      "time_limit": 240,
+      "description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "template": { "type": "string", "description": "A name above or a level path. Default platforming." },
+          "floor_material": { "type": "string", "description": "Replaces the grey grid floors and walls." },
+          "block_material": { "type": "string", "description": "Replaces the colored blocks." },
+          "tile_m": { "type": "number", "description": "Meters per texture tile. Default 4." },
+          "swaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "replace": { "type": "string", "description": "boxes (breakable crates in combat), cubes, cylinders, or a mesh path." },
+                "mesh": { "type": "string" }
+              },
+              "required": ["replace", "mesh"]
+            }
+          },
+          "props": { "type": "array", "items": { "type": "object", "properties": { "mesh": { "type": "string" }, "count": { "type": "integer" }, "height_m": {} }, "required": ["mesh"] } },
+          "sky": { "type": "string" },
+          "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
+          "music": { "type": "string" },
+          "music_volume": { "type": "number" },
+          "seed": { "type": "integer" }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "make_film",
+      "kind": "change",
+      "undo": true,
+      "time_limit": 180,
+      "description": "Builds a short film in the open level as a Level Sequence: cine cameras on smooth moves (aerial, crane_down, orbit, walk, detail, rise) around the landmark, camera cuts, fade in and out, and Scenario music and sound effects. Default: six shots over duration_s. Then render_film.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "duration_s": { "type": "number", "description": "6 to 120. Default 24." },
+          "music": { "type": "string", "description": "Scenario music for the whole film." },
+          "music_volume": { "type": "number" },
+          "sfx": { "type": "array", "items": { "type": "object", "properties": { "sound": { "type": "string" }, "at_s": { "type": "number" }, "volume": { "type": "number" } }, "required": ["sound", "at_s"] } },
+          "focus": { "description": "What the film is about: an actor label, or [x, y, z] in meters. Default: the landmark.", "oneOf": [ { "type": "string" }, { "type": "array", "items": { "type": "number" } } ] },
+          "shots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "enum": ["aerial", "crane_down", "orbit", "walk", "detail", "rise"] },
+                "duration_s": { "type": "number" },
+                "focus": { "description": "Actor label or [x, y, z] meters for this shot." }
+              },
+              "required": ["type"]
+            }
+          },
+          "fps": { "type": "integer", "description": "Default 24." },
+          "seed": { "type": "integer" }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "render_film",
+      "kind": "change",
+      "undo": false,
+      "time_limit": 60,
+      "description": "Renders a film with Movie Render Queue in the editor, then encodes an MP4 with its music when ffmpeg is installed. Returns at once: poll film_status about every 20 seconds. A 24 s film at 720p draft takes a few minutes.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "film": { "type": "string", "description": "Film name or sequence path. Default: the newest film." },
+          "resolution": { "type": "string", "enum": ["720p", "1080p"], "default": "720p" },
+          "quality": { "type": "string", "enum": ["draft", "high"], "description": "high: 4 temporal samples (smoother, about 4x slower). Default draft." }
+        }
+      }
+    },
+    {
+      "name": "film_status",
+      "kind": "read",
+      "undo": false,
+      "time_limit": 20,
+      "description": "Where a film render is: rendering (frames_done of frames), encoding, done (mp4 path) or failed (error).",
+      "input_schema": { "type": "object", "properties": { "film": { "type": "string" } } }
+    },
+    {
+      "name": "kit_status",
+      "kind": "read",
+      "undo": false,
+      "time_limit": 20,
+      "description": "What the kit made in the open level: kit world or not, size, props, landmark, sky, pickups, goal, game rules, films, Play running.",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "play_level",
+      "kind": "editor",
+      "undo": false,
+      "time_limit": 20,
+      "description": "Starts (or stops) Play in the editor so the person can walk the level or play the game.",
+      "input_schema": { "type": "object", "properties": { "action": { "type": "string", "enum": ["start", "stop"], "default": "start" } } }
+    }
+  ]
+}

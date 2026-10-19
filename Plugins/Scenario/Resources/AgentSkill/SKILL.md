@@ -22,7 +22,7 @@ The Scenario plugin runs a local MCP server inside the Unreal Editor. Its tools 
 4. `model_schema`: parameter names, options, defaults, and which change the price. File fields take Scenario asset ids.
 5. `estimate_cost` with `model_id` and `parameters`: free, returns `quote_id` and `cu_cost_exact`.
 6. `generate` with `quote_id` and `approved_cost` equal to `cu_cost_exact`, character for character. Returns `job_id`.
-7. `wait_for_job` until `delivered` is true (it returns `still_running` after about 150 s; call it again).
+7. `wait_for_job` until `delivered` is true (it returns `still_running` after 45 s by default; call it again. Keep `timeout_seconds` under 60: many clients cut a call at 60 s).
 8. `prepare_result_application`, show the user the `review` text when it matters, then `apply_result_application`.
 9. `save_changes` when the user wants the result saved. Nothing is saved for you except the imported asset files.
 
@@ -64,6 +64,41 @@ User: "Put a mossy stone well next to the selected house."
 5. `wait_for_job` `{ "job_id": "<job_id>" }` until `delivered`.
 6. `prepare_result_application` `{ "job_id": "<job_id>", "purpose": "place", "placement": "at_location", "location": [x, y, z] }` with a point beside the house from `object_detail`.
 7. `apply_result_application`, report the created asset and actor, and ask before `save_changes`.
+
+## One prompt to a world, a game or a film
+
+The kit tools lay Scenario results out for you: `build_world`, `dress_world`, `make_game`, `dress_template`, `make_film`, `render_film`, `film_status`, `kit_status`, `play_level`. They need "Allow agents to change this project". Distances are in meters.
+
+Work in this order so generation time overlaps with building:
+
+1. `scenario_status` and `kit_status`.
+2. Pick a theme and write every prompt. Then `estimate_cost` for each asset and `generate` them all at once (each quote lasts 120 s, so generate right after its estimate). Tell the person the total first.
+3. While the jobs run: `build_world` (or `dress_template`).
+4. `wait_for_job` each job, then `prepare_result_application` with purpose `import` and `apply_result_application`. Keep the paths from `created_assets`: the static mesh for 3D (its import folder also works), the material instance for materials, the material or texture for skies, the sound wave for audio.
+5. Lay out with the kit tool, `screenshot_viewport`, fix what looks wrong (`front_yaw`, `height_m`, `seed`), and tell the person what to do next (press Play, open the MP4).
+
+Assets per recipe (lane picks from `list_models` are good defaults):
+
+| Recipe | Generate | Then |
+| --- | --- | --- |
+| Walkable world | 1 sky (environment), 1 ground material, 1 landmark and 3 or 4 props (3D), 1 ambient loop (audio, sound effects model, 20 to 30 s) | `build_world`, `dress_world` with `landmark`, `props`, `ground_material`, `sky`, `ambient` |
+| Game you build | the world assets, plus 1 small pickup (3D), 1 pickup sound, 1 music track; optionally a goal mesh | world recipe, then `make_game` with `title`, `pickups` (mesh, count, name, sound), `goal`, `music`, `time_limit_s` |
+| Template game | 1 floor material, 1 block material, 1 crate or prop (3D), 1 sky, 1 music track | `dress_template` with `template` (platforming, combat...), `floor_material`, `block_material`, `swaps` ([{"replace": "boxes", "mesh": ...}]), `sky`, `music` |
+| Short film | the world assets (or an existing world), 1 music track as long as the film | world recipe, `make_film` with `music`, then `render_film` and `film_status` every 20 s until `done`; give the person the `mp4` path |
+
+Prompt tips:
+
+- 3D: one object, centered, no ground plane, no text ("weathered red torii gate, single object"). Add `unreal_ready_prompt` from `model_schema` when it is there. Sizes come from `height_m`, not the prompt.
+- Materials: "seamless tileable <surface>, top-down, even lighting".
+- Skies: describe the horizon and light ("360 panorama, misty mountain valley at golden hour, soft clouds"); match `time_of_day`.
+- Music: give the length the model asks for (film length, or 60 s or more for a game loop) and the mood.
+
+Layout tips:
+
+- Landmark 4 to 10 m high; props 0.5 to 4 m (use `[min, max]` for variety); `path_sides` for things lining the path (lanterns, fences); `edges` for tall things framing the area (trees, cliffs).
+- If the landmark faces away from the player, call `dress_world` again with `landmark.front_yaw` 180 (or 90, -90); `replace` true keeps the layout clean.
+- `size_m` 80 to 150 is a good walk. More than 120 props slows the editor.
+- A film needs the world first. 20 to 30 s with six shots is the default; renders take a few minutes at 720p draft.
 
 ## Common mistakes
 

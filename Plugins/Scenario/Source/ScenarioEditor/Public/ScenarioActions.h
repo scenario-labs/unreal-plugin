@@ -110,6 +110,7 @@ private:
 	FScenarioActions();
 	void RegisterScenarioActions();
 	void RegisterLevelActions();
+	void RegisterKitActions();
 
 	TArray<FScenarioAction> Actions;
 	TMap<FString, int32> IndexByName;

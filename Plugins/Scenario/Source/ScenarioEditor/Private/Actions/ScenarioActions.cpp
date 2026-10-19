@@ -71,6 +71,7 @@ FScenarioActions::FScenarioActions()
 {
 	RegisterScenarioActions();
 	RegisterLevelActions();
+	RegisterKitActions();
 }
 
 void FScenarioActions::Register(FScenarioAction Action)
