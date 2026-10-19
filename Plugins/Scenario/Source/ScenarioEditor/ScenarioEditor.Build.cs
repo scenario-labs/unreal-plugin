@@ -35,6 +35,7 @@ public class ScenarioEditor : ModuleRules
 			"ContentBrowserData",
 			"DesktopPlatform",
 			"EditorFramework",
+			"EditorWidgets",
 			"GLTFExporter",
 			"HTTP",
 			"ImageCore",

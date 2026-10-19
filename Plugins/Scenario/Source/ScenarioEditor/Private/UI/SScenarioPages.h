@@ -7,6 +7,7 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/SListView.h"
+#include "Widgets/Views/STileView.h"
 
 class FScenarioCreateModel;
 class FScenarioSession;
@@ -91,6 +92,11 @@ private:
 	FDelegateHandle SessionHandle;
 };
 
+/**
+ * Library: assets on Scenario (searched live) and the ones imported into this
+ * project (from provenance), as thumbnail tiles. The footer acts on the
+ * selected tile: Import or Show, then Send to another model.
+ */
 class SScenarioLibraryPage : public SCompoundWidget
 {
 public:
@@ -101,27 +107,66 @@ public:
 	virtual ~SScenarioLibraryPage() override;
 
 private:
-	using FAsset = TSharedPtr<FScenarioAssetInfo>;
-	using FLocal = TSharedPtr<TPair<FString, TMap<FName, FString>>>;
+	/** One tile: an asset on Scenario, or an asset imported into this project. */
+	struct FTile
+	{
+		bool bLocal = false;
+		FScenarioAssetInfo Asset;
+		FString ObjectPath;
+		TMap<FName, FString> Values;
+		FString AssetId;
+		FString Title;
+		FString ModelName;
+		/** image, 3d, material, sky, audio or video. */
+		FString Kind;
+		double CreatedAt = 0.0;
+		FString ThumbnailUrl;
+		TSharedPtr<class FAssetThumbnail> Thumbnail;
+	};
+	using FItem = TSharedPtr<FTile>;
 
-	void Search(bool bMore);
+	void SetSource(bool bInLocal);
+	void ScheduleSearch();
+	void Search(bool bAppend);
+	/** The scope, query and type the cloud tiles were searched with. */
+	FString SearchKey() const;
+	void OnSessionChanged();
 	void RefreshLocal();
-	void ImportAsset(const FScenarioAssetInfo& Asset);
-	TSharedRef<ITableRow> MakeAssetRow(FAsset Item, const TSharedRef<STableViewBase>& Owner);
-	TSharedRef<ITableRow> MakeLocalRow(FLocal Item, const TSharedRef<STableViewBase>& Owner);
+	void RefreshImported();
+	void ApplyFilter();
+	void ImportAsset(const FScenarioAssetInfo& Asset, bool bPlace);
+	void Activate(const FItem& Item);
+	bool IsImporting(const FString& AssetId) const;
+	TSharedRef<ITableRow> MakeTile(FItem Item, const TSharedRef<STableViewBase>& Owner);
+	TSharedRef<SWidget> BuildFooter();
+	TSharedRef<SWidget> BuildEmpty();
+	TSharedRef<SWidget> TileThumbnail(const FItem& Item, float Size);
 
 	bool bLocal = false;
 	FString Query;
+	/** Empty for every type, else image, 3d, material, sky, audio, video or "new" (not imported yet). */
 	FString Kind;
-	TArray<FAsset> Assets;
-	TArray<FLocal> Locals;
-	TSharedPtr<SListView<FAsset>> AssetList;
-	TSharedPtr<SListView<FLocal>> LocalList;
-	FString Status;
+	TArray<FItem> Cloud;
+	TArray<FItem> Locals;
+	TArray<FItem> Items;
+	FItem Selected;
+	TSharedPtr<STileView<FItem>> Tiles;
+	TSharedPtr<class SSearchBox> SearchBox;
+	TSharedPtr<class SBox> FooterBox;
+	FString Error;
+	FString SearchedKey;
+	int32 LocalCount = -1;
 	int32 Generation = 0;
 	bool bLoading = false;
-	TSet<FString> PendingImports;
+	bool bMore = false;
+	/** Scenario asset ids imported into this project. */
+	TSet<FString> Imported;
+	/** Library imports waiting for their files: job row to asset id. */
+	TMap<FString, FString> PendingImports;
+	TSet<FString> PlaceAfterImport;
 	FDelegateHandle FilesHandle;
+	FDelegateHandle SessionHandle;
+	TSharedPtr<class FActiveTimerHandle> SearchTimer;
 };
 
 class SScenarioJobsPage : public SCompoundWidget
