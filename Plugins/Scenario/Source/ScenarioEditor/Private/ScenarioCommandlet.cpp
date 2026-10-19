@@ -136,7 +136,7 @@ int32 UScenarioCommandlet::Main(const FString& Params)
 
 	if (!FParse::Param(*Params, TEXT("Generate")))
 	{
-		UE_LOG(LogScenarioCommandlet, Display, TEXT("Usage: -run=Scenario -Action=<name> [-Args=<json|@file>], or -Generate -Model=<id> -Params=<json|@file> -MaxCU=<n> [-Destination=/Game/...] [-Import] [-Save]"));
+		UE_LOG(LogScenarioCommandlet, Display, TEXT("Usage: -run=ScenarioEditor.Scenario -Action=<name> [-Args=<json|@file>], or -Generate -Model=<id> -Params=<json|@file> -MaxCU=<n> [-Destination=/Game/...] [-Import] [-Save]"));
 		return 1;
 	}
 
