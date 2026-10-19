@@ -764,6 +764,14 @@ TSharedRef<SWidget> SScenarioLibraryPage::TileThumbnail(const FItem& Item, float
 			if (Data.IsValid())
 			{
 				Item->Thumbnail = MakeShared<FAssetThumbnail>(Data, 128, 128, FScenarioThumbnails::Get().AssetPool());
+				// Drawn again once loaded, for packages saved without a thumbnail.
+				FScenarioThumbnails::Get().LoadForThumbnail(Data, [Thumbnail = Item->Thumbnail]()
+				{
+					if (const TSharedPtr<FAssetThumbnailPool> Pool = FScenarioThumbnails::Get().AssetPool())
+					{
+						Pool->RefreshThumbnail(Thumbnail);
+					}
+				});
 			}
 		}
 		if (Item->Thumbnail.IsValid())

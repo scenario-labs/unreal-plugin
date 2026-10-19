@@ -875,6 +875,21 @@ void SScenarioJobThumb::Rebuild()
 	ShownObject = Object;
 	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 	const FAssetData Asset = Registry.GetAssetByObjectPath(FSoftObjectPath(Object));
+	if (!Asset.IsAssetLoaded())
+	{
+		// The downloaded preview stays until the asset is in memory and Unreal can draw it.
+		AssetThumbnail.Reset();
+		AssetBox->SetContent(SNullWidget::NullWidget);
+		const TWeakPtr<SScenarioJobThumb> Weak = SharedThis(this);
+		FScenarioThumbnails::Get().LoadForThumbnail(Asset, [Weak]()
+		{
+			if (const TSharedPtr<SScenarioJobThumb> This = Weak.Pin())
+			{
+				This->Rebuild();
+			}
+		});
+		return;
+	}
 	const uint32 Pixels = static_cast<uint32>(FMath::Max(64.0f, Size * 2.0f));
 	AssetThumbnail = MakeShared<FAssetThumbnail>(Asset, Pixels, Pixels, Pool);
 	FAssetThumbnailConfig Config;
