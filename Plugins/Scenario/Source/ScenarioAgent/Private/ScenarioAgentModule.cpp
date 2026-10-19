@@ -2,6 +2,8 @@
 
 #include "ScenarioAgentModule.h"
 
+#include "ScenarioAgentClients.h"
+
 #include "Misc/CoreDelegates.h"
 #include "Misc/Guid.h"
 #include "Modules/ModuleManager.h"
@@ -83,12 +85,29 @@ void FScenarioAgentModule::StartupModule()
 					{
 						return LOCTEXT("AgentsOff", "Agents: off");
 					}
-					int32 Recent = 0;
+					// Apps, not sessions: one agent opens several sessions (health checks, restarts).
+					TSet<FString> Recent;
 					for (const TPair<FString, FScenarioMcpServer::FClient>& Pair : Server->Clients())
 					{
-						Recent += ScenarioNow() - Pair.Value.LastSeen < 600.0 ? 1 : 0;
+						if (ScenarioNow() - Pair.Value.LastSeen < 600.0)
+						{
+							FString Label = Pair.Value.Name;
+							for (const ScenarioAgentClients::FClient& Known : ScenarioAgentClients::All())
+							{
+								if (Pair.Value.Name.Contains(Known.ClientInfoName))
+								{
+									Label = Known.Name.ToString();
+									break;
+								}
+							}
+							Recent.Add(Label);
+						}
 					}
-					return Recent > 0 ? FText::Format(LOCTEXT("AgentsOn", "Agents: {0} connected"), FText::AsNumber(Recent)) : LOCTEXT("AgentsReady", "Agents: ready");
+					if (Recent.Num() == 1)
+					{
+						return FText::Format(LOCTEXT("AgentsOne", "{0} connected"), FText::FromString(Recent.Array()[0]));
+					}
+					return Recent.Num() > 1 ? FText::Format(LOCTEXT("AgentsOn", "{0} agents connected"), FText::AsNumber(Recent.Num())) : LOCTEXT("AgentsReady", "Agents: ready");
 				})
 			];
 	});
