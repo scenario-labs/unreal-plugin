@@ -45,8 +45,8 @@
 
 namespace
 {
-	constexpr float SlotSize = 48.0f;
-	constexpr float RowHeight = 24.0f;
+	constexpr float SlotSize = 56.0f;
+	constexpr float RowHeight = 28.0f;
 	constexpr float ControlWidth = 280.0f;
 	constexpr int32 SparkMinWords = 3;
 	/** Quotes live 120 seconds; older prices are checked again before a run. */
@@ -216,7 +216,7 @@ void SScenarioForm::Rebuild()
 				SNew(STextBlock)
 				.Text(FText::Format(LOCTEXT("Loading", "Loading {0} settings..."), FText::FromString(Model->GetModelName())))
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 			]
 		];
 		Content->SetContent(Box);
@@ -229,7 +229,7 @@ void SScenarioForm::Rebuild()
 			SNew(STextBlock)
 			.Text(FText::FromString(Model->GetSchemaError()))
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-			.ColorAndOpacity(FStyleColors::Error)
+			.ColorAndOpacity(ScenarioUI::Palette::Error())
 			.AutoWrapText(true)
 		];
 		Content->SetContent(Box);
@@ -255,14 +255,14 @@ void SScenarioForm::Rebuild()
 	}
 	if (ReferenceRows > 0)
 	{
-		Box->AddSlot().AutoHeight()[ScenarioUI::SectionHeader(LOCTEXT("References", "References"))];
+		Box->AddSlot().AutoHeight()[ScenarioUI::SectionHeader(LOCTEXT("Inputs", "Inputs"))];
 		Box->AddSlot().AutoHeight().Padding(ScenarioUI::Gutter, ScenarioUI::RowGap, ScenarioUI::Gutter, 0.0f)[References];
 		Box->AddSlot().AutoHeight().Padding(ScenarioUI::Gutter, 2.0f, ScenarioUI::Gutter, 0.0f)
 		[
 			SNew(STextBlock)
 			.Text_Lambda([this]() { return FText::FromString(InlineError); })
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-			.ColorAndOpacity(FStyleColors::Error)
+			.ColorAndOpacity(ScenarioUI::Palette::Error())
 			.AutoWrapText(true)
 			.Visibility_Lambda([this]() { return InlineError.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 		];
@@ -345,11 +345,12 @@ void SScenarioForm::Rebuild()
 	Content->SetContent(Box);
 }
 
-void SScenarioForm::AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FText& Label, const FText& Tooltip, const TSharedRef<SWidget>& Value, bool bOptional, bool bMore)
+void SScenarioForm::AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FText& Label, const FText& Tooltip, const TSharedRef<SWidget>& Value, bool bOptional, bool bMore, const FText& Hint)
 {
 	const TAttribute<EVisibility> Visible = bMore
 		? TAttribute<EVisibility>::CreateLambda([this]() { return bShowMore ? EVisibility::Visible : EVisibility::Collapsed; })
 		: TAttribute<EVisibility>(EVisibility::Visible);
+	const FText Note = !Hint.IsEmpty() ? Hint : bOptional ? LOCTEXT("Optional", "Optional") : FText::GetEmpty();
 	Grid->AddSlot(0, Row)
 		.VAlign(VAlign_Top)
 		[
@@ -358,30 +359,9 @@ void SScenarioForm::AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const
 			.WidthOverride(ScenarioUI::LabelWidth)
 			.MinDesiredHeight(RowHeight)
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 2.0f, ScenarioUI::Gutter, 2.0f)
-			.ToolTipText(Tooltip)
+			.Padding(0.0f, 3.0f, ScenarioUI::Gutter, 3.0f)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(Label)
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
-				[
-					SNew(STextBlock)
-					.Visibility(bOptional ? EVisibility::Visible : EVisibility::Collapsed)
-					.Text(LOCTEXT("Optional", "optional"))
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				]
+				ScenarioUI::FieldLabel(Label, Note, Tooltip)
 			]
 		];
 	Grid->AddSlot(1, Row)
@@ -391,7 +371,7 @@ void SScenarioForm::AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const
 			.Visibility(Visible)
 			.MinDesiredHeight(RowHeight)
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 2.0f)
+			.Padding(0.0f, 3.0f)
 			[
 				Value
 			]
@@ -401,7 +381,8 @@ void SScenarioForm::AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const
 
 void SScenarioForm::AddFieldRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FScenarioField& Field, bool bMore)
 {
-	AddRow(Grid, Row, FText::FromString(Field.Label), FieldTooltip(Field), BuildControl(Field), false, bMore);
+	AddRow(Grid, Row, FText::FromString(Field.Label), FieldTooltip(Field), BuildControl(Field), false, bMore,
+		Field.bCostImpact ? LOCTEXT("ChangesPrice", "Changes the price") : FText::GetEmpty());
 }
 
 // Prompt
@@ -445,11 +426,12 @@ TSharedRef<SWidget> SScenarioForm::BuildPrompt(const FScenarioField& Field)
 		.Padding(ScenarioUI::Gutter, ScenarioUI::RowGap, ScenarioUI::Gutter, 0.0f)
 		[
 			SNew(SBox)
-			.MinDesiredHeight(72.0f)
+			.MinDesiredHeight(76.0f)
 			.MaxDesiredHeight(180.0f)
 			[
 				SAssignNew(PromptBox, SMultiLineEditableTextBox)
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+				.Style(&ScenarioUI::Style().GetWidgetStyle<FEditableTextBoxStyle>("Scenario.Prompt"))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 				.Text_Lambda([this]() { return FText::FromString(Model->GetPrompt()); })
 				.HintText(FText::FromString(Hint))
 				.AutoWrapText(true)
@@ -481,7 +463,7 @@ TSharedRef<SWidget> SScenarioForm::BuildPrompt(const FScenarioField& Field)
 		[
 			SNew(STextBlock)
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-			.ColorAndOpacity_Lambda([this, MaxLength]() { return Model->GetPrompt().Len() >= MaxLength ? FSlateColor(FStyleColors::Warning) : FSlateColor::UseSubduedForeground(); })
+			.ColorAndOpacity_Lambda([this, MaxLength]() { return Model->GetPrompt().Len() >= MaxLength ? FSlateColor(ScenarioUI::Palette::Warning()) : FSlateColor(ScenarioUI::Palette::Dim()); })
 			.Visibility_Lambda([this, MaxLength]() { return MaxLength > 0 && Model->GetPrompt().Len() > MaxLength * 8 / 10 ? EVisibility::Visible : EVisibility::Collapsed; })
 			.Text_Lambda([this, MaxLength]() { return FText::Format(LOCTEXT("Count", "{0} / {1}"), FText::AsNumber(Model->GetPrompt().Len()), FText::AsNumber(MaxLength)); })
 		]
@@ -493,7 +475,7 @@ TSharedRef<SWidget> SScenarioForm::BuildPrompt(const FScenarioField& Field)
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
 			.AutoWrapText(true)
 			.Text_Lambda([this]() { return FText::FromString(SparkMessage); })
-			.ColorAndOpacity_Lambda([this]() { return bSparkMessageError ? FSlateColor(FStyleColors::Error) : FSlateColor::UseSubduedForeground(); })
+			.ColorAndOpacity_Lambda([this]() { return bSparkMessageError ? FSlateColor(ScenarioUI::Palette::Error()) : FSlateColor(ScenarioUI::Palette::Dim()); })
 			.Visibility_Lambda([this]() { return SparkMessage.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 		]
 		+ SVerticalBox::Slot()
@@ -513,11 +495,28 @@ TSharedRef<SWidget> SScenarioForm::BuildExamples()
 	}
 	const TArray<FString> Starters = Lane->StarterPrompts;
 	const TSharedPtr<FScenarioCreateModel> M = Model;
-	return SNew(SSimpleComboButton)
-		.Text(LOCTEXT("Examples", "Examples"))
-		.UsesSmallText(true)
-		.HasDownArrow(true)
+	return SNew(SComboButton)
+		.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+		.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Ghost.Small"))
+		.HasDownArrow(false)
 		.ToolTipText(LOCTEXT("ExamplesTip", "Fills the prompt with an example for this lane. Sends nothing."))
+		.ButtonContent()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Text(LOCTEXT("Examples", "Examples")).Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(3.0f, 1.0f, 0.0f, 0.0f)
+			[
+				ScenarioUI::Icon(TEXT("chevron-down"), 10.0f, ScenarioUI::Palette::Dim())
+			]
+		]
 		.OnGetMenuContent_Lambda([M, Starters]()
 		{
 			FMenuBuilder Menu(true, nullptr);
@@ -539,7 +538,7 @@ TSharedRef<SWidget> SScenarioForm::BuildImprove()
 		return SNullWidget::NullWidget;
 	}
 	return SNew(SButton)
-		.ContentPadding(FMargin(6.0f, 1.0f))
+		.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Outline.Small"))
 		.IsEnabled_Lambda([this]() { return !bSparkRunning && !bSparkPricing && IsSparkPriced(); })
 		.ToolTipText_Lambda([this]()
 		{
@@ -576,9 +575,21 @@ TSharedRef<SWidget> SScenarioForm::BuildImprove()
 			.VAlign(VAlign_Center)
 			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
-				SNew(SCircularThrobber)
-				.Radius(5.0f)
-				.Visibility_Lambda([this]() { return bSparkRunning ? EVisibility::Visible : EVisibility::Collapsed; })
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				[
+					SNew(SCircularThrobber)
+					.Radius(5.0f)
+					.Visibility_Lambda([this]() { return bSparkRunning ? EVisibility::Visible : EVisibility::Collapsed; })
+				]
+				+ SOverlay::Slot()
+				[
+					SNew(SBox)
+					.Visibility_Lambda([this]() { return bSparkRunning ? EVisibility::Collapsed : EVisibility::Visible; })
+					[
+						ScenarioUI::Icon(TEXT("wand"), 12.0f)
+					]
+				]
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -735,8 +746,8 @@ void SScenarioForm::RefreshVariants()
 		.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-			.Padding(FMargin(ScenarioUI::Gutter, 4.0f))
+			.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Card"))
+			.Padding(FMargin(10.0f, 8.0f))
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
@@ -754,6 +765,7 @@ void SScenarioForm::RefreshVariants()
 				.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
+					.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Small"))
 					.Text(LOCTEXT("UseVariant", "Use"))
 					.ToolTipText(LOCTEXT("UseVariantTip", "Replaces the prompt with this one. Sends nothing."))
 					.IsEnabled_Lambda([M, Variant]() { return M->GetPrompt() != Variant; })
@@ -777,7 +789,7 @@ TSharedRef<SWidget> SScenarioForm::BuildSlots(const FScenarioField& Field)
 	const bool bRoom = Field.Type == EScenarioFieldType::Files ? (Field.MaxItems <= 0 || Items.Num() < Field.MaxItems) : Items.Num() == 0;
 	if (bRoom)
 	{
-		Box->AddSlot()[BuildAddSlot(Field)];
+		Box->AddSlot()[BuildAddSlot(Field, Items.Num() == 0)];
 	}
 	const FString Name = Field.Name;
 	return SNew(SDropTarget)
@@ -832,6 +844,7 @@ TSharedRef<SWidget> SScenarioForm::BuildSlot(const FScenarioField& Field, const 
 			FAssetThumbnailConfig Config;
 			Config.bAllowFadeIn = false;
 			Config.bAllowHintText = false;
+			Config.ShowAssetColor = false;
 			Picture = SNew(SBox).WidthOverride(SlotSize).HeightOverride(SlotSize)[Thumbnail->MakeThumbnailWidget(Config)];
 		}
 	}
@@ -882,8 +895,8 @@ TSharedRef<SWidget> SScenarioForm::BuildSlot(const FScenarioField& Field, const 
 			.VAlign(VAlign_Top)
 			[
 				SNew(SButton)
-				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(1.0f))
+				.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Small"))
+				.ContentPadding(FMargin(2.0f))
 				.ToolTipText(LOCTEXT("RemoveTip", "Remove this reference from the request."))
 				.Visibility_Lambda([WeakTile]()
 				{
@@ -898,9 +911,7 @@ TSharedRef<SWidget> SScenarioForm::BuildSlot(const FScenarioField& Field, const 
 					return FReply::Handled();
 				})
 				[
-					SNew(SImage)
-					.Image(FAppStyle::GetBrush("Icons.X"))
-					.DesiredSizeOverride(FVector2D(10.0f, 10.0f))
+					ScenarioUI::Icon(TEXT("close"), 10.0f)
 				]
 			]
 			+ SOverlay::Slot()
@@ -917,29 +928,61 @@ TSharedRef<SWidget> SScenarioForm::BuildSlot(const FScenarioField& Field, const 
 	return Tile;
 }
 
-TSharedRef<SWidget> SScenarioForm::BuildAddSlot(const FScenarioField& Field)
+TSharedRef<SWidget> SScenarioForm::BuildAddSlot(const FScenarioField& Field, bool bWide)
 {
 	const FScenarioField Copy = Field;
+	const FString Kind = Field.Kind.IsEmpty() ? FString(TEXT("image")) : Field.Kind;
+	const FText Noun = Kind == TEXT("3d") ? LOCTEXT("Noun3d", "a mesh") : Kind == TEXT("audio") ? LOCTEXT("NounAudio", "a sound") : Kind == TEXT("video") ? LOCTEXT("NounVideo", "a video") : LOCTEXT("NounImage", "an image");
 	return SNew(SComboButton)
 		.HasDownArrow(false)
-		.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+		.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+		.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Row"))
 		.ContentPadding(FMargin(0.0f))
 		.ToolTipText(LOCTEXT("AddTip", "Add a reference: capture the viewport, use the Content Browser selection or choose a file. You can also drop assets or files here."))
 		.OnGetMenuContent_Lambda([this, Copy]() { return BuildAddMenu(Copy); })
 		.ButtonContent()
 		[
 			SNew(SBox)
-			.WidthOverride(SlotSize)
+			.WidthOverride(bWide ? FOptionalSize() : FOptionalSize(SlotSize))
+			.MinDesiredWidth(bWide ? 240.0f : SlotSize)
 			.HeightOverride(SlotSize)
 			[
 				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-				.HAlign(HAlign_Center)
+				.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Slot"))
+				.HAlign(bWide ? HAlign_Left : HAlign_Center)
 				.VAlign(VAlign_Center)
+				.Padding(FMargin(bWide ? 14.0f : 0.0f, 0.0f))
 				[
-					SNew(SImage)
-					.Image(FAppStyle::GetBrush("Icons.Plus"))
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						ScenarioUI::Icon(bWide ? TEXT("upload") : TEXT("plus"), 16.0f, ScenarioUI::Palette::Dim())
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(10.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SVerticalBox)
+						.Visibility(bWide ? EVisibility::Visible : EVisibility::Collapsed)
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(STextBlock)
+							.Text(FText::Format(LOCTEXT("DropHere", "Drop {0} here"), Noun))
+							.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+						]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("DropHint", "or click: viewport, Content Browser, file"))
+							.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+							.ColorAndOpacity(ScenarioUI::Palette::Faint())
+						]
+					]
 				]
 			]
 		];
@@ -1013,6 +1056,7 @@ TSharedRef<SWidget> SScenarioForm::BuildSize(const FScenarioField& Width, const 
 			.MinDesiredWidth(160.0f)
 			[
 				SNew(SComboButton)
+				.ComboButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FComboButtonStyle>("Scenario.Combo"))
 				.ButtonContent()
 				[
 					SNew(STextBlock)
@@ -1074,7 +1118,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 				.Visibility(Field.Unit.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
 				.Text(FText::FromString(Field.Unit))
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.ColorAndOpacity(ScenarioUI::Palette::Dim())
 			];
 	};
 	switch (Field.Type)
@@ -1090,6 +1134,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 				.MaxDesiredWidth(ControlWidth)
 				[
 					SNew(SComboButton)
+					.ComboButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FComboButtonStyle>("Scenario.Combo"))
 					.ButtonContent()
 					[
 						SNew(STextBlock)
@@ -1176,13 +1221,12 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 		return SNew(SBox)
 			.HAlign(HAlign_Left)
 			[
-				SNew(SCheckBox)
-				.IsChecked_Lambda([M, Name]() { return ScenarioJson::Truthy(M->GetValue(Name)) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-				.OnCheckStateChanged_Lambda([M, Name](ECheckBoxState State) { M->SetValue(Name, MakeShared<FJsonValueBoolean>(State == ECheckBoxState::Checked)); })
+				ScenarioUI::Switch(MakeAttributeLambda([M, Name]() { return ScenarioJson::Truthy(M->GetValue(Name)); }),
+					[M, Name](bool bOn) { M->SetValue(Name, MakeShared<FJsonValueBoolean>(bOn)); })
 			];
 	case EScenarioFieldType::Multi:
 	{
-		TSharedRef<SWrapBox> Box = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(ScenarioUI::Gutter, 2.0f));
+		TSharedRef<SWrapBox> Box = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
 		for (const TSharedPtr<FJsonValue>& Option : Field.Options)
 		{
 			const FString Item = ScenarioJson::ValueText(Option);
@@ -1203,9 +1247,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 			};
 			Box->AddSlot()
 			[
-				SNew(SCheckBox)
-				.IsChecked_Lambda([Has]() { return Has() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-				.OnCheckStateChanged_Lambda([M, Name, Item](ECheckBoxState State)
+				ScenarioUI::ChipToggle(FText::FromString(ScenarioSchema::OptionText(Field, Option)), MakeAttributeLambda(Has), [M, Name, Item, Has]()
 				{
 					TArray<FString> Items;
 					const TSharedPtr<FJsonValue> Value = M->GetValue(Name);
@@ -1216,7 +1258,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 							Items.Add(ScenarioJson::ValueText(Entry));
 						}
 					}
-					if (State == ECheckBoxState::Checked)
+					if (!Has())
 					{
 						Items.AddUnique(Item);
 					}
@@ -1225,12 +1267,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 						Items.Remove(Item);
 					}
 					M->SetValue(Name, ScenarioJson::StringArrayValue(Items));
-				})
-				[
-					SNew(STextBlock)
-					.Text(FText::FromString(ScenarioSchema::OptionText(Field, Option)))
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-				]
+				}, NAME_None, TAttribute<FText>(), true)
 			];
 		}
 		return Box;
@@ -1240,6 +1277,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 			.MinDesiredHeight(48.0f)
 			[
 				SNew(SMultiLineEditableTextBox)
+				.Style(&ScenarioUI::Style().GetWidgetStyle<FEditableTextBoxStyle>("Scenario.Prompt"))
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 				.AutoWrapText(true)
 				.HintText(FText::FromString(Field.Placeholder))
@@ -1251,6 +1289,7 @@ TSharedRef<SWidget> SScenarioForm::BuildControl(const FScenarioField& Field)
 			];
 	default:
 		return SNew(SEditableTextBox)
+			.Style(&ScenarioUI::Style().GetWidgetStyle<FEditableTextBoxStyle>("Scenario.Input"))
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 			.HintText(FText::FromString(Field.Placeholder))
 			.Text_Lambda([M, Name]() { return FText::FromString(ScenarioJson::ValueText(M->GetValue(Name))); })
