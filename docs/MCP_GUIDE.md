@@ -4,6 +4,8 @@ The plugin runs a local Scenario MCP server inside the Unreal Editor. An agent c
 
 ## 1. Connect an agent
 
+<p><img src="images/studio-agent.png" alt="The Agent page with the Scenario MCP server on and Claude Code set up" width="420"></p>
+
 1. Open the **Agent** page in the Scenario Studio (toolbar menu: **More > Agent**, or the agent dot in the Studio header).
 2. Check that the page says **Scenario MCP on** with its address (`http://127.0.0.1:9877/mcp` unless that port was taken). If the server is off, turn on its switch.
 3. Under **Connect a client**, click **Set up** next to your agent (**Reconnect** once it is set up). The plugin writes the server and its token into the agent's configuration, after saving a timestamped backup of the file (`<file>.scenario-backup-YYYYMMDD-HHMMSS`). A file it cannot read is left untouched.

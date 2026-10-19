@@ -10,6 +10,28 @@ People use the Studio tab and a quick composer in the viewport. Agents (Claude C
 - **Provenance.** Every imported asset keeps its model, prompt, price and job id, stripped from cooked builds.
 - **Agents.** A local Scenario MCP server with one-click setup, price quotes, permissions and an activity log.
 
+## The Studio
+
+The **Scenario** button in the level editor toolbar opens the Studio, a tab you can dock anywhere. Six pages sit on its left rail.
+
+| | | |
+| --- | --- | --- |
+| [![Create page](docs/images/studio-create.png)](docs/images/studio-create.png) | [![Library page](docs/images/studio-library.png)](docs/images/studio-library.png) | [![Jobs page](docs/images/studio-jobs.png)](docs/images/studio-jobs.png) |
+| **Create.** Pick a lane and a model, write a prompt, add references. The Generate button shows the exact price. | **Library.** Everything in your Scenario project, made in Unreal or anywhere else. Importing is free. | **Jobs.** Every request from you or an agent, by day. Jobs survive editor restarts. |
+| [![Workflows page](docs/images/studio-workflows.png)](docs/images/studio-workflows.png) | [![Agent page](docs/images/studio-agent.png)](docs/images/studio-agent.png) | [![Settings page](docs/images/studio-settings.png)](docs/images/studio-settings.png) |
+| **Workflows.** Several models in one request, built on scenario.com, filled in Create. | **Agent.** Connect Claude Code, Codex, Cursor or Claude Desktop in one click, set permissions, read the activity log. | **Settings.** Where results go, how they import, when to ask before spending. |
+
+## Agents: a prompt to a world, a game or a film
+
+Agents reach the plugin through its local Scenario MCP server. Besides generating, pricing and importing, they get a small kit that turns Scenario results into something you can walk or watch:
+
+- `build_world` and `dress_world`: a walkable level with sun, sky, fog and ground, dressed with Scenario 3D results.
+- `make_game`: pickups, a goal, a timer and music on the open level.
+- `make_film` and `render_film`: a Level Sequence with cine cameras around the landmark, rendered with Movie Render Queue.
+- `play_level` and `kit_status`: play the result in the editor and check what was built.
+
+The [Scenario MCP guide](docs/MCP_GUIDE.md) lists every tool and the permissions they need.
+
 ## Requirements
 
 - Unreal Engine 5.6, 5.7 or 5.8 (Editor). macOS is the tested platform in version 0.1; Windows and Linux are compiled but not tested yet.
