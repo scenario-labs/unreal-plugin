@@ -4,13 +4,13 @@ The plugin runs a local Scenario MCP server inside the Unreal Editor. An agent c
 
 ## 1. Connect an agent
 
-1. Open **Connection > Agents** in the Scenario Studio (toolbar menu: **More > Agents and diagnostics**).
-2. Check that the server says it is running, with its address (`http://127.0.0.1:9877/mcp` unless that port was taken).
-3. Click **Connect** next to your agent. The plugin writes the server and its token into the agent's configuration, after saving a timestamped backup of the file (`<file>.scenario-backup-YYYYMMDD-HHMMSS`). A file it cannot read is left untouched.
+1. Open the **Agent** page in the Scenario Studio (toolbar menu: **More > Agent**, or the agent dot in the Studio header).
+2. Check that the page says **Scenario MCP on** with its address (`http://127.0.0.1:9877/mcp` unless that port was taken). If the server is off, turn on its switch.
+3. Under **Connect a client**, click **Set up** next to your agent (**Reconnect** once it is set up). The plugin writes the server and its token into the agent's configuration, after saving a timestamped backup of the file (`<file>.scenario-backup-YYYYMMDD-HHMMSS`). A file it cannot read is left untouched.
 4. Restart the agent, or reload its MCP servers.
 5. Optional: **Install the agent skill** copies the `scenario-unreal` skill to `~/.claude/skills/`. It teaches Claude the tool order and the spending rules.
 
-| Agent | What Connect writes |
+| Agent | What Set up writes |
 |---|---|
 | Claude Code | `claude mcp add --transport http --scope user scenario-unreal <url> --header "Authorization: Bearer <token>"`, or the same entry in `~/.claude.json` when the `claude` command is not found |
 | Codex | `[mcp_servers.scenario-unreal]` with `url` and `http_headers` in `~/.codex/config.toml` |
@@ -31,17 +31,17 @@ For any other client, **Copy setup** puts the URL, the header and ready-made sni
 }
 ```
 
-Never paste the token into a chat. **New token** replaces it; connected agents then need **Connect** again.
+Never paste the token into a chat. **New token...** replaces it; connected agents then need **Reconnect**.
 
 The editor must be open, signed in to Scenario, with a team and project chosen. Epic's own Unreal MCP server (port 8000 when enabled) is a different server: its tools edit actors and Blueprints and do not run Scenario jobs. Both can be connected at once.
 
 ## 2. Permissions
 
-| Switch (Connection > Agents, or Editor Preferences > Plugins > Scenario) | Default | Off means | On means |
+| Switch (Agent page, **Permissions**; Editor Preferences > Plugins > Scenario name in brackets) | Default | Off means | On means |
 |---|---|---|---|
-| Allow agents to change this project | Off | `apply_result_application` returns `pending_approval` and you see **Apply** and **Decline** in the editor; `save_changes` and `remove_scenario_items` are refused | The agent imports, places and saves what the plugin created |
-| Allow agents to run Python | Off | `execute_python` is refused | Unreal Python runs inside one undo transaction (needs the switch above and the Python Editor Script Plugin) |
-| Approve each agent spend | Off | An agent spends with a valid price quote; a notification shows each spend | Each paid call waits for **Approve** or **Decline** in the editor (100 seconds) |
+| Change this project (Allow agent changes) | Off | `apply_result_application` returns `pending_approval` and you see **Approve** and **Decline** in the editor; `save_changes` and `remove_scenario_items` are refused | The agent imports, places and saves what the plugin created |
+| Run Unreal Python (Allow agent Python) | Off | `execute_python` is refused | Unreal Python runs inside one undo transaction (needs the switch above and the Python Editor Script Plugin) |
+| Approve each spend here (Approve agent spend) | Off | An agent spends with a valid price quote; a notification shows each spend | Each paid call waits for **Approve** or **Decline** in the editor (100 seconds) |
 
 Reading the level (summaries, object details, screenshots, assets, the output log) and checking prices are always allowed. Agents never see your Scenario credentials.
 
@@ -55,7 +55,7 @@ Every paid call follows the same contract as the Studio:
 4. A paid call is sent once. If the connection drops, the job becomes `unknown` and an identical request is blocked: call `recover_local_job` with `action: "check"`, never `generate` again. Only you can mark a request as not sent.
 5. With `SCENARIO_NO_SPEND=1` in the editor's environment, every paid call is refused before anything is sent.
 
-The plugin sets no Creative Unit cap of its own. The activity log in **Connection > Agents** lists every agent call with its client, duration, result and the CU it spent.
+The plugin sets no Creative Unit cap of its own. The **Activity** list on the Agent page shows this session's agent calls, the latest 20, with the time, tool, client, the CU spent and any error.
 
 ## 4. Tools
 
@@ -109,7 +109,7 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | `save_changes` | Saves what the plugin created; `include_levels: true` also saves the open level (with its World Partition actors) and unsaved assets under the Scenario folder. An untitled level is not saved: the result says so |
 | `remove_scenario_items` | Removes actors the plugin placed and assets it imported, after Unreal's reference check |
 
-**Kit: worlds, games and films** (need "Allow agents to change this project"; distances in meters)
+**Kit: worlds, games and films** (need the **Change this project** permission; distances in meters)
 
 | Tool | Does |
 |---|---|
@@ -132,7 +132,7 @@ Ask: "Put a mossy stone well next to the selected house."
 4. The agent tells you the price, then calls `generate` `{ "quote_id": "...", "approved_cost": "<cu_cost_exact>" }`.
 5. `wait_for_job` until `delivered` is true.
 6. `prepare_result_application` with `purpose: "place"`, `placement: "at_location"` and a point beside the house from `object_detail`.
-7. `apply_result_application`. With changes off, you click **Apply** in the editor.
+7. `apply_result_application`. With changes off, you click **Approve** in the editor.
 8. The agent reports the asset and actor it created and asks before `save_changes`.
 
 ## 6. Security
@@ -146,12 +146,12 @@ Ask: "Put a mossy stone well next to the selected house."
 
 | Symptom | Fix |
 |---|---|
-| The agent does not list `scenario-unreal` tools | Restart the agent after **Connect**. Check the server is running in **Connection > Agents**. |
-| HTTP 401 | The token changed: click **Connect** again for that agent. |
-| Connection refused | The editor is closed, or the server is off (**Agent server** in Editor Preferences). |
-| The port is not 9877 | Another program held 9877, so the server took the next free port; **Connect** writes the right one. |
+| The agent does not list `scenario-unreal` tools | Restart the agent after **Set up**. Check that the **Agent** page says **Scenario MCP on**. |
+| HTTP 401 | The token changed: click **Reconnect** for that agent. |
+| Connection refused | The editor is closed, or the server is off (the switch on the **Agent** page, or **Agent server** in Editor Preferences). |
+| The port is not 9877 | Another program held 9877, so the server took the next free port; **Set up** writes the right one. |
 | `Auth: Not signed in` | Sign in from the Scenario toolbar button. |
 | `Declined` | You declined the spend or the change in the editor. The agent must not retry it. |
-| `pending_approval` | Waiting for **Apply** in the editor. The agent should check `job_status` later, not apply again. |
+| `pending_approval` | Waiting for **Approve** in the editor. The agent should check `job_status` later, not apply again. |
 
 More: [Troubleshooting](TROUBLESHOOTING.md).

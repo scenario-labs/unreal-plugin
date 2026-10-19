@@ -46,7 +46,7 @@ reports include:
   other generated content, including files written outside the project's
   `Saved/Scenario/` folder and the configured content folder, or credentials
   sent to hosts other than Scenario's.
-- Files the Connect buttons write into agent configurations (Claude Code,
+- Files the Set up buttons write into agent configurations (Claude Code,
   Codex, Cursor, Claude Desktop) outside the documented entries.
 - The repository's CI and release supply chain: how the release zip is built
   and published, and what it contains.
@@ -68,4 +68,5 @@ URLs are credentials. Never commit them or paste them into public issues or
 pull requests. Check screenshots, Output Log excerpts and sample projects
 before sharing them. If a secret is already exposed, report it privately
 instead of pointing to it in a public issue, revoke the key in Scenario, and
-press New token in Scenario > Connection > Agents for the agent token.
+press New token... on the Agent page of the Scenario Studio for the agent
+token.

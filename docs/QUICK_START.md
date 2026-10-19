@@ -36,5 +36,5 @@ The asset sits in `/Game/Scenario/Images/<date>/` and remembers its model, promp
 
 - Try the **3D** lane with **Unreal-ready** on for a mesh at real-world scale with its pivot at the base.
 - Right-click an actor, **Scenario > Generate material for this**.
-- Connect an agent in **Connection > Agents**: see the [Scenario MCP guide](MCP_GUIDE.md).
+- Connect an agent on the **Agent** page: see the [Scenario MCP guide](MCP_GUIDE.md).
 - Everything else is in the [user guide](USER_GUIDE.md). If something goes wrong, see [Troubleshooting](TROUBLESHOOTING.md).
