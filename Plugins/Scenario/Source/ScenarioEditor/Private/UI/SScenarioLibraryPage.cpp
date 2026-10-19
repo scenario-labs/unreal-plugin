@@ -17,20 +17,17 @@
 #include "ScenarioSubsystem.h"
 #include "ScenarioThumbnails.h"
 #include "ScenarioWidgets.h"
-#include "SPrimaryButton.h"
 #include "SScenarioJobCard.h"
 #include "SScenarioPages.h"
-#include "SSimpleComboButton.h"
-#include "SWarningOrErrorBox.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SSearchBox.h"
-#include "Widgets/Input/SSegmentedControl.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
@@ -40,7 +37,7 @@
 namespace
 {
 	constexpr int32 PageSize = 50;
-	constexpr float TileSize = 96.0f;
+	constexpr float TileSize = 112.0f;
 	constexpr float FooterThumbnail = 40.0f;
 
 	FString ThumbnailUrl(const FScenarioAssetInfo& Asset)
@@ -146,7 +143,7 @@ namespace
 	const TArray<FTypeFilter>& TypeFilters()
 	{
 		static const TArray<FTypeFilter> List = {
-			{ FString(), LOCTEXT("AllTypes", "All types"), true, true },
+			{ FString(), LOCTEXT("AllTypes", "All"), true, true },
 			{ TEXT("image"), LOCTEXT("Images", "Images"), true, true },
 			{ TEXT("3d"), LOCTEXT("Meshes", "3D"), true, true },
 			{ TEXT("material"), LOCTEXT("Materials", "Materials"), false, true },
@@ -219,129 +216,155 @@ void SScenarioLibraryPage::Construct(const FArguments& InArgs)
 		SessionHandle = Session->OnChanged.AddSP(this, &SScenarioLibraryPage::OnSessionChanged);
 	}
 
-	ChildSlot
-	[
-		SNew(SVerticalBox)
-		// Source, search and type.
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(ScenarioUI::Gutter)
+	using namespace ScenarioUI;
+	const FName CloudTab = TEXT("cloud");
+	const FName LocalTab = TEXT("local");
+	const TSharedRef<SWrapBox> Types = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
+	for (const FTypeFilter& Filter : TypeFilters())
+	{
+		const FString Id = Filter.Id;
+		const bool bCloud = Filter.bCloud;
+		const bool bLocalFilter = Filter.bLocal;
+		Types->AddSlot()
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
+			SNew(SBox)
+			.Visibility_Lambda([this, bCloud, bLocalFilter]() { return (bLocal ? bLocalFilter : bCloud) ? EVisibility::Visible : EVisibility::Collapsed; })
 			[
-				SNew(SSegmentedControl<bool>)
-				.UniformPadding(FMargin(8.0f, 2.0f))
-				.Value_Lambda([this]() { return bLocal; })
-				.OnValueChanged_Lambda([this](bool bValue) { SetSource(bValue); })
-				+ SSegmentedControl<bool>::Slot(false)
-					.Text(LOCTEXT("OnScenario", "On Scenario"))
-					.ToolTip(LOCTEXT("OnScenarioTip", "Assets in this Scenario project, made in Unreal or anywhere else."))
-				+ SSegmentedControl<bool>::Slot(true)
-					.Text(LOCTEXT("ImportedHere", "Imported here"))
-					.ToolTip(LOCTEXT("ImportedHereTip", "Assets in this Unreal project that came from Scenario, with their model, prompt and settings."))
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			.VAlign(VAlign_Center)
-			.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
-			[
-				SAssignNew(SearchBox, SSearchBox)
-				.HintText_Lambda([this]()
+				ChipToggle(Filter.Label, MakeAttributeLambda([this, Id]() { return Kind == Id; }), [this, Id]()
 				{
-					if (bLocal)
+					Kind = Id;
+					if (!bLocal && SearchKey() != SearchedKey)
 					{
-						return LOCTEXT("SearchLocal", "Search assets imported here...");
-					}
-					const FScenarioSession* Session = ScenarioUI::Session();
-					return Session && Session->GetWorkspace().IsSet()
-						? FText::Format(LOCTEXT("SearchProject", "Search {0}..."), FText::FromString(Session->GetWorkspace().ProjectName))
-						: LOCTEXT("SearchCloud", "Search Scenario...");
-				})
-				.OnTextChanged_Lambda([this](const FText& Text)
-				{
-					Query = Text.ToString();
-					if (bLocal)
-					{
-						ApplyFilter();
+						Search(false);
 					}
 					else
 					{
-						ScheduleSearch();
+						ApplyFilter();
 					}
-				})
-				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type Type)
-				{
-					if (Type == ETextCommit::OnEnter && !bLocal)
-					{
-						Query = Text.ToString();
-						Search(false);
-					}
-				})
+				}, Id.IsEmpty() || Id == TEXT("new") ? NAME_None : KindIconName(Id), FText::GetEmpty(), true)
 			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
-			[
-				SNew(SSimpleComboButton)
-				.UsesSmallText(true)
-				.HasDownArrow(true)
-				.ToolTipText(LOCTEXT("TypeTip", "Show one type of asset."))
-				.Text_Lambda([this]()
+		];
+	}
+
+	ChildSlot
+	[
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(PagePadding, PagePadding, PagePadding, 0.0f)
+		[
+			PageHeader(LOCTEXT("Title", "Library"), MakeAttributeLambda([this]()
+			{
+				const FScenarioSession* Session = ScenarioUI::Session();
+				if (bLocal)
 				{
-					const FTypeFilter* Found = TypeFilters().FindByPredicate([this](const FTypeFilter& Filter) { return Filter.Id == Kind; });
-					return Found ? Found->Label : FText::GetEmpty();
-				})
-				.OnGetMenuContent_Lambda([this]()
+					return LOCTEXT("SubtitleLocal", "Assets in this Unreal project that came from Scenario, with their model, prompt and settings.");
+				}
+				return Session && Session->GetWorkspace().IsSet()
+					? FText::Format(LOCTEXT("SubtitleCloud", "Everything in {0} on Scenario, made in Unreal or anywhere else. Importing is free."), FText::FromString(Session->GetWorkspace().ProjectName))
+					: LOCTEXT("SubtitleCloudNone", "Everything in your Scenario project, made in Unreal or anywhere else. Importing is free.");
+			}),
+			IconButton(TEXT("refresh"), LOCTEXT("RefreshTip", "Search again. Free."), FSimpleDelegate::CreateLambda([this]()
+			{
+				RefreshImported();
+				if (bLocal)
 				{
-					FMenuBuilder Menu(true, nullptr);
-					for (const FTypeFilter& Filter : TypeFilters())
-					{
-						if (bLocal ? !Filter.bLocal : !Filter.bCloud)
-						{
-							continue;
-						}
-						const FString Id = Filter.Id;
-						Menu.AddMenuEntry(Filter.Label, FText::GetEmpty(), FSlateIcon(),
-							FUIAction(FExecuteAction::CreateLambda([this, Id]()
-							{
-								Kind = Id;
-								if (!bLocal && SearchKey() != SearchedKey)
-								{
-									Search(false);
-								}
-								else
-								{
-									ApplyFilter();
-								}
-							}), FCanExecuteAction(), FIsActionChecked::CreateLambda([this, Id]() { return Kind == Id; })),
-							NAME_None, EUserInterfaceActionType::RadioButton);
-					}
-					return Menu.MakeWidget();
-				})
-			]
+					ApplyFilter();
+				}
+				else
+				{
+					Search(false);
+				}
+			})))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(PagePadding, 10.0f, PagePadding, 0.0f)
+		[
+			UnderlineTabs({ { CloudTab, LOCTEXT("OnScenario", "On Scenario") }, { LocalTab, LOCTEXT("ImportedHere", "In this project") } },
+				MakeAttributeLambda([this, CloudTab, LocalTab]() { return bLocal ? LocalTab : CloudTab; }),
+				[this, LocalTab](FName Value) { SetSource(Value == LocalTab); })
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(PagePadding, 12.0f, PagePadding, 0.0f)
+		[
+			SAssignNew(SearchBox, SSearchBox)
+			.Style(&Style().GetWidgetStyle<FSearchBoxStyle>("Scenario.Search"))
+			.HintText_Lambda([this]()
+			{
+				if (bLocal)
+				{
+					return LOCTEXT("SearchLocal", "Search assets imported here...");
+				}
+				const FScenarioSession* Session = ScenarioUI::Session();
+				return Session && Session->GetWorkspace().IsSet()
+					? FText::Format(LOCTEXT("SearchProject", "Search {0}..."), FText::FromString(Session->GetWorkspace().ProjectName))
+					: LOCTEXT("SearchCloud", "Search Scenario...");
+			})
+			.OnTextChanged_Lambda([this](const FText& Text)
+			{
+				Query = Text.ToString();
+				if (bLocal)
+				{
+					ApplyFilter();
+				}
+				else
+				{
+					ScheduleSearch();
+				}
+			})
+			.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type Type)
+			{
+				if (Type == ETextCommit::OnEnter && !bLocal)
+				{
+					Query = Text.ToString();
+					Search(false);
+				}
+			})
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(PagePadding, 10.0f, PagePadding, 0.0f)
+		[
+			Types
 		]
 		// A failed search, with Retry.
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(FMargin(ScenarioUI::Gutter, 0.0f, ScenarioUI::Gutter, ScenarioUI::Gutter))
+		.Padding(PagePadding, 10.0f, PagePadding, 0.0f)
 		[
-			SNew(SWarningOrErrorBox)
-			.MessageStyle(EMessageStyle::Error)
+			SNew(SBorder)
+			.BorderImage(Style().GetBrush("Scenario.Card"))
+			.Padding(FMargin(12.0f, 8.0f, 8.0f, 8.0f))
 			.Visibility_Lambda([this]() { return !bLocal && !Error.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })
-			.Message_Lambda([this]() { return FText::FromString(Error); })
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("Retry", "Retry"))
-				.ToolTipText(LOCTEXT("RetryTip", "Search again. Free."))
-				.OnClicked_Lambda([this]() { Search(false); return FReply::Handled(); })
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, 10.0f, 0.0f)
+				[
+					Icon(TEXT("error"), 16.0f, FSlateColor(Palette::Error()))
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Font(Font(EText::Body)).AutoWrapText(true).Text_Lambda([this]() { return FText::FromString(Error); })
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(10.0f, 0.0f, 0.0f, 0.0f)
+				[
+					Button(LOCTEXT("Retry", "Retry"), EButton::Outline, [this]() { Search(false); }, TEXT("refresh"), LOCTEXT("RetryTip", "Search again. Free."), true)
+				]
 			]
 		]
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
+		.Padding(PagePadding - 6.0f, 10.0f, PagePadding - 6.0f, 0.0f)
 		[
 			SNew(SOverlay)
 			+ SOverlay::Slot()
@@ -350,7 +373,7 @@ void SScenarioLibraryPage::Construct(const FArguments& InArgs)
 				.ListItemsSource(&Items)
 				.SelectionMode(ESelectionMode::Single)
 				.ItemWidth(TileSize + 16.0f)
-				.ItemHeight(TileSize + 44.0f)
+				.ItemHeight(TileSize + 50.0f)
 				.ItemAlignment(EListItemAlignment::LeftAligned)
 				.OnGenerateTile(this, &SScenarioLibraryPage::MakeTile)
 				.OnSelectionChanged_Lambda([this](FItem Item, ESelectInfo::Type)
@@ -366,7 +389,7 @@ void SScenarioLibraryPage::Construct(const FArguments& InArgs)
 			+ SOverlay::Slot()
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
-			.Padding(ScenarioUI::SectionGap)
+			.Padding(SectionGap)
 			[
 				BuildEmpty()
 			]
@@ -374,27 +397,26 @@ void SScenarioLibraryPage::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		.HAlign(HAlign_Center)
-		.Padding(ScenarioUI::RowGap)
+		.Padding(0.0f, 6.0f)
 		[
-			SNew(SButton)
-			.Text(LOCTEXT("More", "Load more"))
-			.ToolTipText(LOCTEXT("MoreTip", "Loads the next 50 assets. Free."))
+			SNew(SBox)
 			.Visibility_Lambda([this]() { return !bLocal && bMore && !bLoading ? EVisibility::Visible : EVisibility::Collapsed; })
-			.OnClicked_Lambda([this]() { Search(true); return FReply::Handled(); })
+			[
+				Button(LOCTEXT("More", "Load more"), EButton::Secondary, [this]() { Search(true); }, NAME_None, LOCTEXT("MoreTip", "Loads the next 50 assets. Free."), true)
+			]
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
-			SNew(SSeparator)
-			.Thickness(1.0f)
+			Divider()
 		]
 		// The selected asset and what to do with it.
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SAssignNew(FooterBox, SBox)
-			.MinDesiredHeight(FooterThumbnail + 2.0f * ScenarioUI::Gutter)
-			.Padding(ScenarioUI::Gutter)
+			.MinDesiredHeight(FooterThumbnail + 2.0f * 10.0f)
+			.Padding(FMargin(PagePadding, 10.0f))
 			.VAlign(VAlign_Center)
 			[
 				BuildFooter()
@@ -729,6 +751,7 @@ TSharedRef<SWidget> SScenarioLibraryPage::TileThumbnail(const FItem& Item, float
 			FAssetThumbnailConfig Config;
 			Config.bAllowFadeIn = false;
 			Config.bAllowHintText = false;
+			Config.ShowAssetColor = false;
 			return SNew(SBox)
 				.WidthOverride(Size)
 				.HeightOverride(Size)
@@ -751,7 +774,8 @@ TSharedRef<ITableRow> SScenarioLibraryPage::MakeTile(FItem Item, const TSharedRe
 	const FString AssetId = Item->AssetId;
 	const bool bCloudTile = !Item->bLocal;
 	return SNew(STableRow<FItem>, Owner)
-		.Padding(FMargin(4.0f))
+		.Style(&ScenarioUI::Style().GetWidgetStyle<FTableRowStyle>("Scenario.TableRow"))
+		.Padding(FMargin(6.0f))
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
@@ -770,8 +794,8 @@ TSharedRef<ITableRow> SScenarioLibraryPage::MakeTile(FItem Item, const TSharedRe
 				.Padding(4.0f)
 				[
 					SNew(SBorder)
-					.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
-					.Padding(2.0f)
+					.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Overlay"))
+					.Padding(3.0f)
 					.Visibility(EVisibility::HitTestInvisible)
 					[
 						SNew(SImage)
@@ -786,13 +810,14 @@ TSharedRef<ITableRow> SScenarioLibraryPage::MakeTile(FItem Item, const TSharedRe
 				.Padding(4.0f)
 				[
 					ShownWhen(SNew(SBorder)
-						.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
-						.Padding(2.0f)
+						.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Overlay"))
+						.Padding(3.0f)
+						.ToolTipText(LOCTEXT("InProjectTip", "Imported into this project already."))
 						[
 							SNew(SImage)
-							.Image(FAppStyle::GetBrush("Icons.Check"))
+							.Image(ScenarioUI::IconBrush(TEXT("check")))
 							.DesiredSizeOverride(FVector2D(12.0f, 12.0f))
-							.ColorAndOpacity(FStyleColors::AccentGreen)
+							.ColorAndOpacity(ScenarioUI::Palette::Success())
 						],
 						[this, AssetId, bCloudTile]() { return bCloudTile && Imported.Contains(AssetId); })
 				]
@@ -802,18 +827,19 @@ TSharedRef<ITableRow> SScenarioLibraryPage::MakeTile(FItem Item, const TSharedRe
 				.VAlign(VAlign_Bottom)
 				.Padding(4.0f)
 				[
-					ShownWhen(ScenarioUI::Chip(LOCTEXT("Importing", "Importing..."), FStyleColors::AccentBlue),
+					ShownWhen(ScenarioUI::Pill(LOCTEXT("Importing", "Importing..."), ScenarioUI::ETone::Info),
 						[this, AssetId, bCloudTile]() { return bCloudTile && IsImporting(AssetId); })
 				]
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
+			.Padding(2.0f, 6.0f, 2.0f, 0.0f)
 			[
 				ScenarioUI::Line(FText::FromString(Item->Title))
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
+			.Padding(2.0f, 1.0f, 2.0f, 0.0f)
 			[
 				ScenarioUI::Line(FText::FromString(Item->ModelName), ScenarioUI::EText::Meta, true)
 			]
@@ -824,6 +850,13 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildEmpty()
 {
 	return SNew(SVerticalBox)
 		.Visibility_Lambda([this]() { return Items.Num() == 0 && (bLocal || Error.IsEmpty()) ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.HAlign(HAlign_Center)
+		.Padding(0.0f, 0.0f, 0.0f, 10.0f)
+		[
+			ScenarioUI::Icon(TEXT("library"), 28.0f, FSlateColor(ScenarioUI::Palette::Faint()))
+		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		.HAlign(HAlign_Center)
@@ -856,16 +889,17 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildEmpty()
 					: LOCTEXT("NoCloud", "No assets in this Scenario project yet. Generate something in Create.");
 			})
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 			.Justification(ETextJustify::Center)
 			.AutoWrapText(true)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		.HAlign(HAlign_Center)
-		.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
+		.Padding(0.0f, 12.0f, 0.0f, 0.0f)
 		[
 			SNew(SButton)
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Secondary)))
 			.Text(LOCTEXT("ClearSearch", "Clear search"))
 			.Visibility_Lambda([this]() { return Query.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 			.OnClicked_Lambda([this]()
@@ -892,7 +926,7 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 		return SNew(STextBlock)
 			.Text(LOCTEXT("SelectHint", "Select an asset to import it, show it or send it to another model. Double-click imports or shows it."))
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 			.AutoWrapText(true);
 	}
 	const FItem Item = Selected;
@@ -914,7 +948,7 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
+		.Padding(0.0f, 0.0f, 10.0f, 0.0f)
 		[
 			TileThumbnail(Item, FooterThumbnail)
 		]
@@ -943,9 +977,12 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 		.VAlign(VAlign_Center)
 		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(SSimpleComboButton)
-			.Text(LOCTEXT("SendTo", "Send to"))
-			.HasDownArrow(true)
+			SNew(SComboButton)
+			.ComboButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FComboButtonStyle>("Scenario.Combo"))
+			.ButtonContent()
+			[
+				SNew(STextBlock).Text(LOCTEXT("SendTo", "Send to")).Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+			]
 			.ToolTipText(LOCTEXT("SendToTip", "Use this asset as the input of another model. Nothing is sent until you generate."))
 			.OnGetMenuContent_Lambda([Item]()
 			{
@@ -977,6 +1014,7 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
 			SNew(SButton)
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Secondary)))
 			.Text(LOCTEXT("Reuse", "Reuse settings"))
 			.ToolTipText(LOCTEXT("ReuseTip", "Fills the Create form with the model and settings that made this asset. Sends nothing."))
 			.IsEnabled(!ModelId.IsEmpty())
@@ -991,7 +1029,8 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 		.VAlign(VAlign_Center)
 		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(SPrimaryButton)
+			SNew(SButton)
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Primary, true)))
 			.Text(LOCTEXT("Show", "Show"))
 			.ToolTipText(LOCTEXT("ShowTip", "Shows the asset in the Content Browser."))
 			.OnClicked_Lambda([Item]() { ShowInContentBrowser(Item->ObjectPath); return FReply::Handled(); })
@@ -1005,9 +1044,13 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 	.VAlign(VAlign_Center)
 	.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 	[
-		SNew(SSimpleComboButton)
-		.Icon(FAppStyle::GetBrush("Icons.EllipsisVerticalNarrow"))
+		SNew(SComboButton)
+		.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Ghost)))
 		.HasDownArrow(false)
+		.ButtonContent()
+		[
+			ScenarioUI::Icon(TEXT("more"), 16.0f, FSlateColor(ScenarioUI::Palette::Dim()))
+		]
 		.ToolTipText(LOCTEXT("MoreActionsTip", "More actions for this asset."))
 		.OnGetMenuContent_Lambda([this, Item]()
 		{
@@ -1029,7 +1072,8 @@ TSharedRef<SWidget> SScenarioLibraryPage::BuildFooter()
 	.VAlign(VAlign_Center)
 	.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 	[
-		SNew(SPrimaryButton)
+		SNew(SButton)
+		.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Primary, true)))
 		.Text_Lambda([this, Item]()
 		{
 			if (IsImporting(Item->AssetId))
