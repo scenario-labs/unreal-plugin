@@ -17,6 +17,9 @@ namespace ScenarioPages
 	inline const FName Library = TEXT("Library");
 	inline const FName Jobs = TEXT("Jobs");
 	inline const FName Results = TEXT("Results");
+	inline const FName Agent = TEXT("Agent");
+	inline const FName Settings = TEXT("Settings");
+	/** Older name of Settings. */
 	inline const FName Connection = TEXT("Connection");
 }
 

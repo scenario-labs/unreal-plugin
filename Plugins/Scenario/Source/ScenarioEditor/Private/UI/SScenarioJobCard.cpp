@@ -18,11 +18,11 @@
 #include "ScenarioThumbnails.h"
 #include "ScenarioWidgets.h"
 #include "SScenarioModelPicker.h"
-#include "SSimpleComboButton.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -101,7 +101,7 @@ namespace
 			return Row ? ScenarioJobActions::PrimaryAction(*Row) : ScenarioJobActions::FRowAction();
 		};
 		return SNew(SButton)
-			.ContentPadding(FMargin(6.0f, 1.0f))
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Outline, true)))
 			.VAlign(VAlign_Center)
 			.Visibility_Lambda([Action]() { return Action().IsSet() ? EVisibility::Visible : EVisibility::Collapsed; })
 			.ToolTipText_Lambda([Action]() { return Action().Tooltip; })
@@ -122,7 +122,8 @@ namespace
 				.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 				[
 					SNew(SImage)
-					.Image_Lambda([Action]() { const FName Icon = Action().Icon; return Icon.IsNone() ? nullptr : FAppStyle::GetBrush(Icon); })
+					.DesiredSizeOverride(FVector2D(14.0f, 14.0f))
+					.Image_Lambda([Action]() { const FName Icon = Action().Icon; return Icon.IsNone() ? nullptr : ScenarioUI::IconBrush(Icon); })
 					.ColorAndOpacity(FSlateColor::UseForeground())
 				]
 				+ SHorizontalBox::Slot()
@@ -131,16 +132,22 @@ namespace
 				[
 					SNew(STextBlock)
 					.Text_Lambda([Action]() { return Action().Label; })
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
 				]
 			];
 	}
 
 	TSharedRef<SWidget> OverflowButton(const FString& LocalId)
 	{
-		return SNew(SSimpleComboButton)
-			.Icon(FAppStyle::GetBrush("Icons.EllipsisVerticalNarrow"))
+		return SNew(SComboButton)
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Ghost, true)))
+			.HasDownArrow(false)
+			.ContentPadding(FMargin(2.0f))
 			.ToolTipText(LOCTEXT("MoreTip", "More actions: send to another model, reuse settings, details, hide."))
+			.ButtonContent()
+			[
+				ScenarioUI::Icon(TEXT("more"), 16.0f, FSlateColor(ScenarioUI::Palette::Dim()))
+			]
 			.OnGetMenuContent_Lambda([LocalId]() { return ScenarioJobActions::MoreMenu(LocalId); });
 	}
 
@@ -151,6 +158,7 @@ namespace
 			.Visibility_Lambda([LocalId]() { return IsBusy(LocalId) ? EVisibility::HitTestInvisible : EVisibility::Hidden; })
 			[
 				SNew(SProgressBar)
+				.Style(&ScenarioUI::Style().GetWidgetStyle<FProgressBarStyle>("Scenario.Progress"))
 				.Percent_Lambda([LocalId]() { return BusyProgress(LocalId); })
 			];
 	}
@@ -323,13 +331,13 @@ namespace ScenarioJobActions
 		{
 		case EView::Running:
 		case EView::Downloading:
-		case EView::Importing: return FStyleColors::AccentBlue;
-		case EView::Ready: return FStyleColors::AccentGreen;
+		case EView::Importing: return ScenarioUI::Palette::Info();
+		case EView::Ready: return ScenarioUI::Palette::Success();
 		case EView::DownloadStopped:
-		case EView::Unknown: return FStyleColors::AccentYellow;
+		case EView::Unknown: return ScenarioUI::Palette::Warning();
 		case EView::Failed:
-		case EView::Blocked: return FStyleColors::AccentRed;
-		default: return FStyleColors::AccentGray;
+		case EView::Blocked: return ScenarioUI::Palette::Error();
+		default: return ScenarioUI::Palette::Dim();
 		}
 	}
 
@@ -337,7 +345,7 @@ namespace ScenarioJobActions
 	{
 		return ScenarioUI::Chip(
 			MakeAttributeLambda([LocalId]() { const FScenarioJobRow* Row = FindRow(LocalId); return Row ? ChipText(*Row) : FText::GetEmpty(); }),
-			MakeAttributeLambda([LocalId]() { const FScenarioJobRow* Row = FindRow(LocalId); return Row ? ChipColor(*Row) : FSlateColor(FStyleColors::AccentGray); }),
+			MakeAttributeLambda([LocalId]() { const FScenarioJobRow* Row = FindRow(LocalId); return Row ? ChipColor(*Row) : FSlateColor(ScenarioUI::Palette::Dim()); }),
 			MakeAttributeLambda([LocalId]() { const FScenarioJobRow* Row = FindRow(LocalId); return Row ? StateText(*Row) : FText::GetEmpty(); }));
 	}
 
@@ -492,7 +500,7 @@ namespace ScenarioJobActions
 		case EView::Queued:
 		case EView::Running:
 			Action.Label = LOCTEXT("Cancel", "Cancel");
-			Action.Icon = TEXT("Icons.X");
+			Action.Icon = TEXT("close");
 			Action.Tooltip = LOCTEXT("CancelTip", "Asks Scenario to stop this job. Scenario decides whether any Creative Units are refunded.");
 			Action.Run = [Id]()
 			{
@@ -508,19 +516,19 @@ namespace ScenarioJobActions
 				break;
 			}
 			Action.Label = LOCTEXT("ImportPlace", "Import and place");
-			Action.Icon = TEXT("Icons.PlaceActors");
+			Action.Icon = TEXT("pin");
 			Action.Tooltip = LOCTEXT("ImportPlaceTip", "Imports the result and places it in the level (on the selection, or in front of the camera). One undo step.");
 			Action.Run = [Id]() { Import(Id, true); };
 			break;
 		case EView::Imported:
 			Action.Label = LOCTEXT("Show", "Show");
-			Action.Icon = TEXT("Icons.BrowseContent");
+			Action.Icon = TEXT("folder");
 			Action.Tooltip = LOCTEXT("ShowTip", "Selects the imported assets in the Content Browser.");
 			Action.Run = [Id]() { Show(Id); };
 			break;
 		case EView::DownloadStopped:
 			Action.Label = LOCTEXT("Resume", "Resume download");
-			Action.Icon = TEXT("Icons.Refresh");
+			Action.Icon = TEXT("refresh");
 			Action.Tooltip = LOCTEXT("ResumeTip", "Downloads the files again with a fresh link, resuming partial files. Free.");
 			Action.Run = [Id]()
 			{
@@ -533,12 +541,13 @@ namespace ScenarioJobActions
 		case EView::Failed:
 		case EView::Blocked:
 			Action.Label = LOCTEXT("Details", "Details");
+			Action.Icon = TEXT("info");
 			Action.Tooltip = LOCTEXT("DetailsTip", "Shows the inputs, ids and errors of this job.");
 			Action.Run = [Id]() { ShowDetails(Id); };
 			break;
 		case EView::Unknown:
 			Action.Label = LOCTEXT("Check", "Check");
-			Action.Icon = TEXT("Icons.Refresh");
+			Action.Icon = TEXT("refresh");
 			Action.Tooltip = LOCTEXT("CheckTip", "Looks for this request in Scenario's recent jobs and links it when there is exactly one match. Free.");
 			Action.Run = []() { CheckUnresolved(); };
 			break;
@@ -810,15 +819,20 @@ void SScenarioJobThumb::Construct(const FArguments& InArgs)
 			+ SOverlay::Slot()
 			.HAlign(HAlign_Right)
 			.VAlign(VAlign_Bottom)
-			.Padding(2.0f)
+			.Padding(3.0f)
 			[
-				SNew(SImage)
-				.DesiredSizeOverride(FVector2D(Badge, Badge))
-				.Image_Lambda([Kind]() { return ScenarioUI::KindIcon(Kind()); })
+				SNew(SBorder)
+				.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Overlay"))
+				.Padding(2.0f)
 				.Visibility_Lambda([Kind, Preview, bBadge]()
 				{
 					return bBadge && Kind() != TEXT("image") && Preview() ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 				})
+				[
+					SNew(SImage)
+					.DesiredSizeOverride(FVector2D(Badge - 4.0f, Badge - 4.0f))
+					.Image_Lambda([Kind]() { return ScenarioUI::KindIcon(Kind()); })
+				]
 			]
 			+ SOverlay::Slot()
 			.VAlign(VAlign_Bottom)
@@ -866,6 +880,7 @@ void SScenarioJobThumb::Rebuild()
 	FAssetThumbnailConfig Config;
 	Config.bAllowFadeIn = false;
 	Config.bAllowHintText = false;
+	Config.ShowAssetColor = false;
 	AssetBox->SetContent(AssetThumbnail->MakeThumbnailWidget(Config));
 }
 
@@ -885,15 +900,15 @@ void SScenarioJobRow::Construct(const FArguments& InArgs)
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(FMargin(ScenarioUI::Gutter, 6.0f, ScenarioUI::Gutter, 3.0f))
+		.Padding(FMargin(8.0f, 7.0f, 6.0f, 5.0f))
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
+			.Padding(0.0f, 0.0f, 10.0f, 0.0f)
 			[
-				SNew(SScenarioJobThumb).LocalId(Id).Size(40.0f)
+				SNew(SScenarioJobThumb).LocalId(Id).Size(44.0f)
 			]
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
@@ -929,7 +944,7 @@ void SScenarioJobRow::Construct(const FArguments& InArgs)
 							.Text(RowText([](const FScenarioJobRow& Row) { return ScenarioJobActions::CostText(Row); }))
 							.ToolTipText(RowText([](const FScenarioJobRow& Row) { return ScenarioJobActions::CostTooltip(Row); }))
 							.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-							.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+							.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 						]
 					]
 				]
@@ -974,7 +989,7 @@ void SScenarioJobRow::Construct(const FArguments& InArgs)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(FMargin(ScenarioUI::Gutter, 0.0f, ScenarioUI::Gutter, 0.0f))
+		.Padding(FMargin(8.0f, 0.0f, 8.0f, 2.0f))
 		[
 			ThinProgress(Id)
 		]
@@ -1026,8 +1041,8 @@ void SScenarioJobTile::Construct(const FArguments& InArgs)
 				.VAlign(VAlign_Top)
 				[
 					SNew(SBorder)
-					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-					.Padding(0.0f)
+					.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Overlay"))
+					.Padding(1.0f)
 					.Visibility_Lambda([this]() { return IsHovered() ? EVisibility::Visible : EVisibility::Collapsed; })
 					[
 						SNew(SHorizontalBox)
@@ -1035,7 +1050,7 @@ void SScenarioJobTile::Construct(const FArguments& InArgs)
 						.AutoWidth()
 						[
 							SNew(SButton)
-							.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+							.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Ghost, true)))
 							.ContentPadding(FMargin(2.0f))
 							.Visibility_Lambda([Action]() { return Action().IsSet() && !Action().Icon.IsNone() ? EVisibility::Visible : EVisibility::Collapsed; })
 							.ToolTipText_Lambda([Action]() { return FText::Format(LOCTEXT("TileAction", "{0}. {1}"), Action().Label, Action().Tooltip); })
@@ -1050,7 +1065,8 @@ void SScenarioJobTile::Construct(const FArguments& InArgs)
 							})
 							[
 								SNew(SImage)
-								.Image_Lambda([Action]() { const FName Icon = Action().Icon; return Icon.IsNone() ? nullptr : FAppStyle::GetBrush(Icon); })
+								.DesiredSizeOverride(FVector2D(14.0f, 14.0f))
+								.Image_Lambda([Action]() { const FName Icon = Action().Icon; return Icon.IsNone() ? nullptr : ScenarioUI::IconBrush(Icon); })
 								.ColorAndOpacity(FSlateColor::UseForeground())
 							]
 						]
@@ -1073,12 +1089,12 @@ void SScenarioJobTile::Construct(const FArguments& InArgs)
 					const FScenarioJobRow* Row = FindRow(Id);
 					if (!Row)
 					{
-						return FSlateColor::UseSubduedForeground();
+						return FSlateColor(ScenarioUI::Palette::Dim());
 					}
 					const ScenarioJobActions::EView View = ScenarioJobActions::View(*Row);
 					const bool bNeutral = View == ScenarioJobActions::EView::Imported || View == ScenarioJobActions::EView::Sending || View == ScenarioJobActions::EView::Queued
 						|| View == ScenarioJobActions::EView::Canceled || View == ScenarioJobActions::EView::NotSent;
-					return bNeutral ? FSlateColor::UseSubduedForeground() : ScenarioJobActions::ChipColor(*Row);
+					return bNeutral ? FSlateColor(ScenarioUI::Palette::Dim()) : ScenarioJobActions::ChipColor(*Row);
 				})
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
 				.OverflowPolicy(ETextOverflowPolicy::Ellipsis)

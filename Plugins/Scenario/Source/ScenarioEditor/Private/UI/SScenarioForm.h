@@ -44,12 +44,12 @@ private:
 	TSharedRef<SWidget> BuildImprove();
 	TSharedRef<SWidget> BuildSlots(const FScenarioField& Field);
 	TSharedRef<SWidget> BuildSlot(const FScenarioField& Field, const FScenarioReference& Reference, int32 IndexInField);
-	TSharedRef<SWidget> BuildAddSlot(const FScenarioField& Field);
+	TSharedRef<SWidget> BuildAddSlot(const FScenarioField& Field, bool bWide);
 	TSharedRef<SWidget> BuildAddMenu(FScenarioField Field);
 	TSharedRef<SWidget> BuildControl(const FScenarioField& Field);
 	TSharedRef<SWidget> BuildSize(const FScenarioField& Width, const FScenarioField& Height);
-	/** One Details-style row: the label column, then the value. */
-	void AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FText& Label, const FText& Tooltip, const TSharedRef<SWidget>& Value, bool bOptional, bool bMore);
+	/** One setting row: the label (and its hint) column, then the value. */
+	void AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FText& Label, const FText& Tooltip, const TSharedRef<SWidget>& Value, bool bOptional, bool bMore, const FText& Hint = FText::GetEmpty());
 	void AddFieldRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FScenarioField& Field, bool bMore);
 	/** Runs an add-reference action and shows its error under References. */
 	void RunAdd(TFunction<FString()> Action);

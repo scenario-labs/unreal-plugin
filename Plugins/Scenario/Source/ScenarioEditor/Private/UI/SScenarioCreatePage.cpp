@@ -30,6 +30,8 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SWrapBox.h"
+#include "Styling/CoreStyle.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -110,10 +112,10 @@ namespace
 	{
 		switch (Tone)
 		{
-		case EScenarioHintTone::Error: return FStyleColors::Error;
-		case EScenarioHintTone::Warning: return FStyleColors::Warning;
+		case EScenarioHintTone::Error: return ScenarioUI::Palette::Error();
+		case EScenarioHintTone::Warning: return ScenarioUI::Palette::Warning();
 		case EScenarioHintTone::Success: return FSlateColor::UseForeground();
-		default: return FSlateColor::UseSubduedForeground();
+		default: return FSlateColor(ScenarioUI::Palette::Dim());
 		}
 	}
 
@@ -163,7 +165,7 @@ void SScenarioCreatePage::Construct(const FArguments& InArgs)
 		[
 			SNew(SScrollBox)
 			+ SScrollBox::Slot()
-			.Padding(ScenarioUI::Gutter)
+			.Padding(ScenarioUI::PagePadding, ScenarioUI::PagePadding, ScenarioUI::PagePadding, ScenarioUI::Gutter)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot()
@@ -181,12 +183,22 @@ void SScenarioCreatePage::Construct(const FArguments& InArgs)
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
-				.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, ScenarioUI::SectionGap)
+				.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, 0.0f)
 				[
 					BuildModelCard()
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
+				.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+				[
+					SAssignNew(PicksBox, SBox)
+					[
+						BuildPicks()
+					]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(-ScenarioUI::Gutter, 0.0f, -ScenarioUI::Gutter, 0.0f)
 				[
 					SAssignNew(Form, SScenarioForm).Model(Model)
 				]
@@ -257,40 +269,59 @@ void SScenarioCreatePage::OnModelChanged()
 	{
 		ModesBox->SetContent(BuildModes());
 	}
+	if (Key + TEXT("|") + Model->GetModelId() != PicksFor && PicksBox.IsValid())
+	{
+		PicksBox->SetContent(BuildPicks());
+	}
 }
 
 TSharedRef<SWidget> SScenarioCreatePage::BuildLanes()
 {
 	const TSharedRef<FScenarioCreateModel> M = Model.ToSharedRef();
-	TSharedRef<SSegmentedControl<FString>> Lanes = SNew(SSegmentedControl<FString>)
-		.UniformPadding(FMargin(8.0f, 2.0f))
-		.Value_Lambda([M]() { return M->GetLaneKey(); })
-		.OnValueChanged_Lambda([M](const FString& Lane)
-		{
-			if (Lane == WorkflowLane)
-			{
-				M->EnterWorkflowLane();
-			}
-			else
-			{
-				M->SetLane(Lane);
-			}
-		});
+	TSharedRef<SWrapBox> Lanes = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
 	for (const FScenarioLane& Lane : FScenarioLanes::Get().All())
 	{
-		Lanes->AddSlot(Lane.Id, false)
-			.Text(FText::FromString(Lane.Title))
-			.ToolTip(FText::FromString(Lane.Hint));
-	}
-	Lanes->AddSlot(WorkflowLane, false)
-		.Text(LOCTEXT("Workflow", "Workflow"))
-		.ToolTip(LOCTEXT("WorkflowTip", "Runs a Scenario workflow: several models in one request, built on scenario.com."));
-	Lanes->RebuildChildren();
-	return SNew(SBox)
-		.HAlign(HAlign_Left)
+		const FString Id = Lane.Id;
+		Lanes->AddSlot()
 		[
-			Lanes
+			ScenarioUI::ChipToggle(FText::FromString(Lane.Title), MakeAttributeLambda([M, Id]() { return M->GetLaneKey() == Id; }),
+				[M, Id]() { M->SetLane(Id); }, ScenarioUI::KindIconName(Id), FText::FromString(Lane.Hint))
 		];
+	}
+	Lanes->AddSlot()
+	[
+		ScenarioUI::ChipToggle(LOCTEXT("Workflow", "Workflow"), MakeAttributeLambda([M]() { return M->GetLaneKey() == WorkflowLane; }),
+			[M]() { M->EnterWorkflowLane(); }, TEXT("workflows"), LOCTEXT("WorkflowTip", "Runs a Scenario workflow: several models in one request, built on scenario.com."))
+	];
+	return Lanes;
+}
+
+TSharedRef<SWidget> SScenarioCreatePage::BuildPicks()
+{
+	const TSharedRef<FScenarioCreateModel> M = Model.ToSharedRef();
+	PicksFor = M->GetLaneKey() + TEXT("|") + M->GetMode() + TEXT("|") + M->GetModelId();
+	const TArray<FScenarioLaneModel> Picks = M->QuickPicks();
+	if (M->IsWorkflow() || Picks.Num() < 2)
+	{
+		return SNullWidget::NullWidget;
+	}
+	TSharedRef<SWrapBox> Box = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
+	for (const FScenarioLaneModel& Pick : Picks)
+	{
+		const FString Id = Pick.Id;
+		const FString Name = Pick.Name;
+		FString Note = Pick.Note;
+		if (!Note.IsEmpty())
+		{
+			Note[0] = FChar::ToUpper(Note[0]);
+		}
+		Box->AddSlot()
+		[
+			ScenarioUI::ChipToggle(FText::FromString(Pick.Name), MakeAttributeLambda([M, Id]() { return M->GetModelId() == Id; }),
+				[M, Id, Name]() { M->SetModel(Id, Name); }, NAME_None, FText::FromString(Note), true)
+		];
+	}
+	return Box;
 }
 
 TSharedRef<SWidget> SScenarioCreatePage::BuildModes()
@@ -302,29 +333,29 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModes()
 	{
 		return SNullWidget::NullWidget;
 	}
-	TSharedRef<SSegmentedControl<FString>> Modes = SNew(SSegmentedControl<FString>)
-		.UniformPadding(FMargin(8.0f, 1.0f))
-		.Value_Lambda([M]() { return M->GetMode(); })
-		.OnValueChanged_Lambda([M](const FString& Mode) { M->SetMode(Mode); });
-	for (const FString& Mode : Lane->Modes)
-	{
-		Modes->AddSlot(Mode, false).Text(ModeLabel(Lane->Id, Mode)).ToolTip(ModeTip(Mode));
-	}
-	Modes->RebuildChildren();
-	return SNew(SHorizontalBox)
+	TSharedRef<SHorizontalBox> Modes = SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		.Padding(0.0f, ScenarioUI::RowGap * 2.0f, ScenarioUI::Gutter, 0.0f)
+		.Padding(2.0f, 0.0f, 8.0f, 0.0f)
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("From", "From"))
-			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-		]
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(0.0f, ScenarioUI::RowGap * 2.0f, 0.0f, 0.0f)
+			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+			.ColorAndOpacity(ScenarioUI::Palette::Dim())
+		];
+	for (const FString& Mode : Lane->Modes)
+	{
+		Modes->AddSlot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				ScenarioUI::ChipToggle(ModeLabel(Lane->Id, Mode), MakeAttributeLambda([M, Mode]() { return M->GetMode() == Mode; }),
+					[M, Mode]() { M->SetMode(Mode); }, NAME_None, ModeTip(Mode), true)
+			];
+	}
+	return SNew(SBox)
+		.Padding(0.0f, 10.0f, 0.0f, 0.0f)
 		[
 			Modes
 		];
@@ -349,13 +380,13 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModelCard()
 		return Lane == TEXT("environment") ? FString(TEXT("sky")) : Lane == TEXT("render") ? FString(TEXT("image")) : Lane;
 	};
 
-	ModelCard = SNew(SHorizontalBox)
+	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
+		.Padding(0.0f, 0.0f, 10.0f, 0.0f)
 		[
-			ScenarioUI::Thumbnail(40.0f, MakeAttributeLambda(Thumbnail), MakeAttributeLambda(Kind))
+			ScenarioUI::Thumbnail(44.0f, MakeAttributeLambda(Thumbnail), MakeAttributeLambda(Kind))
 		]
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
@@ -393,7 +424,7 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModelCard()
 							const FString Id = M->GetModelId();
 							const FScenarioWorkflowItem* Item = M->GetWorkflows().FindByPredicate([&Id](const FScenarioWorkflowItem& W) { return W.Id == Id; });
 							return Item && !Item->bTeam ? LOCTEXT("Featured", "Featured") : LOCTEXT("Team", "Team");
-						}), FStyleColors::AccentGray)
+						}), ScenarioUI::Palette::Dim())
 					]
 				]
 			]
@@ -418,6 +449,9 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModelCard()
 		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
 			SNew(SComboButton)
+			.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Outline.Small"))
+			.HasDownArrow(false)
 			.ToolTipText_Lambda([M]()
 			{
 				return M->IsWorkflow()
@@ -428,9 +462,11 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModelCard()
 			.ButtonContent()
 			[
 				SNew(STextBlock)
-				.Text_Lambda([M]() { return M->IsWorkflow() ? LOCTEXT("ChangeWorkflow", "Change workflow") : LOCTEXT("ChangeModel", "Change model"); })
+				.Text(LOCTEXT("Change", "Change"))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 			]
 		];
+	ModelCard = ScenarioUI::Card(Row, FMargin(10.0f));
 	return ModelCard.ToSharedRef();
 }
 
@@ -539,15 +575,19 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildRecent()
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
-			ScenarioUI::SectionHeader(LOCTEXT("Recent", "Recent"),
-				SNew(SHyperlink)
-				.Text(LOCTEXT("AllJobs", "All jobs"))
-				.ToolTipText(LOCTEXT("AllJobsTip", "Every request with its state and cost."))
-				.OnNavigate_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); }))
+			ScenarioUI::Divider()
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(FMargin(ScenarioUI::Gutter, 6.0f))
+		.Padding(ScenarioUI::Gutter - 2.0f, 0.0f)
+		[
+			ScenarioUI::SectionHeader(LOCTEXT("Results", "Results"),
+				ScenarioUI::Button(LOCTEXT("AllJobs", "All jobs"), ScenarioUI::EButton::Ghost, []() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); },
+					TEXT("arrow-right"), LOCTEXT("AllJobsTip", "Every request with its state and cost."), true))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(ScenarioUI::PagePadding, 0.0f, ScenarioUI::PagePadding, 10.0f))
 		[
 			SNew(SOverlay)
 			+ SOverlay::Slot()
@@ -565,7 +605,7 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildRecent()
 					SNew(STextBlock)
 					.Text(LOCTEXT("RecentEmpty", "Your results appear here."))
 					.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 				]
 			]
 		];
@@ -592,14 +632,40 @@ void SScenarioCreatePage::RefreshRecent()
 TSharedRef<SWidget> SScenarioCreatePage::BuildDestination()
 {
 	const TSharedRef<FScenarioCreateModel> M = Model.ToSharedRef();
-	return SNew(SSimpleComboButton)
-		.Icon(FAppStyle::GetBrush("Icons.FolderClosed"))
-		.HasDownArrow(true)
-		.UsesSmallText(true)
-		.Text_Lambda([M]()
-		{
-			return M->IsWorkflow() ? LOCTEXT("TypeFolders", "Each output goes to its type folder") : FText::FromString(ScenarioUI::ShortPath(M->DestinationText()));
-		})
+	return SNew(SComboButton)
+		.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+		.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Ghost.Small"))
+		.HasDownArrow(false)
+		.ButtonContent()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 5.0f, 0.0f)
+			[
+				ScenarioUI::Icon(TEXT("folder"), 12.0f, ScenarioUI::Palette::Dim())
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity(ScenarioUI::Palette::Dim())
+				.Text_Lambda([M]()
+				{
+					return M->IsWorkflow() ? LOCTEXT("TypeFolders", "Each output goes to its type folder") : FText::FromString(ScenarioUI::ShortPath(M->DestinationText()));
+				})
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(4.0f, 1.0f, 0.0f, 0.0f)
+			[
+				ScenarioUI::Icon(TEXT("chevron-down"), 10.0f, ScenarioUI::Palette::Faint())
+			]
+		]
 		.ToolTipText_Lambda([M]()
 		{
 			return FText::Format(LOCTEXT("FolderTip", "Saves to {0}.\n{1}\nClick to choose another folder."), FText::FromString(M->DestinationText()), FText::FromString(M->PlacementText()));
@@ -652,36 +718,70 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildActionBar()
 	{
 		auto Which = [M, bPrimary]() { const FScenarioHint Hint = M->GetHint(); return bPrimary ? Hint.Primary : Hint.Secondary; };
 		return SNew(SBox)
-			.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
+			.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 			.VAlign(VAlign_Center)
 			.Visibility_Lambda([Which]() { return Which() == EScenarioHintAction::None ? EVisibility::Collapsed : EVisibility::Visible; })
 			[
-				SNew(SHyperlink)
-				.Text_Lambda([Which]() { return ActionLabel(Which()); })
-				.OnNavigate_Lambda([Which, RunAction]() { RunAction(Which()); })
+				ScenarioUI::Button(MakeAttributeLambda([Which]() { return ActionLabel(Which()); }), bPrimary ? ScenarioUI::EButton::Secondary : ScenarioUI::EButton::Ghost,
+					[Which, RunAction]() { RunAction(Which()); }, NAME_None, TAttribute<FText>(), true)
 			];
 	};
 
-	return SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("Brushes.Header"))
-		.Padding(FMargin(ScenarioUI::Gutter, 6.0f, ScenarioUI::Gutter, ScenarioUI::Gutter))
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			ScenarioUI::Divider()
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(ScenarioUI::PagePadding, 8.0f, ScenarioUI::PagePadding, 12.0f))
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.HAlign(HAlign_Left)
-			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			.Padding(-4.0f, 0.0f, 0.0f, 6.0f)
 			[
-				BuildDestination()
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.HAlign(HAlign_Left)
+				.VAlign(VAlign_Center)
+				[
+					BuildDestination()
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SHorizontalBox)
+					.ToolTipText(LOCTEXT("ShortcutTip", "Generate from the prompt box with this shortcut."))
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						ScenarioUI::Kbd(PLATFORM_MAC ? LOCTEXT("ShortcutMac", "Cmd+Enter") : LOCTEXT("Shortcut", "Ctrl+Enter"))
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(5.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("ToGenerate", "to generate"))
+						.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+						.ColorAndOpacity(ScenarioUI::Palette::Faint())
+					]
+				]
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
 				SNew(SBox)
-				.HeightOverride(32.0f)
+				.HeightOverride(36.0f)
 				[
 					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
+					.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Primary"))
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.IsEnabled_Lambda([M]() { return M->CanClickGenerate(); })
@@ -690,8 +790,12 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildActionBar()
 					[
 						SNew(STextBlock)
 						.Text_Lambda([M]() { return M->GetButtonText(); })
-						.Font(ScenarioUI::Font(ScenarioUI::EText::Title))
-						.ColorAndOpacity_Lambda([M]() { return M->IsPriceStale() ? FLinearColor(1.0f, 1.0f, 1.0f, 0.55f) : FLinearColor::White; })
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+						.ColorAndOpacity_Lambda([M]()
+						{
+							const FLinearColor Ink = ScenarioUI::Palette::OnPrimary();
+							return !M->CanClickGenerate() ? Ink.CopyWithNewOpacity(0.45f) : M->IsPriceStale() ? Ink.CopyWithNewOpacity(0.6f) : Ink;
+						})
 					]
 				]
 			]

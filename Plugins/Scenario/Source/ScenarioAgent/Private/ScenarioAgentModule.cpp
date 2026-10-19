@@ -113,38 +113,23 @@ void FScenarioAgentModule::StartupModule()
 			return Recent.Num() > 0 ? 2 : 1;
 		};
 		return SNew(SButton)
-			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-			.ContentPadding(FMargin(4.0f, 2.0f))
+			.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Ghost.Small"))
+			.ContentPadding(FMargin(6.0f))
 			.ToolTipText_Lambda([Status]() { FText Tip; Status(&Tip); return Tip; })
-			.OnClicked_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Connection); return FReply::Handled(); })
+			.OnClicked_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Agent); return FReply::Handled(); })
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				.Padding(0.0f, 0.0f, 4.0f, 0.0f)
-				[
-					SNew(SImage)
-					.Image(FAppStyle::GetBrush("Icons.FilledCircle"))
-					.DesiredSizeOverride(FVector2D(8.0f, 8.0f))
-					.ColorAndOpacity_Lambda([Status]()
+				SNew(SImage)
+				.Image(ScenarioUI::Style().GetBrush("Scenario.Dot"))
+				.DesiredSizeOverride(FVector2D(8.0f, 8.0f))
+				.ColorAndOpacity_Lambda([Status]()
+				{
+					switch (Status(nullptr))
 					{
-						switch (Status(nullptr))
-						{
-						case 2: return FSlateColor(FStyleColors::AccentGreen);
-						case 1: return FSlateColor(FStyleColors::AccentGray);
-						default: return FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
-						}
-					})
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("Agents", "Agents"))
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-				]
+					case 2: return FSlateColor(ScenarioUI::Palette::Success());
+					case 1: return FSlateColor(ScenarioUI::Palette::Success().CopyWithNewOpacity(0.55f));
+					default: return FSlateColor(ScenarioUI::Palette::White(0.22f));
+					}
+				})
 			];
 	});
 

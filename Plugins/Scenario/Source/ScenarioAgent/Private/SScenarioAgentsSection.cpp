@@ -60,115 +60,132 @@ namespace
 
 void SScenarioAgentsSection::Construct(const FArguments& InArgs)
 {
-	// On and off, in the section header.
-	const TSharedRef<SWidget> Switch = SNew(SCheckBox)
-		.ToolTipText(LOCTEXT("ServerTip", "Runs the local Scenario MCP server, so agents on this computer can price, generate and place assets here."))
-		.IsChecked_Lambda([]() { const TSharedPtr<FScenarioMcpServer> S = Server(); return S.IsValid() && S->IsRunning() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-		.OnCheckStateChanged_Lambda([this](ECheckBoxState State)
+	using namespace ScenarioUI;
+	auto IsRunning = []() { const TSharedPtr<FScenarioMcpServer> S = Server(); return S.IsValid() && S->IsRunning(); };
+	const TSharedRef<SWidget> Toggle = Switch(MakeAttributeLambda(IsRunning), [this](bool bOn)
+	{
+		if (!FScenarioAgentModule::IsAvailable())
 		{
-			if (!FScenarioAgentModule::IsAvailable())
-			{
-				return;
-			}
-			FScenarioAgentModule& Module = FScenarioAgentModule::Get();
-			UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
-			if (State != ECheckBoxState::Checked)
-			{
-				Module.StopServer();
-				Settings.bAgentServer = false;
-			}
-			else
-			{
-				FString Error;
-				bMessageIsError = !Module.StartServer(Error);
-				Message = Error;
-				Settings.bAgentServer = !bMessageIsError;
-			}
-			Settings.SaveConfig();
-		})
-		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("On", "On"))
-			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-		];
+			return;
+		}
+		FScenarioAgentModule& Module = FScenarioAgentModule::Get();
+		UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
+		if (!bOn)
+		{
+			Module.StopServer();
+			Settings.bAgentServer = false;
+		}
+		else
+		{
+			FString Error;
+			bMessageIsError = !Module.StartServer(Error);
+			Message = Error;
+			Settings.bAgentServer = !bMessageIsError;
+		}
+		Settings.SaveConfig();
+	}, LOCTEXT("ServerTip", "Runs the local Scenario MCP server, so agents on this computer can price, generate and place assets here."));
 
 	ChildSlot
 	[
 		SNew(SVerticalBox)
+		// On and off, with the address agents use.
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
-			ScenarioUI::SectionHeader(LOCTEXT("Title", "Agents (Scenario MCP)"), Switch)
+			Card(
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, 12.0f, 0.0f)
+				[
+					SNew(SBorder)
+					.BorderImage(Style().GetBrush("Scenario.Thumb"))
+					.Padding(8.0f)
+					[
+						Icon(TEXT("agent"), 20.0f, MakeAttributeLambda([IsRunning]() { return IsRunning() ? FSlateColor(Palette::Success()) : FSlateColor(Palette::Dim()); }))
+					]
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text_Lambda([IsRunning]() { return IsRunning() ? LOCTEXT("OnTitle", "Agents can use Scenario and this project") : LOCTEXT("OffTitle", "Agents cannot reach this editor"); })
+						.Font(Font(EText::Title))
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 3.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.AutoWrapText(true)
+						.Font(Font(EText::Meta))
+						.ColorAndOpacity(Palette::Dim())
+						.Text_Lambda([]()
+						{
+							const TSharedPtr<FScenarioMcpServer> S = Server();
+							if (!S.IsValid() || !S->IsRunning())
+							{
+								return LOCTEXT("Stopped", "Scenario MCP is off. Turn it on to let an agent price, generate and place assets here.");
+							}
+							return FText::Format(LOCTEXT("Running", "Scenario MCP on {0}{1}"), FText::FromString(S->Url()),
+								S->bRequireToken ? LOCTEXT("WithToken", ", token required") : LOCTEXT("NoToken", ", no token"));
+						})
+					]
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(Gutter, 0.0f, 0.0f, 0.0f)
+				[
+					Toggle
+				], FMargin(12.0f))
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(FMargin(ScenarioUI::Gutter, ScenarioUI::Gutter, ScenarioUI::Gutter, ScenarioUI::SectionGap))
 		[
-			SNew(SVerticalBox)
-			// Server state.
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				SNew(STextBlock)
-				.AutoWrapText(true)
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				.Text_Lambda([]()
-				{
-					const TSharedPtr<FScenarioMcpServer> S = Server();
-					if (!S.IsValid() || !S->IsRunning())
-					{
-						return LOCTEXT("Stopped", "Off. Agents cannot reach this editor.");
-					}
-					return FText::Format(LOCTEXT("Running", "Agents on this computer can price, generate and place assets here. Listening on {0}{1}."), FText::FromString(S->Url()),
-						S->bRequireToken ? LOCTEXT("WithToken", ", token required") : LOCTEXT("NoToken", ", no token"));
-				})
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
-			[
-				BuildClients()
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.AutoWrapText(true)
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-				.Text_Lambda([this]() { return FText::FromString(Message); })
-				.ColorAndOpacity_Lambda([this]() { return bMessageIsError ? FSlateColor(FStyleColors::Error) : FSlateColor::UseSubduedForeground(); })
-				.Visibility_Lambda([this]() { return Message.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, ScenarioUI::RowGap)
-			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("Permissions", "Permissions"))
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Section))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				BuildPermissions()
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, ScenarioUI::RowGap)
-			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("Activity", "Activity"))
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Section))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				SAssignNew(ActivityBox, SVerticalBox)
-			]
+			SectionHeader(LOCTEXT("Clients", "Connect a client"))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			Card(BuildClients(), FMargin(12.0f))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f, 6.0f, 2.0f, 0.0f)
+		[
+			SNew(STextBlock)
+			.AutoWrapText(true)
+			.Font(Font(EText::Meta))
+			.Text_Lambda([this]() { return FText::FromString(Message); })
+			.ColorAndOpacity_Lambda([this]() { return bMessageIsError ? FSlateColor(Palette::Error()) : FSlateColor(Palette::Dim()); })
+			.Visibility_Lambda([this]() { return Message.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SectionHeader(LOCTEXT("Permissions", "Permissions"))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			Card(BuildPermissions(), FMargin(12.0f))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SectionHeader(LOCTEXT("Activity", "Activity"))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			Card(SAssignNew(ActivityBox, SVerticalBox), FMargin(12.0f))
 		]
 	];
 	if (FScenarioAgentModule::IsAvailable())
@@ -210,108 +227,115 @@ SScenarioAgentsSection::~SScenarioAgentsSection()
 
 TSharedRef<SWidget> SScenarioAgentsSection::BuildClients()
 {
+	using namespace ScenarioUI;
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 	for (const ScenarioAgentClients::FClient& Client : ScenarioAgentClients::All())
 	{
 		const FString Id = Client.Id;
 		const FString InfoName = Client.ClientInfoName;
 		auto IsConfigured = [this, Id]() { const bool* Found = Configured.Find(Id); return Found && *Found; };
-		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, ScenarioUI::RowGap)
+		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			.FillWidth(1.0f)
 			.VAlign(VAlign_Center)
 			[
-				SNew(SBox)
-				.WidthOverride(ScenarioUI::LabelWidth)
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				[
 					SNew(STextBlock)
 					.Text(Client.Name)
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+					.Font(Font(EText::Body))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 1.0f, 0.0f, 0.0f)
+				[
+					Line(MakeAttributeLambda([InfoName]()
+					{
+						const TSharedPtr<FScenarioMcpServer> S = Server();
+						return Ago(S.IsValid() ? S->LastSeen(InfoName) : 0.0);
+					}), EText::Meta, true)
 				]
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
+			.Padding(Gutter, 0.0f)
 			[
-				ScenarioUI::Chip(
-					MakeAttributeLambda([IsConfigured]() { return IsConfigured() ? LOCTEXT("Connected", "Connected") : LOCTEXT("NotSetUp", "Not set up"); }),
-					MakeAttributeLambda([IsConfigured]() { return IsConfigured() ? FSlateColor(FStyleColors::AccentGreen) : FSlateColor(FStyleColors::AccentGray); }))
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			.VAlign(VAlign_Center)
-			[
-				ScenarioUI::Line(MakeAttributeLambda([InfoName]()
-				{
-					const TSharedPtr<FScenarioMcpServer> S = Server();
-					return Ago(S.IsValid() ? S->LastSeen(InfoName) : 0.0);
-				}), ScenarioUI::EText::Meta, true)
+				Pill(MakeAttributeLambda([IsConfigured]() { return IsConfigured() ? LOCTEXT("Connected", "Connected") : LOCTEXT("NotSetUp", "Not set up"); }),
+					MakeAttributeLambda([IsConfigured]() { return IsConfigured() ? ETone::Success : ETone::Neutral; }))
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-				.Text_Lambda([IsConfigured]() { return IsConfigured() ? LOCTEXT("Reconnect", "Reconnect") : LOCTEXT("SetUp", "Set up"); })
-				.ToolTipText(FText::Format(LOCTEXT("ConnectTip", "Writes the scenario-unreal entry for this app with the current token (only that entry, after a backup). {0}"), FText::FromString(ScenarioAgentClients::ConfigPath(Id))))
-				.IsEnabled_Lambda([this, Id]() { return !Busy.Contains(Id); })
-				.OnClicked_Lambda([this, Id]() { Connect(Id); return FReply::Handled(); })
+				SNew(SBox)
+				.MinDesiredWidth(84.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(&Style().GetWidgetStyle<FButtonStyle>("Scenario.Button.Outline.Small"))
+					.HAlign(HAlign_Center)
+					.ToolTipText(FText::Format(LOCTEXT("ConnectTip", "Writes the scenario-unreal entry for this app with the current token (only that entry, after a backup). {0}"), FText::FromString(ScenarioAgentClients::ConfigPath(Id))))
+					.IsEnabled_Lambda([this, Id]() { return !Busy.Contains(Id); })
+					.OnClicked_Lambda([this, Id]() { Connect(Id); return FReply::Handled(); })
+					[
+						SNew(STextBlock)
+						.Text_Lambda([IsConfigured]() { return IsConfigured() ? LOCTEXT("Reconnect", "Reconnect") : LOCTEXT("SetUp", "Set up"); })
+						.Font(Font(EText::Meta))
+					]
+				]
 			]
 		];
 	}
-	Box->AddSlot().AutoHeight().Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
+	Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[Divider()];
+	Box->AddSlot().AutoHeight()
 	[
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		[
-			SNew(SButton)
-			.Text(LOCTEXT("CopySetup", "Copy setup for another app"))
-			.ToolTipText(LOCTEXT("CopySetupTip", "Copies the URL, the token and ready-made entries for other apps. The token is a password: share it with nobody."))
-			.OnClicked_Lambda([this]()
+			Button(LOCTEXT("CopySetup", "Copy setup"), EButton::Secondary, [this]()
 			{
 				FPlatformApplicationMisc::ClipboardCopy(*ScenarioAgentClients::SetupText(CurrentUrl(), CurrentToken()));
 				Message = TEXT("Setup copied, token included.");
 				bMessageIsError = false;
-				return FReply::Handled();
-			})
+			}, TEXT("copy"), LOCTEXT("CopySetupTip", "Copies the URL, the token and ready-made entries for other apps. The token is a password: share it with nobody."), true)
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
+		.Padding(6.0f, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(SButton)
-			.Text(LOCTEXT("InstallSkill", "Install the agent skill"))
-			.ToolTipText(LOCTEXT("InstallSkillTip", "Copies the scenario-unreal skill (tool order, money rules, Unreal tips) to ~/.claude/skills."))
-			.OnClicked_Lambda([this]()
+			Button(LOCTEXT("InstallSkill", "Install the agent skill"), EButton::Secondary, [this]()
 			{
 				FString Text;
 				bMessageIsError = !ScenarioAgentClients::InstallSkill(Text);
 				Message = Text;
-				return FReply::Handled();
-			})
+			}, TEXT("wand"), LOCTEXT("InstallSkillTip", "Copies the scenario-unreal skill (tool order, money rules, Unreal tips) to ~/.claude/skills."), true)
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNullWidget::NullWidget
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(SButton)
-			.Text(LOCTEXT("Rotate", "New token..."))
-			.ToolTipText(LOCTEXT("RotateTip", "Replaces the token. Every app must be set up again."))
+			SNew(SBox)
 			.IsEnabled_Lambda([]() { return UScenarioEditorSettings::Get().bAgentToken; })
-			.OnClicked_Lambda([this]()
-			{
-				if (FMessageDialog::Open(EAppMsgType::OkCancel, LOCTEXT("RotateConfirm", "Replace the agent token? Connected apps stop working until you press Reconnect.")) == EAppReturnType::Ok)
+			[
+				Button(LOCTEXT("Rotate", "New token..."), EButton::Ghost, [this]()
 				{
-					FScenarioAgentModule::Get().RotateToken();
-					Message = TEXT("New token in place. Press Reconnect for each app you use.");
-					bMessageIsError = false;
-				}
-				return FReply::Handled();
-			})
+					if (FMessageDialog::Open(EAppMsgType::OkCancel, LOCTEXT("RotateConfirm", "Replace the agent token? Connected apps stop working until you press Reconnect.")) == EAppReturnType::Ok)
+					{
+						FScenarioAgentModule::Get().RotateToken();
+						Message = TEXT("New token in place. Press Reconnect for each app you use.");
+						bMessageIsError = false;
+					}
+				}, TEXT("key"), LOCTEXT("RotateTip", "Replaces the token. Every app must be set up again."), true)
+			]
 		]
 	];
 	return Box;
@@ -319,40 +343,49 @@ TSharedRef<SWidget> SScenarioAgentsSection::BuildClients()
 
 TSharedRef<SWidget> SScenarioAgentsSection::BuildPermissions()
 {
-	struct FSwitch
+	using namespace ScenarioUI;
+	struct FPermission
 	{
 		FText Label;
+		FText Hint;
 		FText Tip;
 		bool UScenarioEditorSettings::* Field;
 	};
-	const TArray<FSwitch> Switches = {
-		{ LOCTEXT("AllowChanges", "Allow agents to change this project"), LOCTEXT("AllowChangesTip", "Import and place results, save what the plugin created, remove what it placed. Off: an agent's change arrives here as a proposal you apply."), &UScenarioEditorSettings::bAllowAgentChanges },
-		{ LOCTEXT("AllowPython", "Allow agents to run Python"), LOCTEXT("AllowPythonTip", "Unreal Python in this editor, one undo step per call. Needs the setting above and the Python plugin."), &UScenarioEditorSettings::bAllowAgentPython },
-		{ LOCTEXT("ApproveSpend", "Approve each agent spend here"), LOCTEXT("ApproveSpendTip", "Off by default: agents spend only with a quote they priced first, and each spend shows as a notification. On: each paid call waits for Approve."), &UScenarioEditorSettings::bApproveAgentSpend },
+	const TArray<FPermission> Permissions = {
+		{ LOCTEXT("AllowChanges", "Change this project"), LOCTEXT("AllowChangesHint", "Off: an agent's change arrives as a proposal you apply"), LOCTEXT("AllowChangesTip", "Import and place results, save what the plugin created, remove what it placed. Off: an agent's change arrives here as a proposal you apply."), &UScenarioEditorSettings::bAllowAgentChanges },
+		{ LOCTEXT("AllowPython", "Run Unreal Python"), LOCTEXT("AllowPythonHint", "Needs the permission above; one undo step per call"), LOCTEXT("AllowPythonTip", "Unreal Python in this editor, one undo step per call. Needs the setting above and the Python plugin."), &UScenarioEditorSettings::bAllowAgentPython },
+		{ LOCTEXT("ApproveSpend", "Approve each spend here"), LOCTEXT("ApproveSpendHint", "Off: agents spend only with a quote they priced first"), LOCTEXT("ApproveSpendTip", "Off by default: agents spend only with a quote they priced first, and each spend shows as a notification. On: each paid call waits for Approve."), &UScenarioEditorSettings::bApproveAgentSpend },
 	};
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
-	for (const FSwitch& Switch : Switches)
+	for (const FPermission& Permission : Permissions)
 	{
-		bool UScenarioEditorSettings::* Field = Switch.Field;
+		bool UScenarioEditorSettings::* Field = Permission.Field;
 		const bool bPython = Field == &UScenarioEditorSettings::bAllowAgentPython;
-		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 2.0f)
+		Box->AddSlot().AutoHeight().Padding(0.0f, Box->NumSlots() > 0 ? 10.0f : 0.0f, 0.0f, 0.0f)
 		[
-			SNew(SCheckBox)
-			.ToolTipText(Switch.Tip)
+			SNew(SHorizontalBox)
 			.IsEnabled_Lambda([bPython]() { return !bPython || UScenarioEditorSettings::Get().bAllowAgentChanges; })
-			.IsChecked_Lambda([Field]() { return UScenarioEditorSettings::Get().*Field ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-			.OnCheckStateChanged_Lambda([Field](ECheckBoxState State)
-			{
-				UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
-				Settings.*Field = State == ECheckBoxState::Checked;
-				if (!Settings.bAllowAgentChanges)
-				{
-					Settings.bAllowAgentPython = false;
-				}
-				Settings.SaveConfig();
-			})
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Text(Switch.Label)
+				FieldLabel(Permission.Label, Permission.Hint, Permission.Tip)
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(Gutter, 0.0f, 0.0f, 0.0f)
+			[
+				Switch(MakeAttributeLambda([Field]() { return UScenarioEditorSettings::Get().*Field; }), [Field](bool bOn)
+				{
+					UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
+					Settings.*Field = bOn;
+					if (!Settings.bAllowAgentChanges)
+					{
+						Settings.bAllowAgentPython = false;
+					}
+					Settings.SaveConfig();
+				}, Permission.Tip)
 			]
 		];
 	}
@@ -375,7 +408,7 @@ void SScenarioAgentsSection::RefreshActivity()
 			SNew(STextBlock)
 			.Text(LOCTEXT("NoActivity", "No agent calls yet in this session."))
 			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.ColorAndOpacity(ScenarioUI::Palette::Dim())
 		];
 		return;
 	}
@@ -383,21 +416,44 @@ void SScenarioAgentsSection::RefreshActivity()
 	{
 		const FScenarioAgentActivity& Entry = Log[Index];
 		const FDateTime When = FDateTime::FromUnixTimestamp(static_cast<int64>(Entry.Time)) + (FDateTime::Now() - FDateTime::UtcNow());
-		FString Line = FString::Printf(TEXT("%s  %s  %s"), *When.ToString(TEXT("%H:%M:%S")), *(Entry.Client.IsEmpty() ? FString(TEXT("agent")) : Entry.Client), *Entry.Tool);
+		FString Detail = Entry.Client.IsEmpty() ? FString(TEXT("agent")) : Entry.Client;
 		if (!Entry.Spent.IsEmpty())
 		{
-			Line += FString::Printf(TEXT("  %s CU"), *Entry.Spent);
+			Detail += FString::Printf(TEXT(" · %s CU"), *Entry.Spent);
 		}
 		if (!Entry.bOk)
 		{
-			Line += TEXT("  ") + Entry.Error;
+			Detail += TEXT(" · ") + Entry.Error;
 		}
-		ActivityBox->AddSlot().AutoHeight()
+		ActivityBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
-			SNew(STextBlock)
-			.Text(FText::FromString(Line))
-			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-			.ColorAndOpacity(Entry.bOk ? FSlateColor::UseSubduedForeground() : FSlateColor(FStyleColors::Warning))
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 10.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(When.ToString(TEXT("%H:%M:%S"))))
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity(ScenarioUI::Palette::Faint())
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 10.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Entry.Tool))
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+				.ColorAndOpacity(Entry.bOk ? FSlateColor(ScenarioUI::Palette::Text()) : FSlateColor(ScenarioUI::Palette::Warning()))
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				ScenarioUI::Line(FText::FromString(Detail), ScenarioUI::EText::Meta, true)
+			]
 		];
 	}
 }

@@ -126,7 +126,7 @@ void SScenarioToast::Construct(const FArguments& InArgs)
 						SNew(STextBlock)
 						.Text(Content.Detail)
 						.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 						.AutoWrapText(true)
 						.Visibility_Lambda([Detail = Content.Detail]() { return Detail.Get().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 					]
@@ -173,7 +173,7 @@ void SScenarioToast::Construct(const FArguments& InArgs)
 					SNew(SImage)
 					.Image(FAppStyle::GetBrush("Icons.X"))
 					.DesiredSizeOverride(FVector2D(10.0f, 10.0f))
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 				]
 			]
 		]

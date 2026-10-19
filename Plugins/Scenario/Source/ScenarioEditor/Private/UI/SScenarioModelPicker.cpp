@@ -14,15 +14,12 @@
 #include "ScenarioSettings.h"
 #include "ScenarioSubsystem.h"
 #include "ScenarioWidgets.h"
-#include "SPrimaryButton.h"
-#include "SSimpleComboButton.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SSearchBox.h"
-#include "Widgets/Input/SSegmentedControl.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -260,17 +257,17 @@ namespace
 		return Widget;
 	}
 
-	TSharedRef<SWidget> Toggle(const FText& Label, const FText& Tooltip, TFunction<bool()> IsOn, TFunction<void(bool)> Set)
+	TSharedRef<SWidget> Toggle(const FText& Label, const FText& Tooltip, TFunction<bool()> IsOn, TFunction<void(bool)> Set, FName IconName)
 	{
-		return SNew(SCheckBox)
-			.IsChecked_Lambda([IsOn]() { return IsOn() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-			.OnCheckStateChanged_Lambda([Set](ECheckBoxState State) { Set(State == ECheckBoxState::Checked); })
-			.ToolTipText(Tooltip)
-			[
-				SNew(STextBlock)
-				.Text(Label)
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-			];
+		return ScenarioUI::ChipToggle(Label, MakeAttributeLambda([IsOn]() { return IsOn(); }), [IsOn, Set]() { Set(!IsOn()); }, IconName, Tooltip, true);
+	}
+
+	/** A primary button that is enabled while Enabled() holds. */
+	TSharedRef<SWidget> UseButton(const FText& Label, const FText& Tooltip, TFunction<bool()> Enabled, TFunction<void()> OnClick)
+	{
+		const TSharedRef<SButton> Button = ScenarioUI::Button(Label, ScenarioUI::EButton::Primary, OnClick, NAME_None, Tooltip);
+		Button->SetEnabled(MakeAttributeLambda([Enabled]() { return Enabled(); }));
+		return Button;
 	}
 }
 
@@ -337,8 +334,8 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 	ChildSlot
 	[
 		SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
-		.Padding(ScenarioUI::SectionGap)
+		.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Panel"))
+		.Padding(16.0f)
 		[
 			SNew(SVerticalBox)
 			// Search, and what the list includes.
@@ -350,6 +347,7 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 				.FillWidth(1.0f)
 				[
 					SAssignNew(SearchBox, SSearchBox)
+					.Style(&ScenarioUI::Style().GetWidgetStyle<FSearchBoxStyle>("Scenario.Search"))
 					.HintText(LOCTEXT("Search", "Search models..."))
 					.OnTextChanged_Lambda([this](const FText& InText) { Text = InText.ToString(); Refresh(); })
 					.OnKeyDownHandler_Lambda([this](const FGeometry& Geometry, const FKeyEvent& KeyEvent) { return OnKeyDown(Geometry, KeyEvent); })
@@ -357,24 +355,24 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(ScenarioUI::SectionGap, 0.0f, 0.0f, 0.0f)
+				.Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
 					Toggle(LOCTEXT("Team", "Team models"), LOCTEXT("TeamTip", "Shows the models your team trained in this project."),
-						[this]() { return bTeamModels; }, [this](bool bOn) { bTeamModels = bOn; Refresh(); })
+						[this]() { return bTeamModels; }, [this](bool bOn) { bTeamModels = bOn; Refresh(); }, TEXT("user"))
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(ScenarioUI::SectionGap, 0.0f, 0.0f, 0.0f)
+				.Padding(6.0f, 0.0f, 0.0f, 0.0f)
 				[
 					Toggle(LOCTEXT("Older", "Show older models"), LOCTEXT("OlderTip", "Shows models Scenario has replaced with newer ones."),
-						[this]() { return bShowLegacy; }, [this](bool bOn) { bShowLegacy = bOn; Refresh(); })
+						[this]() { return bShowLegacy; }, [this](bool bOn) { bShowLegacy = bOn; Refresh(); }, TEXT("layers"))
 				]
 			]
 			// Type and category.
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
+			.Padding(0.0f, 12.0f, 0.0f, 0.0f)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
@@ -397,9 +395,11 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 			]
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
-			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
+			.Padding(0.0f, 12.0f, 0.0f, 0.0f)
 			[
 				SNew(SSplitter)
+				.Style(&ScenarioUI::Style().GetWidgetStyle<FSplitterStyle>("Scenario.Splitter"))
+				.PhysicalSplitterHandleSize(12.0f)
 				+ SSplitter::Slot()
 				.Value(0.55f)
 				[
@@ -407,6 +407,7 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 					+ SOverlay::Slot()
 					[
 						SAssignNew(List, SListView<FItem>)
+						.ListViewStyle(&FAppStyle::Get().GetWidgetStyle<FTableViewStyle>("SimpleListView"))
 						.ListItemsSource(&Items)
 						.SelectionMode(ESelectionMode::Single)
 						.OnGenerateRow(this, &SScenarioModelPicker::MakeRow)
@@ -434,7 +435,7 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 								: FText::Format(LOCTEXT("NoMatch", "Nothing matches \"{0}\"."), FText::FromString(Text));
 						})
 						.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 						.AutoWrapText(true)
 						.Visibility_Lambda([this]() { return Items.Num() == 0 ? EVisibility::Visible : EVisibility::Collapsed; })
 					]
@@ -460,15 +461,19 @@ SScenarioModelPicker::~SScenarioModelPicker()
 
 TSharedRef<SWidget> SScenarioModelPicker::BuildTabs()
 {
-	TSharedRef<SSegmentedControl<FString>> Control = SNew(SSegmentedControl<FString>)
-		.UniformPadding(FMargin(8.0f, 2.0f))
-		.Value_Lambda([this]() { return Modality; })
-		.OnValueChanged_Lambda([this](const FString& Value) { SetModality(Value); });
+	const TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
 	for (const FPickerTab& Tab : Tabs())
 	{
-		Control->AddSlot(Tab.Id).Text(Tab.Label);
+		const FString Id = Tab.Id;
+		Row->AddSlot()
+		.AutoWidth()
+		.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+		[
+			ScenarioUI::ChipToggle(Tab.Label, MakeAttributeLambda([this, Id]() { return Modality == Id; }), [this, Id]() { SetModality(Id); },
+				Id.IsEmpty() ? FName(TEXT("grid")) : ScenarioUI::KindIconName(Id), FText::GetEmpty(), true)
+		];
 	}
-	return Control;
+	return Row;
 }
 
 TArray<FString> SScenarioModelPicker::Categories() const
@@ -479,11 +484,14 @@ TArray<FString> SScenarioModelPicker::Categories() const
 
 TSharedRef<SWidget> SScenarioModelPicker::BuildCategories()
 {
-	return SNew(SSimpleComboButton)
-		.Icon(FAppStyle::GetBrush("Icons.Filter"))
-		.Text_Lambda([this]() { return Chip.IsEmpty() ? LOCTEXT("AllCategories", "All categories") : FText::FromString(Chip); })
-		.UsesSmallText(true)
-		.HasDownArrow(true)
+	return SNew(SComboButton)
+		.ComboButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FComboButtonStyle>("Scenario.Combo"))
+		.ButtonContent()
+		[
+			SNew(STextBlock)
+			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+			.Text_Lambda([this]() { return Chip.IsEmpty() ? LOCTEXT("AllCategories", "All categories") : FText::FromString(Chip); })
+		]
 		.ToolTipText(LOCTEXT("CategoryTip", "Show one kind of model: generate, edit, upscale and more."))
 		.Visibility_Lambda([this]() { return Categories().Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
 		.OnGetMenuContent_Lambda([this]()
@@ -517,8 +525,8 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 	auto Has = [this]() { return Selected.IsValid(); };
 	auto Is = [this](TFunction<bool(const FScenarioCatalogModel&)> Test) { return [this, Test]() { return Selected.IsValid() && Test(*Selected); }; };
 	return SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-		.Padding(ScenarioUI::SectionGap)
+		.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Card"))
+		.Padding(16.0f)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
@@ -566,7 +574,7 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 										: FText::GetEmpty();
 								})
 								.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-								.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+								.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 								.AutoWrapText(true)
 							]
 							+ SVerticalBox::Slot()
@@ -577,22 +585,22 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 								SNew(SHorizontalBox)
 								+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, ScenarioUI::RowGap, 0.0f)
 								[
-									ShownWhen(ScenarioUI::Chip(LOCTEXT("RecommendedChip", "Recommended"), FStyleColors::AccentGreen,
+									ShownWhen(ScenarioUI::Pill(LOCTEXT("RecommendedChip", "Recommended"), ScenarioUI::ETone::Success,
 										LOCTEXT("RecommendedTip", "Recommended for this lane: good results at a low price.")), Is([this](const FScenarioCatalogModel& M) { return QuickPicks.Contains(M.Id()); }))
 								]
 								+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, ScenarioUI::RowGap, 0.0f)
 								[
-									ShownWhen(ScenarioUI::Chip(LOCTEXT("FeaturedChip", "Featured"), FStyleColors::AccentBlue,
+									ShownWhen(ScenarioUI::Pill(LOCTEXT("FeaturedChip", "Featured"), ScenarioUI::ETone::Info,
 										LOCTEXT("FeaturedTip", "Featured by Scenario.")), Is([](const FScenarioCatalogModel& M) { return M.bFeatured; }))
 								]
 								+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, ScenarioUI::RowGap, 0.0f)
 								[
-									ShownWhen(ScenarioUI::Chip(LOCTEXT("TeamChip", "Team"), FStyleColors::AccentGray,
+									ShownWhen(ScenarioUI::Pill(LOCTEXT("TeamChip", "Team"), ScenarioUI::ETone::Neutral,
 										LOCTEXT("TeamChipTip", "Trained by your team.")), Is([](const FScenarioCatalogModel& M) { return M.bTeam || M.bTrained; }))
 								]
 								+ SHorizontalBox::Slot().AutoWidth()
 								[
-									ShownWhen(ScenarioUI::Chip(LOCTEXT("OlderChip", "Older"), FStyleColors::Warning,
+									ShownWhen(ScenarioUI::Pill(LOCTEXT("OlderChip", "Older"), ScenarioUI::ETone::Warning,
 										LOCTEXT("OlderChipTip", "Scenario has a newer model for this.")), Is([](const FScenarioCatalogModel& M) { return M.bLegacy; }))
 								]
 							]
@@ -619,7 +627,7 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 									: FText::GetEmpty();
 							})
 							.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-							.ColorAndOpacity(FStyleColors::Warning)
+							.ColorAndOpacity(ScenarioUI::Palette::Warning())
 							.AutoWrapText(true),
 							Is([](const FScenarioCatalogModel& M) { return M.bLegacy && !M.ReplacedBy.IsEmpty(); }))
 					]
@@ -630,7 +638,7 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 						SNew(STextBlock)
 						.Text_Lambda([this]() { return PriceNote(); })
 						.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 						.AutoWrapText(true)
 					]
 				]
@@ -640,11 +648,8 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 			.HAlign(HAlign_Right)
 			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 			[
-				SNew(SPrimaryButton)
-				.Text(LOCTEXT("Use", "Use this model"))
-				.ToolTipText(LOCTEXT("UseTip", "Selects this model in the form (Enter). Sends nothing."))
-				.IsEnabled_Lambda([this]() { return Selected.IsValid(); })
-				.OnClicked_Lambda([this]() { Choose(Selected); return FReply::Handled(); })
+				UseButton(LOCTEXT("Use", "Use this model"), LOCTEXT("UseTip", "Selects this model in the form (Enter). Sends nothing."),
+					[this]() { return Selected.IsValid(); }, [this]() { Choose(Selected); })
 			]
 		];
 }
@@ -769,18 +774,19 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 	}
 	auto IsFavorite = [Id]() { return UScenarioEditorSettings::Get().IsFavorite(Id); };
 	return SNew(STableRow<FItem>, Owner)
-		.Padding(FMargin(ScenarioUI::Gutter, 4.0f))
+		.Style(&ScenarioUI::Style().GetWidgetStyle<FTableRowStyle>("Scenario.TableRow"))
+		.Padding(FMargin(10.0f, 7.0f, 6.0f, 7.0f))
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
+			.Padding(0.0f, 0.0f, 10.0f, 0.0f)
 			[
 				SNew(SImage)
-				.Image(ScenarioUI::KindIcon(KindOf(*Item)))
+				.Image(ScenarioUI::IconBrush(ScenarioUI::KindIconName(KindOf(*Item))))
 				.DesiredSizeOverride(FVector2D(16.0f, 16.0f))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 			]
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
@@ -809,7 +815,7 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 			.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 			[
 				QuickPicks.Contains(Id)
-					? ScenarioUI::Chip(LOCTEXT("RecommendedChip", "Recommended"), FStyleColors::AccentGreen, LOCTEXT("RecommendedTip", "Recommended for this lane: good results at a low price."))
+					? ScenarioUI::Pill(LOCTEXT("RecommendedChip", "Recommended"), ScenarioUI::ETone::Success, LOCTEXT("RecommendedTip", "Recommended for this lane: good results at a low price."))
 					: SNullWidget::NullWidget
 			]
 			+ SHorizontalBox::Slot()
@@ -818,7 +824,7 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 			.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 			[
 				Item->bTeam || Item->bTrained
-					? ScenarioUI::Chip(LOCTEXT("TeamChip", "Team"), FStyleColors::AccentGray, LOCTEXT("TeamChipTip", "Trained by your team."))
+					? ScenarioUI::Pill(LOCTEXT("TeamChip", "Team"), ScenarioUI::ETone::Neutral, LOCTEXT("TeamChipTip", "Trained by your team."))
 					: SNullWidget::NullWidget
 			]
 			+ SHorizontalBox::Slot()
@@ -827,7 +833,7 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 			.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 			[
 				Item->bLegacy
-					? ScenarioUI::Chip(LOCTEXT("OlderChip", "Older"), FStyleColors::Warning, LOCTEXT("OlderChipTip", "Scenario has a newer model for this."))
+					? ScenarioUI::Pill(LOCTEXT("OlderChip", "Older"), ScenarioUI::ETone::Warning, LOCTEXT("OlderChipTip", "Scenario has a newer model for this."))
 					: SNullWidget::NullWidget
 			]
 			+ SHorizontalBox::Slot()
@@ -836,8 +842,8 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 			.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(SButton)
-				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(2.0f))
+				.ButtonStyle(&ScenarioUI::Style().GetWidgetStyle<FButtonStyle>(ScenarioUI::ButtonStyleName(ScenarioUI::EButton::Ghost, true)))
+				.ContentPadding(FMargin(3.0f))
 				.ToolTipText_Lambda([IsFavorite]()
 				{
 					return IsFavorite() ? LOCTEXT("Unpin", "Unpin this model from the top of the list.") : LOCTEXT("Pin", "Pin this model to the top of the list.");
@@ -850,8 +856,9 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 				})
 				[
 					SNew(SImage)
-					.Image_Lambda([IsFavorite]() { return FAppStyle::GetBrush(IsFavorite() ? "Icons.Star" : "Icons.Star.Outline"); })
-					.ColorAndOpacity_Lambda([IsFavorite]() { return IsFavorite() ? FStyleColors::AccentYellow : FSlateColor::UseSubduedForeground(); })
+					.DesiredSizeOverride(FVector2D(14.0f, 14.0f))
+					.Image_Lambda([IsFavorite]() { return ScenarioUI::IconBrush(IsFavorite() ? TEXT("star-fill") : TEXT("star")); })
+					.ColorAndOpacity_Lambda([IsFavorite]() { return IsFavorite() ? ScenarioUI::Palette::Warning() : FSlateColor(ScenarioUI::Palette::Faint()); })
 				]
 			]
 		];
@@ -943,8 +950,8 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 	ChildSlot
 	[
 		SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
-		.Padding(ScenarioUI::SectionGap)
+		.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Panel"))
+		.Padding(16.0f)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
@@ -955,6 +962,7 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 				.FillWidth(1.0f)
 				[
 					SAssignNew(SearchBox, SSearchBox)
+					.Style(&ScenarioUI::Style().GetWidgetStyle<FSearchBoxStyle>("Scenario.Search"))
 					.HintText(LOCTEXT("SearchWorkflows", "Search workflows..."))
 					.OnTextChanged_Lambda([this](const FText& InText) { Text = InText.ToString(); Refresh(); })
 					.OnKeyDownHandler_Lambda([this](const FGeometry& Geometry, const FKeyEvent& KeyEvent) { return OnKeyDown(Geometry, KeyEvent); })
@@ -964,30 +972,41 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 				.VAlign(VAlign_Center)
 				.Padding(ScenarioUI::SectionGap, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SSegmentedControl<FString>)
-					.UniformPadding(FMargin(8.0f, 2.0f))
-					.Value_Lambda([this]() { return Source; })
-					.OnValueChanged_Lambda([this](const FString& Value) { Source = Value; Refresh(); })
-					+ SSegmentedControl<FString>::Slot(TEXT("all")).Text(LOCTEXT("AllWorkflows", "All"))
-					+ SSegmentedControl<FString>::Slot(TEXT("team")).Text_Lambda([Count]() { return FText::Format(LOCTEXT("TeamCount", "Team {0}"), FText::AsNumber(Count(true))); })
-						.ToolTip(LOCTEXT("TeamWorkflowsTip", "Workflows your team built in this project."))
-					+ SSegmentedControl<FString>::Slot(TEXT("featured")).Text_Lambda([Count]() { return FText::Format(LOCTEXT("FeaturedCount", "Featured {0}"), FText::AsNumber(Count(false))); })
-						.ToolTip(LOCTEXT("FeaturedWorkflowsTip", "Workflows Scenario features for every project."))
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						ScenarioUI::ChipToggle(LOCTEXT("AllWorkflows", "All"), MakeAttributeLambda([this]() { return Source == TEXT("all"); }), [this]() { Source = TEXT("all"); Refresh(); },
+							NAME_None, FText::GetEmpty(), true)
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						ScenarioUI::ChipToggle(MakeAttributeLambda([Count]() { return FText::Format(LOCTEXT("TeamCount", "Team  {0}"), FText::AsNumber(Count(true))); }),
+							MakeAttributeLambda([this]() { return Source == TEXT("team"); }), [this]() { Source = TEXT("team"); Refresh(); },
+							NAME_None, LOCTEXT("TeamWorkflowsTip", "Workflows your team built in this project."), true)
+					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						ScenarioUI::ChipToggle(MakeAttributeLambda([Count]() { return FText::Format(LOCTEXT("FeaturedCount", "Featured  {0}"), FText::AsNumber(Count(false))); }),
+							MakeAttributeLambda([this]() { return Source == TEXT("featured"); }), [this]() { Source = TEXT("featured"); Refresh(); },
+							NAME_None, LOCTEXT("FeaturedWorkflowsTip", "Workflows Scenario features for every project."), true)
+					]
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
 				.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 				[
-					ScenarioUI::IconButton(TEXT("Icons.Refresh"), LOCTEXT("RefreshWorkflows", "Reload the workflows from Scenario. Free."),
+					ScenarioUI::IconButton(TEXT("refresh"), LOCTEXT("RefreshWorkflows", "Reload the workflows from Scenario. Free."),
 						FSimpleDelegate::CreateLambda([]() { FScenarioCreateModel::Get()->LoadWorkflows(true); }))
 				]
 			]
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
-			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
+			.Padding(0.0f, 12.0f, 0.0f, 0.0f)
 			[
 				SNew(SSplitter)
+				.Style(&ScenarioUI::Style().GetWidgetStyle<FSplitterStyle>("Scenario.Splitter"))
+				.PhysicalSplitterHandleSize(12.0f)
 				+ SSplitter::Slot()
 				.Value(0.5f)
 				[
@@ -995,6 +1014,7 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 					+ SOverlay::Slot()
 					[
 						SAssignNew(List, SListView<FItem>)
+						.ListViewStyle(&FAppStyle::Get().GetWidgetStyle<FTableViewStyle>("SimpleListView"))
 						.ListItemsSource(&Items)
 						.SelectionMode(ESelectionMode::Single)
 						.OnGenerateRow(this, &SScenarioWorkflowPicker::MakeRow)
@@ -1021,7 +1041,7 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 							return Text.IsEmpty() ? LOCTEXT("NoWorkflows", "No ready workflow here yet. Build one on scenario.com.")
 								: FText::Format(LOCTEXT("NoWorkflowMatch", "Nothing matches \"{0}\"."), FText::FromString(Text));
 						})
-						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 						.Visibility_Lambda([this]() { return Items.Num() == 0 ? EVisibility::Visible : EVisibility::Collapsed; })
 					]
 				]
@@ -1029,8 +1049,8 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 				.Value(0.5f)
 				[
 					SNew(SBorder)
-					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-					.Padding(ScenarioUI::SectionGap)
+					.BorderImage(ScenarioUI::Style().GetBrush("Scenario.Card"))
+					.Padding(16.0f)
 					[
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot()
@@ -1056,7 +1076,7 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 									SNew(SBox)
 									.Visibility_Lambda([this]() { return Selected.IsValid() ? EVisibility::Visible : EVisibility::Collapsed; })
 									[
-										ScenarioUI::Chip(MakeAttributeLambda([this]() { return Selected.IsValid() && Selected->bTeam ? LOCTEXT("TeamChip", "Team") : LOCTEXT("FeaturedChip", "Featured"); }), FStyleColors::AccentGray)
+										ScenarioUI::Pill(MakeAttributeLambda([this]() { return Selected.IsValid() && Selected->bTeam ? LOCTEXT("TeamChip", "Team") : LOCTEXT("FeaturedChip", "Featured"); }), ScenarioUI::ETone::Neutral)
 									]
 								]
 								+ SVerticalBox::Slot()
@@ -1075,7 +1095,7 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 									SNew(STextBlock)
 									.Text(LOCTEXT("WorkflowPriceNote", "The exact price shows on Generate once the inputs are filled, checked for free."))
 									.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-									.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+									.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 									.AutoWrapText(true)
 									.Visibility_Lambda([this]() { return Selected.IsValid() ? EVisibility::Visible : EVisibility::Collapsed; })
 								]
@@ -1086,11 +1106,8 @@ void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
 						.HAlign(HAlign_Right)
 						.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 						[
-							SNew(SPrimaryButton)
-							.Text(LOCTEXT("UseWorkflow", "Use this workflow"))
-							.ToolTipText(LOCTEXT("UseWorkflowTip", "Selects this workflow in the form (Enter). Sends nothing."))
-							.IsEnabled_Lambda([this]() { return Selected.IsValid(); })
-							.OnClicked_Lambda([this]() { Choose(Selected); return FReply::Handled(); })
+							UseButton(LOCTEXT("UseWorkflow", "Use this workflow"), LOCTEXT("UseWorkflowTip", "Selects this workflow in the form (Enter). Sends nothing."),
+								[this]() { return Selected.IsValid(); }, [this]() { Choose(Selected); })
 						]
 					]
 				]
@@ -1163,7 +1180,8 @@ void SScenarioWorkflowPicker::Refresh()
 TSharedRef<ITableRow> SScenarioWorkflowPicker::MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner)
 {
 	return SNew(STableRow<FItem>, Owner)
-		.Padding(FMargin(ScenarioUI::Gutter, 4.0f))
+		.Style(&ScenarioUI::Style().GetWidgetStyle<FTableRowStyle>("Scenario.TableRow"))
+		.Padding(FMargin(10.0f, 7.0f))
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -1193,7 +1211,7 @@ TSharedRef<ITableRow> SScenarioWorkflowPicker::MakeRow(FItem Item, const TShared
 			.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 			[
 				Item->bTeam
-					? ScenarioUI::Chip(LOCTEXT("TeamChip", "Team"), FStyleColors::AccentGray, LOCTEXT("TeamWorkflowTip", "Built by your team."))
+					? ScenarioUI::Pill(LOCTEXT("TeamChip", "Team"), ScenarioUI::ETone::Neutral, LOCTEXT("TeamWorkflowTip", "Built by your team."))
 					: SNullWidget::NullWidget
 			]
 		];

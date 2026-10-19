@@ -8,12 +8,10 @@
 #include "ScenarioWidgets.h"
 #include "SScenarioJobCard.h"
 #include "SScenarioPages.h"
-#include "SSimpleComboButton.h"
-#include "SWarningOrErrorBox.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SHyperlink.h"
-#include "Widgets/Input/SSegmentedControl.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -47,33 +45,40 @@ namespace
 		return N;
 	}
 
-	/** What this editor's jobs cost today: charged amounts, or quotes until Scenario reports the charge. */
-	double TodayCU()
+	const TCHAR* DayPrefix = TEXT("#day:");
+
+	bool IsDayHeader(const FString& Item)
 	{
-		double Total = 0.0;
-		FScenarioSession* Session = ScenarioUI::Session();
-		if (!Session)
+		return Item.StartsWith(DayPrefix);
+	}
+
+	/** The local day of a job, as a sortable key. */
+	FString DayKey(double UnixSeconds)
+	{
+		if (UnixSeconds <= 0.0)
 		{
-			return Total;
+			return FString();
 		}
-		const FDateTime Today = FDateTime::Now().GetDate();
-		const FTimespan LocalOffset = FDateTime::Now() - FDateTime::UtcNow();
-		for (const FScenarioJobRow& Row : Session->Ledger().Rows())
+		const FDateTime Local = FDateTime::FromUnixTimestamp(static_cast<int64>(UnixSeconds)) + (FDateTime::Now() - FDateTime::UtcNow());
+		return Local.ToString(TEXT("%Y-%m-%d"));
+	}
+
+	FText DayLabel(const FString& Key, double UnixSeconds)
+	{
+		const FDateTime Now = FDateTime::Now();
+		if (Key.IsEmpty())
 		{
-			if ((FDateTime::FromUnixTimestamp(static_cast<int64>(Row.CreatedAt)) + LocalOffset).GetDate() != Today)
-			{
-				continue;
-			}
-			if (Row.ChargedCU >= 0.0)
-			{
-				Total += Row.ChargedCU;
-			}
-			else if (Row.State != EScenarioJobState::Rejected && Row.State != EScenarioJobState::Canceled && Row.State != EScenarioJobState::Failed)
-			{
-				Total += Row.QuotedCU;
-			}
+			return LOCTEXT("Earlier", "Earlier");
 		}
-		return Total;
+		if (Key == Now.ToString(TEXT("%Y-%m-%d")))
+		{
+			return LOCTEXT("TodayHeader", "Today");
+		}
+		if (Key == (Now - FTimespan::FromDays(1.0)).ToString(TEXT("%Y-%m-%d")))
+		{
+			return LOCTEXT("Yesterday", "Yesterday");
+		}
+		return FText::AsDate(FDateTime::FromUnixTimestamp(static_cast<int64>(UnixSeconds)), EDateTimeStyle::Medium);
 	}
 
 	const TArray<TPair<FString, FText>>& Kinds()
@@ -93,53 +98,110 @@ namespace
 
 void SScenarioJobsPage::Construct(const FArguments& InArgs)
 {
+	using namespace ScenarioUI;
 	if (FScenarioSession* Session = ScenarioUI::Session())
 	{
 		SessionHandle = Session->OnChanged.AddSP(this, &SScenarioJobsPage::Refresh);
 	}
-	auto Segment = [](const FText& Label, int32 N) { return N > 0 ? FText::Format(LOCTEXT("SegmentCount", "{0} {1}"), Label, FText::AsNumber(N)) : Label; };
+	auto Segment = [](const FText& Label, int32 N) { return N > 0 ? FText::Format(LOCTEXT("SegmentCount", "{0}  {1}"), Label, FText::AsNumber(N)) : Label; };
+	auto FilterChip = [this](const TCHAR* Id, TAttribute<FText> Label, const FText& Tip)
+	{
+		const FString Value = Id;
+		return ChipToggle(Label, MakeAttributeLambda([this, Value]() { return Filter == Value; }), [this, Value]() { SetFilter(Value); }, NAME_None, Tip, true);
+	};
 
 	ChildSlot
 	[
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(ScenarioUI::Gutter)
+		.Padding(PagePadding, PagePadding, PagePadding, 0.0f)
+		[
+			PageHeader(LOCTEXT("Title", "Jobs"), MakeAttributeLambda([]()
+			{
+				const double CU = TodayCU();
+				return CU > 0.0 ? FText::Format(LOCTEXT("Today", "{0} today in this project. Everything you or an agent generates stays here, even after a restart."), FText::FromString(ScenarioCU::Format(CU)))
+					: LOCTEXT("Subtitle", "Everything you or an agent generates in this project stays here, even after a restart.");
+			}))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(PagePadding, 12.0f, PagePadding, 0.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
-				SNew(SSegmentedControl<FString>)
-				.UniformPadding(FMargin(8.0f, 2.0f))
-				.Value_Lambda([this]() { return Filter; })
-				.OnValueChanged_Lambda([this](const FString& Value) { SetFilter(Value); })
-				+ SSegmentedControl<FString>::Slot(TEXT("all"))
-					.Text_Lambda([Segment]() { return Segment(LOCTEXT("All", "All"), Count([](const FScenarioJobRow&) { return true; })); })
-				+ SSegmentedControl<FString>::Slot(TEXT("active"))
-					.Text_Lambda([Segment]() { return Segment(LOCTEXT("Running", "Running"), Count([](const FScenarioJobRow& Row) { return Row.IsActive(); })); })
-				+ SSegmentedControl<FString>::Slot(TEXT("ready"))
-					.Text_Lambda([Segment]() { return Segment(LOCTEXT("Ready", "Ready"), Count([](const FScenarioJobRow& Row) { return IsReady(Row) && !Row.bImported; })); })
-					.ToolTip(LOCTEXT("ReadyTip", "Finished results not imported yet."))
-				+ SSegmentedControl<FString>::Slot(TEXT("attention"))
-					.Text_Lambda([Segment]() { return Segment(LOCTEXT("Attention", "Needs attention"), Count(NeedsAttention)); })
-					.ToolTip(LOCTEXT("AttentionTip", "Failed, blocked, not confirmed or stopped downloads."))
-					.Visibility_Lambda([this]() { return Filter == TEXT("attention") || Count(NeedsAttention) > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+				FilterChip(TEXT("all"), MakeAttributeLambda([Segment]() { return Segment(LOCTEXT("All", "All"), Count([](const FScenarioJobRow&) { return true; })); }), FText::GetEmpty())
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
-				SNew(SSimpleComboButton)
-				.UsesSmallText(true)
-				.HasDownArrow(true)
-				.Text_Lambda([this]()
-				{
-					const TPair<FString, FText>* Found = Kinds().FindByPredicate([this](const TPair<FString, FText>& Entry) { return Entry.Key == Kind; });
-					return Found ? Found->Value : FText::GetEmpty();
-				})
+				FilterChip(TEXT("active"), MakeAttributeLambda([Segment]() { return Segment(LOCTEXT("Running", "Running"), Count([](const FScenarioJobRow& Row) { return Row.IsActive(); })); }),
+					LOCTEXT("RunningTip", "Sent and not finished yet."))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				FilterChip(TEXT("ready"), MakeAttributeLambda([Segment]() { return Segment(LOCTEXT("Ready", "Ready"), Count([](const FScenarioJobRow& Row) { return IsReady(Row) && !Row.bImported; })); }),
+					LOCTEXT("ReadyTip", "Finished results not imported yet."))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SBox)
+				.Visibility_Lambda([this]() { return Filter == TEXT("attention") || Count(NeedsAttention) > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+				[
+					FilterChip(TEXT("attention"), MakeAttributeLambda([Segment]() { return Segment(LOCTEXT("Attention", "Needs attention"), Count(NeedsAttention)); }),
+						LOCTEXT("AttentionTip", "Failed, blocked, not confirmed or stopped downloads."))
+				]
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+				.ComboButtonStyle(&Style().GetWidgetStyle<FComboButtonStyle>("Scenario.Combo"))
+				.ToolTipText(LOCTEXT("KindTip", "Show one type of result."))
+				.ButtonContent()
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						SNew(SImage)
+						.DesiredSizeOverride(FVector2D(14.0f, 14.0f))
+						.Image_Lambda([this]() { return IconBrush(Kind.IsEmpty() ? FName(TEXT("grid")) : KindIconName(Kind)); })
+						.ColorAndOpacity(FSlateColor(Palette::Dim()))
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Font(Font(EText::Body))
+						.Text_Lambda([this]()
+						{
+							const TPair<FString, FText>* Found = Kinds().FindByPredicate([this](const TPair<FString, FText>& Entry) { return Entry.Key == Kind; });
+							return Found ? Found->Value : FText::GetEmpty();
+						})
+					]
+				]
 				.OnGetMenuContent_Lambda([this]()
 				{
 					FMenuBuilder Menu(true, nullptr);
@@ -154,52 +216,63 @@ void SScenarioJobsPage::Construct(const FArguments& InArgs)
 					return Menu.MakeWidget();
 				})
 			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			.HAlign(HAlign_Right)
-			.VAlign(VAlign_Center)
-			.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.Text_Lambda([]() { const double CU = TodayCU(); return CU > 0.0 ? FText::Format(LOCTEXT("Today", "Today {0}"), FText::FromString(ScenarioCU::Format(CU))) : FText::GetEmpty(); })
-				.ToolTipText(LOCTEXT("TodayTip", "What the jobs in this list cost today: charged amounts, or the quote until Scenario reports the charge."))
-				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
-			]
 		]
 		// Requests that may have reached Scenario: they hold back an identical request.
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(FMargin(ScenarioUI::Gutter, 0.0f, ScenarioUI::Gutter, ScenarioUI::Gutter))
+		.Padding(PagePadding, 10.0f, PagePadding, 0.0f)
 		[
-			SNew(SWarningOrErrorBox)
-			.MessageStyle(EMessageStyle::Warning)
+			SNew(SBorder)
+			.BorderImage(Style().GetBrush("Scenario.Card"))
+			.Padding(FMargin(12.0f, 8.0f, 8.0f, 8.0f))
 			.Visibility_Lambda([]() { return Count([](const FScenarioJobRow& Row) { return Row.State == EScenarioJobState::Unknown; }) > 0 ? EVisibility::Visible : EVisibility::Collapsed; })
-			.Message_Lambda([]()
-			{
-				const int32 N = Count([](const FScenarioJobRow& Row) { return Row.State == EScenarioJobState::Unknown; });
-				return N == 1
-					? LOCTEXT("UnknownOne", "1 request may not have reached Scenario. An identical request is on hold until you check.")
-					: FText::Format(LOCTEXT("UnknownMany", "{0} requests may not have reached Scenario. Identical requests are on hold until you check."), FText::AsNumber(N));
-			})
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("CheckNow", "Check now"))
-				.ToolTipText(LOCTEXT("CheckNowTip", "Looks for these requests in Scenario's recent jobs and links each one that matches. Free."))
-				.OnClicked_Lambda([]() { ScenarioJobActions::CheckUnresolved(); return FReply::Handled(); })
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, 10.0f, 0.0f)
+				[
+					Icon(TEXT("warning"), 16.0f, FSlateColor(Palette::Warning()))
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Font(Font(EText::Body))
+					.AutoWrapText(true)
+					.Text_Lambda([]()
+					{
+						const int32 N = Count([](const FScenarioJobRow& Row) { return Row.State == EScenarioJobState::Unknown; });
+						return N == 1
+							? LOCTEXT("UnknownOne", "1 request may not have reached Scenario. An identical request is on hold until you check.")
+							: FText::Format(LOCTEXT("UnknownMany", "{0} requests may not have reached Scenario. Identical requests are on hold until you check."), FText::AsNumber(N));
+					})
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(10.0f, 0.0f, 0.0f, 0.0f)
+				[
+					Button(LOCTEXT("CheckNow", "Check now"), EButton::Outline, []() { ScenarioJobActions::CheckUnresolved(); }, TEXT("refresh"),
+						LOCTEXT("CheckNowTip", "Looks for these requests in Scenario's recent jobs and links each one that matches. Free."), true)
+				]
 			]
 		]
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
+		.Padding(PagePadding - 6.0f, 8.0f, PagePadding - 6.0f, 0.0f)
 		[
 			SNew(SOverlay)
 			+ SOverlay::Slot()
 			[
 				SAssignNew(List, SListView<FItem>)
+				.ListViewStyle(&FAppStyle::Get().GetWidgetStyle<FTableViewStyle>("SimpleListView"))
 				.ListItemsSource(&Items)
 				.SelectionMode(ESelectionMode::Single)
 				.OnGenerateRow(this, &SScenarioJobsPage::MakeRow)
+				.OnIsSelectableOrNavigable_Lambda([](FItem Item) { return Item.IsValid() && !IsDayHeader(*Item); })
 				.OnMouseButtonDoubleClick_Lambda([](FItem Item)
 				{
 					FScenarioSession* Session = ScenarioUI::Session();
@@ -238,63 +311,76 @@ void SScenarioJobsPage::Construct(const FArguments& InArgs)
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.HAlign(HAlign_Center)
+				.Padding(0.0f, 0.0f, 0.0f, 10.0f)
 				[
-					SNew(STextBlock)
-					.Text_Lambda([this]()
-					{
-						return Filter == TEXT("all") && Kind.IsEmpty()
-							? LOCTEXT("Empty", "Nothing generated yet. Everything you or an agent generates shows here, even after a restart.")
-							: LOCTEXT("EmptyFilter", "No job matches this filter.");
-					})
-					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-					.Justification(ETextJustify::Center)
-					.AutoWrapText(true)
+					Icon(TEXT("jobs"), 28.0f, FSlateColor(Palette::Faint()))
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.HAlign(HAlign_Center)
-				.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 				[
-					SNew(SHyperlink)
-					.Text(LOCTEXT("GoCreate", "Go to Create"))
+					SNew(SBox)
+					.MaxDesiredWidth(320.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							return Filter == TEXT("all") && Kind.IsEmpty()
+								? LOCTEXT("Empty", "Nothing generated yet. Everything you or an agent generates shows here, even after a restart.")
+								: LOCTEXT("EmptyFilter", "No job matches this filter.");
+						})
+						.Font(Font(EText::Body))
+						.ColorAndOpacity(FSlateColor(Palette::Dim()))
+						.Justification(ETextJustify::Center)
+						.AutoWrapText(true)
+					]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.HAlign(HAlign_Center)
+				.Padding(0.0f, 12.0f, 0.0f, 0.0f)
+				[
+					SNew(SBox)
 					.Visibility_Lambda([this]() { return Filter == TEXT("all") && Kind.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })
-					.OnNavigate_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Create); })
+					[
+						Button(LOCTEXT("GoCreate", "Go to Create"), EButton::Secondary, []() { FScenarioEditorModule::OpenStudio(ScenarioPages::Create); }, TEXT("create"))
+					]
 				]
 			]
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
-			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("Brushes.Header"))
-			.Padding(FMargin(ScenarioUI::Gutter, 4.0f))
+			Divider()
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(PagePadding, 6.0f, PagePadding - 4.0f, 6.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				.VAlign(VAlign_Center)
-				[
-					ScenarioUI::Line(MakeAttributeLambda([]()
+				Line(MakeAttributeLambda([]()
+				{
+					FScenarioSession* S = ScenarioUI::Session();
+					const double Used = S ? S->GetUsageThisMonth() : -1.0;
+					return Used < 0.0 ? LOCTEXT("UsageUnknown", "Usage unavailable")
+						: FText::Format(LOCTEXT("Month", "Project this month: {0} (all members, all tools)"), FText::FromString(ScenarioCU::Format(Used)));
+				}), EText::Meta, true)
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				IconButton(TEXT("refresh"), LOCTEXT("RefreshUsage", "Refresh the project's usage this month. Free."), FSimpleDelegate::CreateLambda([]()
+				{
+					if (FScenarioSession* S = ScenarioUI::Session())
 					{
-						FScenarioSession* S = ScenarioUI::Session();
-						const double Used = S ? S->GetUsageThisMonth() : -1.0;
-						return Used < 0.0 ? LOCTEXT("UsageUnknown", "Usage unavailable")
-							: FText::Format(LOCTEXT("Month", "Project this month: {0} (all members, all tools)"), FText::FromString(ScenarioCU::Format(Used)));
-					}), ScenarioUI::EText::Meta, true)
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				[
-					ScenarioUI::IconButton(TEXT("Icons.Refresh"), LOCTEXT("RefreshUsage", "Refresh the project's usage this month. Free."), FSimpleDelegate::CreateLambda([]()
-					{
-						if (FScenarioSession* S = ScenarioUI::Session())
-						{
-							S->RefreshUsage();
-						}
-					}))
-				]
+						S->RefreshUsage();
+					}
+				}))
 			]
 		]
 	];
@@ -331,15 +417,24 @@ bool SScenarioJobsPage::Passes(const FScenarioJobRow& Row) const
 
 void SScenarioJobsPage::Refresh()
 {
+	// Newest first, with a header line where the day changes.
 	TArray<FString> Ids;
 	if (FScenarioSession* Session = ScenarioUI::Session())
 	{
+		FString Day = TEXT("?");
 		for (const FScenarioJobRow& Row : Session->Ledger().Rows())
 		{
-			if (Passes(Row))
+			if (!Passes(Row))
 			{
-				Ids.Add(Row.LocalId);
+				continue;
 			}
+			const FString Key = DayKey(Row.CreatedAt);
+			if (Key != Day)
+			{
+				Day = Key;
+				Ids.Add(DayPrefix + DayLabel(Key, Row.CreatedAt).ToString());
+			}
+			Ids.Add(Row.LocalId);
 		}
 	}
 	if (Ids == Shown)
@@ -363,8 +458,22 @@ void SScenarioJobsPage::Refresh()
 
 TSharedRef<ITableRow> SScenarioJobsPage::MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner)
 {
+	if (IsDayHeader(*Item))
+	{
+		return SNew(STableRow<FItem>, Owner)
+			.Style(&ScenarioUI::Style().GetWidgetStyle<FTableRowStyle>("Scenario.TableRow.Header"))
+			.ShowSelection(false)
+			.Padding(FMargin(8.0f, 12.0f, 8.0f, 4.0f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Item->RightChop(FCString::Strlen(DayPrefix)).ToUpper()))
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Section))
+				.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Faint()))
+			];
+	}
 	return SNew(STableRow<FItem>, Owner)
-		.Padding(0.0f)
+		.Style(&ScenarioUI::Style().GetWidgetStyle<FTableRowStyle>("Scenario.TableRow"))
+		.Padding(FMargin(0.0f, 1.0f))
 		[
 			SNew(SScenarioJobRow).LocalId(*Item)
 		];
