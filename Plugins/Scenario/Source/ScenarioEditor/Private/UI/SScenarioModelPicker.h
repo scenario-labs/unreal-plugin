@@ -14,8 +14,10 @@ struct FScenarioWorkflowItem;
 
 /**
  * Choose a model: every Scenario model plus the team's trained ones, from the
- * cached catalog. Favorites first, then the lane's quick picks, then the
- * catalog. Type to search, arrows to move, Enter to choose, Esc to close.
+ * cached catalog. Favorites first, then the lane's recommended models, then
+ * the catalog. Type to search, arrows to move, Enter to choose, Esc to close.
+ * The detail pane prices the selected model at its default settings (a free
+ * dry run, cached for the editor session).
  */
 class SScenarioModelPicker : public SCompoundWidget
 {
@@ -23,7 +25,7 @@ public:
 	using FOnPicked = TFunction<void(const FString& ModelId, const FString& Name)>;
 
 	SLATE_BEGIN_ARGS(SScenarioModelPicker) {}
-		/** image, video, 3d or audio; empty for every type. */
+		/** image, 3d, material, sky, video or audio; empty for every type. */
 		SLATE_ARGUMENT(FString, Modality)
 		SLATE_ARGUMENT(FString, Chip)
 		SLATE_ARGUMENT(TArray<FString>, QuickPicks)
@@ -48,13 +50,19 @@ private:
 	using FItem = TSharedPtr<FScenarioCatalogModel>;
 
 	void Refresh();
+	void Select(const FItem& Item);
 	void Choose(const FItem& Item);
 	TSharedRef<ITableRow> MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner);
 	TSharedRef<SWidget> BuildTabs();
-	TSharedRef<SWidget> BuildChips();
+	TSharedRef<SWidget> BuildCategories();
 	TSharedRef<SWidget> BuildDetails();
+	TArray<FString> Categories() const;
 	void SetModality(const FString& InModality);
 	FScenarioCatalog* Catalog() const;
+
+	// The default-settings price of the selected model.
+	void ScheduleEstimate();
+	FText PriceNote() const;
 
 	FString Modality;
 	FString Chip;
@@ -66,8 +74,8 @@ private:
 	TArray<FItem> Items;
 	FItem Selected;
 	TSharedPtr<SListView<FItem>> List;
-	TSharedPtr<class SBox> ChipsBox;
 	FDelegateHandle CatalogHandle;
+	TSharedPtr<class FActiveTimerHandle> EstimateTimer;
 };
 
 /** Choose a workflow: search, Team or Featured, and the description before running it. */
