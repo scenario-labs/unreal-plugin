@@ -821,9 +821,9 @@ void UScenarioSubsystem::FinishImport(const FString& LocalId, const FScenarioPla
 		}
 	}
 	Reports.Add(LocalId, Report);
-	if (Report.bOk && Report.CreatedAssets.Num() > 0 && GEditor)
+	if (Report.bOk && Report.CreatedAssets.Num() > 0 && GEditor && !IsRunningCommandlet())
 	{
-		// Show the new assets in the Content Browser.
+		// Show the new assets in the Content Browser (a commandlet has none).
 		TArray<UObject*> Objects;
 		for (const FString& Path : Report.CreatedAssets)
 		{
