@@ -6,6 +6,7 @@
 #include "ScenarioCredentialStore.h"
 
 #include "ScenarioCoreModule.h"
+#include "Misc/App.h"
 
 #if PLATFORM_MAC
 
@@ -77,7 +78,11 @@ namespace
 			CFRelease(Query);
 			if (Status != errSecSuccess || Result == nullptr)
 			{
-				if (Status != errSecItemNotFound && Status != errSecSuccess)
+				if (Status == errSecInteractionNotAllowed)
+				{
+					UE_LOG(LogScenario, Display, TEXT("The saved %s needs keychain approval, which an unattended run cannot ask for. Set SCENARIO_API_KEY and SCENARIO_API_SECRET instead."), *Account);
+				}
+				else if (Status != errSecItemNotFound && Status != errSecSuccess)
 				{
 					UE_LOG(LogScenario, Warning, TEXT("Keychain read failed for %s (status %d)."), *Account, static_cast<int32>(Status));
 				}
@@ -105,6 +110,16 @@ namespace
 
 TSharedPtr<IScenarioCredentialStore> ScenarioCreateOsCredentialStore()
 {
+	if (FApp::IsUnattended())
+	{
+		// A keychain item trusts the app that wrote it, so UnrealEditor-Cmd reading what the editor saved asks for
+		// the login password. Nobody answers that dialog in an unattended run: make such reads fail instead.
+		// The setting is per process, and no prompt is wanted anywhere in an unattended process.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+		SecKeychainSetUserInteractionAllowed(false);
+#pragma clang diagnostic pop
+	}
 	return MakeShared<FMacKeychainStore>();
 }
 
