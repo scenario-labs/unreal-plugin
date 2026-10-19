@@ -20,6 +20,10 @@ namespace ScenarioUI
 	FScenarioSession* Session();
 	/** A titled block used by every page. */
 	TSharedRef<SWidget> Section(const FText& Title, const TSharedRef<SWidget>& Body);
+	/** The team and project menu (the header's project name, Settings > Switch project). */
+	TSharedRef<SWidget> ProjectMenu();
+	/** What this editor's jobs cost today: charged amounts, or quotes until Scenario reports the charge. */
+	double TodayCU();
 }
 
 /** Sign in with Scenario (browser or code) or with an API key. */
@@ -72,6 +76,8 @@ public:
 private:
 	TSharedRef<SWidget> BuildLanes();
 	TSharedRef<SWidget> BuildModes();
+	/** The lane's recommended models as chips under the model card. */
+	TSharedRef<SWidget> BuildPicks();
 	TSharedRef<SWidget> BuildModelCard();
 	TSharedRef<SWidget> BuildModelMenu();
 	TSharedRef<SWidget> BuildRecent();
@@ -84,6 +90,8 @@ private:
 	TSharedPtr<FScenarioCreateModel> Model;
 	TSharedPtr<SScenarioForm> Form;
 	TSharedPtr<SBox> ModesBox;
+	TSharedPtr<SBox> PicksBox;
+	FString PicksFor;
 	TSharedPtr<SWidget> ModelCard;
 	TSharedPtr<class SHorizontalBox> Recent;
 	TArray<FString> RecentShown;
@@ -195,14 +203,15 @@ private:
 	FDelegateHandle SessionHandle;
 };
 
-class SScenarioConnectionPage : public SCompoundWidget
+/** Settings: the account and project, this plugin's preferences, diagnostics and versions. */
+class SScenarioSettingsPage : public SCompoundWidget
 {
 public:
-	SLATE_BEGIN_ARGS(SScenarioConnectionPage) {}
+	SLATE_BEGIN_ARGS(SScenarioSettingsPage) {}
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
-	virtual ~SScenarioConnectionPage() override;
+	virtual ~SScenarioSettingsPage() override;
 
 	/** Plain-text diagnostics without secrets, for support. */
 	static FString Diagnostics();
@@ -213,4 +222,35 @@ private:
 	TSharedPtr<SBox> Content;
 	bool bWasSignedIn = false;
 	FDelegateHandle SessionHandle;
+};
+
+/** Workflows: the team's and Scenario's featured ones; a row opens it in Create. */
+class SScenarioWorkflowsPage : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SScenarioWorkflowsPage) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs);
+	virtual ~SScenarioWorkflowsPage() override;
+
+private:
+	void Refresh();
+	TSharedRef<SWidget> BuildRow(const struct FScenarioWorkflowItem& Item);
+
+	FName Source = TEXT("team");
+	FString Query;
+	FString Shown;
+	TSharedPtr<SVerticalBox> Rows;
+	FDelegateHandle ModelHandle;
+};
+
+/** Agent: Scenario MCP in this editor, from the sections other modules add. */
+class SScenarioAgentPage : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SScenarioAgentPage) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs);
 };

@@ -71,6 +71,11 @@ struct FScenarioWorkflowItem
 	FString Description;
 	/** The team's own workflow; false for Scenario's featured ones. */
 	bool bTeam = false;
+	FString ShortDescription;
+	FString ThumbnailUrl;
+	/** The inputs a run asks for (images, prompts, settings). */
+	int32 InputCount = 0;
+	TArray<FString> Tags;
 };
 
 /** A file input of the form: a local file being uploaded, or a Scenario asset. */

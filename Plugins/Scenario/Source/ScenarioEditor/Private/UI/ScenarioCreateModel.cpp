@@ -389,6 +389,16 @@ void FScenarioCreateModel::LoadWorkflows(bool bForce)
 			Item.Name = ScenarioJson::GetString(Row, TEXT("name"), Id);
 			Item.Description = ScenarioJson::GetString(Row, TEXT("description"), ScenarioJson::GetString(Row, TEXT("shortDescription")));
 			Item.bTeam = bTeam;
+			Item.ShortDescription = ScenarioJson::GetString(Row, TEXT("shortDescription"));
+			Item.ThumbnailUrl = ScenarioJson::GetString(ScenarioJson::GetObject(Row, TEXT("thumbnail")), TEXT("url"));
+			Item.InputCount = ScenarioJson::GetArray(Row, TEXT("inputs")).Num();
+			for (const TSharedPtr<FJsonValue>& Tag : ScenarioJson::GetArray(Row, TEXT("tagSet")))
+			{
+				if (Tag.IsValid() && Tag->Type == EJson::String && Tag->AsString() != TEXT("featured"))
+				{
+					Item.Tags.Add(Tag->AsString());
+				}
+			}
 			Out.Add(Item);
 		}
 	};

@@ -397,8 +397,8 @@ void FScenarioEditorModule::RegisterMenus()
 				{
 					FScenarioSession* S = ScenarioUI::Session();
 					return S && S->IsSignedIn() ? FText::FromString(S->GetWorkspace().Label()) : LOCTEXT("SignIn", "Sign in to Scenario");
-				}), LOCTEXT("AccountTip", "Opens Connection: account, project, agents, diagnostics."), FSlateIcon(),
-				FUIAction(FExecuteAction::CreateLambda([]() { OpenStudio(ScenarioPages::Connection); })));
+				}), LOCTEXT("AccountTip", "Opens Settings: account, project, preferences, diagnostics."), FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([]() { OpenStudio(ScenarioPages::Settings); })));
 			Menu.EndSection();
 			Menu.BeginSection(NAME_None, LOCTEXT("Generate", "Generate"));
 			for (const FScenarioLane& Lane : FScenarioLanes::Get().All())
@@ -426,8 +426,8 @@ void FScenarioEditorModule::RegisterMenus()
 			Menu.EndSection();
 			Menu.BeginSection(NAME_None, LOCTEXT("More", "More"));
 			Menu.AddMenuEntry(FScenarioCommands::Get().ToggleComposer);
-			Menu.AddMenuEntry(LOCTEXT("Agents", "Agents and diagnostics"), LOCTEXT("AgentsTip", "Scenario MCP connection for agents, activity log, diagnostics."), FSlateIcon(),
-				FUIAction(FExecuteAction::CreateLambda([]() { OpenStudio(ScenarioPages::Connection); })));
+			Menu.AddMenuEntry(LOCTEXT("Agents", "Agent"), LOCTEXT("AgentsTip", "Scenario MCP for agents in this editor: setup, permissions, activity log."), FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([]() { OpenStudio(ScenarioPages::Agent); })));
 			Menu.AddMenuEntry(LOCTEXT("Settings", "Settings"), LOCTEXT("SettingsTip", "Scenario editor preferences."), FSlateIcon(),
 				FUIAction(FExecuteAction::CreateLambda([]() { OpenSettings(false); })));
 			Menu.EndSection();

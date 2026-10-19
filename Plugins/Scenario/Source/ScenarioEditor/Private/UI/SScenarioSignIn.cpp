@@ -42,12 +42,39 @@ namespace ScenarioUI
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(FMargin(Gutter, Gutter, Gutter, SectionGap))
+			.Padding(FMargin(Gutter, 2.0f, Gutter, SectionGap))
 			[
 				Body
 			];
 	}
 
+	double TodayCU()
+	{
+		double Total = 0.0;
+		FScenarioSession* S = Session();
+		if (!S)
+		{
+			return Total;
+		}
+		const FDateTime Today = FDateTime::Now().GetDate();
+		const FTimespan LocalOffset = FDateTime::Now() - FDateTime::UtcNow();
+		for (const FScenarioJobRow& Row : S->Ledger().Rows())
+		{
+			if ((FDateTime::FromUnixTimestamp(static_cast<int64>(Row.CreatedAt)) + LocalOffset).GetDate() != Today)
+			{
+				continue;
+			}
+			if (Row.ChargedCU >= 0.0)
+			{
+				Total += Row.ChargedCU;
+			}
+			else if (Row.State != EScenarioJobState::Rejected && Row.State != EScenarioJobState::Canceled && Row.State != EScenarioJobState::Failed)
+			{
+				Total += Row.QuotedCU;
+			}
+		}
+		return Total;
+	}
 }
 
 void SScenarioSignIn::Construct(const FArguments& InArgs)
@@ -137,7 +164,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 				SNew(STextBlock)
 				.Text(LOCTEXT("OpensBrowser", "Opens your browser."))
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 				.Visibility_Lambda([Signing]() { return Signing() ? EVisibility::Collapsed : EVisibility::Visible; })
 			]
 			// In progress
@@ -316,7 +343,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 							return S ? FText::Format(LOCTEXT("StoredIn", "Stored in: {0}"), FText::FromString(S->DescribeCredentialStore())) : FText::GetEmpty();
 						})
 						.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 					]
 				]
 			]
@@ -337,7 +364,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 					return S && S->GetLastError().Kind != EScenarioErrorKind::None ? FText::FromString(S->GetLastError().Message) : FText::GetEmpty();
 				})
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-				.ColorAndOpacity(FStyleColors::Error)
+				.ColorAndOpacity(ScenarioUI::Palette::Error())
 				.AutoWrapText(true)
 			]
 			// Privacy
@@ -352,7 +379,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 					SNew(STextBlock)
 					.Text(LOCTEXT("Privacy", "Prompts and files you send go to Scenario. Nothing from this plugin ships in your game build."))
 					.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 					.AutoWrapText(true)
 				]
 				+ SHorizontalBox::Slot()
@@ -375,7 +402,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 					"Kept on this machine: your sign-in (system keychain), the job list and downloads (Saved/Scenario), provenance on imported assets.\n"
 					"Never sent: other project files, levels, source code. Usage statistics are off unless you turn them on in Editor Preferences."))
 				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
 				.AutoWrapText(true)
 			]
 		]
