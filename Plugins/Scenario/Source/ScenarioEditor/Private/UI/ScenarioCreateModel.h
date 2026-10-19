@@ -28,6 +28,51 @@ enum class EScenarioGenerateState : uint8
 	Submitting,
 };
 
+/** How the line under Generate reads. */
+enum class EScenarioHintTone : uint8
+{
+	None,
+	Busy,
+	Info,
+	Success,
+	Warning,
+	Error,
+};
+
+/** What a link on the line under Generate does. */
+enum class EScenarioHintAction : uint8
+{
+	None,
+	ChangeModel,
+	OpenJobs,
+	CheckNow,
+	ImportAndPlace,
+	ImportOnly,
+	Show,
+	Details,
+};
+
+/** The line under Generate: why it is disabled, or how the last request is going. */
+struct FScenarioHint
+{
+	FText Text;
+	EScenarioHintTone Tone = EScenarioHintTone::None;
+	EScenarioHintAction Primary = EScenarioHintAction::None;
+	EScenarioHintAction Secondary = EScenarioHintAction::None;
+	/** The job the actions apply to. */
+	FString LocalId;
+};
+
+/** A workflow the project can run. */
+struct FScenarioWorkflowItem
+{
+	FString Id;
+	FString Name;
+	FString Description;
+	/** The team's own workflow; false for Scenario's featured ones. */
+	bool bTeam = false;
+};
+
 /** A file input of the form: a local file being uploaded, or a Scenario asset. */
 struct FScenarioReference
 {
@@ -52,8 +97,6 @@ class FScenarioCreateModel : public TSharedFromThis<FScenarioCreateModel>
 public:
 	/** The Create form shared by the Studio and the composer. */
 	static TSharedRef<FScenarioCreateModel> Get();
-	/** A separate form for the Workflows page (same pricing and Generate rules). */
-	static TSharedRef<FScenarioCreateModel> MakeForWorkflows();
 
 	void Initialize();
 	void Shutdown();
@@ -72,9 +115,19 @@ public:
 	/** Picks a model; switches lane when the model belongs to another one. */
 	void SetModel(const FString& InModelId, const FString& InName = FString());
 	TArray<FScenarioLaneModel> QuickPicks() const;
-	/** Workflows page: runs a workflow instead of a model. */
+	/** Runs a workflow instead of a model (the Workflow lane). */
 	void SetWorkflow(const FString& WorkflowId, const FString& Name, const FString& Description);
 	bool IsWorkflow() const { return bWorkflow; }
+	/** Opens the Workflow lane on the last workflow used, or on none. */
+	void EnterWorkflowLane();
+	/** The lane shown in the lane row: a lane id, or "workflow". */
+	FString GetLaneKey() const { return bWorkflow ? FString(TEXT("workflow")) : LaneId; }
+
+	/** The project's workflows (team first, then featured), loaded once per project. */
+	const TArray<FScenarioWorkflowItem>& GetWorkflows() const { return Workflows; }
+	bool IsLoadingWorkflows() const { return bLoadingWorkflows; }
+	const FString& GetWorkflowsError() const { return WorkflowsError; }
+	void LoadWorkflows(bool bForce = false);
 	/** Modality of the current lane for the picker (image, 3d, video, audio). */
 	FString PickerModality() const;
 
@@ -127,7 +180,11 @@ public:
 
 	FScenarioRunRequest BuildRequest() const;
 	EScenarioGenerateState GetState() const;
+	/** "Generate", "Generate · 30 CU", "Generate · ~30 CU", "Sending...", "Retry price". */
 	FText GetButtonText() const;
+	/** True while the price on the button is being checked again (shown dimmed). */
+	bool IsPriceStale() const;
+	FScenarioHint GetHint() const;
 	FText GetButtonTooltip() const;
 	bool CanClickGenerate() const;
 	/** Re-checks the price now (the Retry button). */
@@ -213,6 +270,19 @@ private:
 	mutable bool bFingerprintDirty = true;
 	/** Connection and scope seen last, so ledger updates do not trigger price checks. */
 	FString SessionKey;
+	/** A free price of the model with the lane's example prompt, shown as "~30 CU" before a prompt is typed. */
+	double EstimateCU = -1.0;
+	FString EstimateModel;
+	bool bEstimating = false;
+	void Estimate();
+	/** The lane the last request was sent from: its status line shows there only. */
+	FString SentLane;
+
+	TArray<FScenarioWorkflowItem> Workflows;
+	bool bLoadingWorkflows = false;
+	FString WorkflowsError;
+	FString WorkflowsFor;
+
 	FTSTicker::FDelegateHandle DebounceHandle;
 	FDelegateHandle SessionHandle;
 	FDelegateHandle CatalogHandle;

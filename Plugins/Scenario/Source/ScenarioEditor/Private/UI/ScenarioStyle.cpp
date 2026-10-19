@@ -7,6 +7,7 @@
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyleMacros.h"
 #include "Brushes/SlateImageBrush.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "Scenario"
@@ -28,6 +29,10 @@ void FScenarioStyle::Register()
 	Style.Set("Scenario.Mark.Small", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(16.0f, 16.0f)));
 	Style.Set("Scenario.Mark.Large", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(48.0f, 48.0f)));
 	Style.Set("Scenario.Studio", new FSlateVectorImageBrush(Style.RootToContentDir(TEXT("ScenarioMark"), TEXT(".svg")), FVector2D(16.0f, 16.0f)));
+	// Status chips and dots: tinted per state where they are used.
+	Style.Set("Scenario.Chip", new FSlateRoundedBoxBrush(FLinearColor::White, 4.0f));
+	Style.Set("Scenario.Dot", new FSlateRoundedBoxBrush(FLinearColor::White, 4.0f, FVector2D(8.0f, 8.0f)));
+	Style.Set("Scenario.Tile", new FSlateRoundedBoxBrush(FLinearColor::White, 4.0f));
 	FSlateStyleRegistry::RegisterSlateStyle(Style);
 }
 

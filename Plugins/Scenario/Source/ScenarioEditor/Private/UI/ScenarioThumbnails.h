@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 
+class FAssetThumbnailPool;
 struct FSlateBrush;
 struct FSlateDynamicImageBrush;
 
@@ -24,6 +25,9 @@ public:
 	/** The brush for a remote image, keyed by asset id, or null while it loads. */
 	const FSlateBrush* ForUrl(const FString& Key, const FString& Url);
 
+	/** The pool behind real asset thumbnails (meshes, materials) of imported results. */
+	TSharedPtr<FAssetThumbnailPool> AssetPool();
+
 	/** Fires on the game thread when a brush becomes available. */
 	FSimpleMulticastDelegate OnLoaded;
 
@@ -34,6 +38,7 @@ private:
 	void Finish(const FString& Key, int32 Width, int32 Height, TArray<uint8> Bgra);
 
 	TMap<FString, TSharedPtr<FSlateDynamicImageBrush>> Brushes;
+	TSharedPtr<FAssetThumbnailPool> Pool;
 	TSet<FString> Pending;
 	TSet<FString> Failed;
 	int32 InFlight = 0;

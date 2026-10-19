@@ -16,7 +16,11 @@
 #include "ScenarioTypes.h"
 #include "SScenarioAgentsSection.h"
 #include "Styling/AppStyle.h"
+#include "Styling/CoreStyle.h"
+#include "Styling/StyleColors.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "ScenarioAgent"
@@ -69,46 +73,77 @@ void FScenarioAgentModule::StartupModule()
 	});
 	FScenarioEditorModule::SetHeaderStatus([]() -> TSharedRef<SWidget>
 	{
-		return SNew(SButton)
-			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-			.ToolTipText(LOCTEXT("HeaderTip", "Local Scenario MCP server for agents. Click for setup and the activity log."))
-			.OnClicked_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Connection); return FReply::Handled(); })
-			[
-				SNew(STextBlock).Text_Lambda([]()
+		// 2: an agent was active in the last 10 minutes, 1: the server is on, 0: off.
+		auto Status = [](FText* OutTooltip) -> int32
+		{
+			const TSharedPtr<FScenarioMcpServer> Server = IsAvailable() ? Get().Server() : nullptr;
+			if (!Server.IsValid() || !Server->IsRunning())
+			{
+				if (OutTooltip)
 				{
-					if (!IsAvailable())
+					*OutTooltip = LOCTEXT("AgentsOffTip", "Scenario MCP is off: agents cannot reach this editor. Click to turn it on.");
+				}
+				return 0;
+			}
+			// Apps, not sessions: one agent opens several sessions (health checks, restarts).
+			TSet<FString> Recent;
+			for (const TPair<FString, FScenarioMcpServer::FClient>& Pair : Server->Clients())
+			{
+				if (ScenarioNow() - Pair.Value.LastSeen < 600.0)
+				{
+					FString Label = Pair.Value.Name;
+					for (const ScenarioAgentClients::FClient& Known : ScenarioAgentClients::All())
 					{
-						return FText::GetEmpty();
-					}
-					const TSharedPtr<FScenarioMcpServer> Server = Get().Server();
-					if (!Server.IsValid() || !Server->IsRunning())
-					{
-						return LOCTEXT("AgentsOff", "Agents: off");
-					}
-					// Apps, not sessions: one agent opens several sessions (health checks, restarts).
-					TSet<FString> Recent;
-					for (const TPair<FString, FScenarioMcpServer::FClient>& Pair : Server->Clients())
-					{
-						if (ScenarioNow() - Pair.Value.LastSeen < 600.0)
+						if (Pair.Value.Name.Contains(Known.ClientInfoName))
 						{
-							FString Label = Pair.Value.Name;
-							for (const ScenarioAgentClients::FClient& Known : ScenarioAgentClients::All())
-							{
-								if (Pair.Value.Name.Contains(Known.ClientInfoName))
-								{
-									Label = Known.Name.ToString();
-									break;
-								}
-							}
-							Recent.Add(Label);
+							Label = Known.Name.ToString();
+							break;
 						}
 					}
-					if (Recent.Num() == 1)
+					Recent.Add(Label);
+				}
+			}
+			if (OutTooltip)
+			{
+				*OutTooltip = Recent.Num() > 0
+					? FText::Format(LOCTEXT("AgentsActiveTip", "{0} active in the last 10 minutes. Click for setup and the agent log."), FText::FromString(FString::Join(Recent.Array(), TEXT(", "))))
+					: LOCTEXT("AgentsIdleTip", "Scenario MCP is on, no agent active in the last 10 minutes. Click for setup and the agent log.");
+			}
+			return Recent.Num() > 0 ? 2 : 1;
+		};
+		return SNew(SButton)
+			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+			.ContentPadding(FMargin(4.0f, 2.0f))
+			.ToolTipText_Lambda([Status]() { FText Tip; Status(&Tip); return Tip; })
+			.OnClicked_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Connection); return FReply::Handled(); })
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+				[
+					SNew(SImage)
+					.Image(FAppStyle::GetBrush("Icons.FilledCircle"))
+					.DesiredSizeOverride(FVector2D(8.0f, 8.0f))
+					.ColorAndOpacity_Lambda([Status]()
 					{
-						return FText::Format(LOCTEXT("AgentsOne", "{0} connected"), FText::FromString(Recent.Array()[0]));
-					}
-					return Recent.Num() > 1 ? FText::Format(LOCTEXT("AgentsOn", "{0} agents connected"), FText::AsNumber(Recent.Num())) : LOCTEXT("AgentsReady", "Agents: ready");
-				})
+						switch (Status(nullptr))
+						{
+						case 2: return FSlateColor(FStyleColors::AccentGreen);
+						case 1: return FSlateColor(FStyleColors::AccentGray);
+						default: return FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
+						}
+					})
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("Agents", "Agents"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
 			];
 	});
 

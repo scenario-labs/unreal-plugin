@@ -53,39 +53,6 @@ namespace ScenarioUI
 			];
 	}
 
-	TSharedRef<SWidget> GenerateButton(const TSharedRef<FScenarioCreateModel>& Model, const FText& Hint)
-	{
-		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			[
-				SNew(SBox)
-				.HeightOverride(36.0f)
-				[
-					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
-					.HAlign(HAlign_Center)
-					.VAlign(VAlign_Center)
-					.IsEnabled_Lambda([Model]() { return Model->CanClickGenerate(); })
-					.ToolTipText_Lambda([Model]() { return Model->GetButtonTooltip(); })
-					.OnClicked_Lambda([Model]() { Model->Generate(); return FReply::Handled(); })
-					[
-						SNew(STextBlock)
-						.Text_Lambda([Model]() { return Model->GetButtonText(); })
-						.Font(FScenarioStyle::Font(11, true))
-					]
-				]
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(10.0f, 0.0f, 0.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.Text(Hint)
-				.ColorAndOpacity(FScenarioStyle::Muted())
-			];
-	}
 }
 
 void SScenarioSignIn::Construct(const FArguments& InArgs)

@@ -71,6 +71,26 @@
       ]
     },
     {
+      "id": "environment",
+      "title": "Sky",
+      "capability": "txt2img",
+      "importer": "sky",
+      "folder": "Environments",
+      "recommend": false,
+      "modes": ["generate", "hdri"],
+      "hint": "360 skies on a sky sphere, or HDR lighting on an HDRI Backdrop.",
+      "starter_prompts": [
+        "golden hour over rolling hills, scattered clouds",
+        "alien desert at dusk with two moons",
+        "overcast harbor morning, soft light"
+      ],
+      "models": [
+        { "id": "model_scenario-skybox-gpt", "name": "Scenario Skybox GPT", "mode": "generate", "note": "best quality" },
+        { "id": "model_scenario-skybox-flux", "name": "Scenario Skybox Flux", "mode": "generate", "note": "many styles" },
+        { "id": "model_hdri-skybox", "name": "HDRi Skybox", "mode": "hdri", "note": "HDR lighting from a panorama" }
+      ]
+    },
+    {
       "id": "audio",
       "title": "Audio",
       "capability": "txt2audio",
@@ -83,7 +103,7 @@
         "calm ambient forest loop with birds"
       ],
       "models": [
-        { "id": "model_sonilo-v1-1-text-to-sound-effects", "name": "Sonilo V1.1 SFX", "note": "exact length, cheap" },
+        { "id": "model_sonilo-v1-1-text-to-sound-effects", "name": "Sonilo V1.1 SFX", "note": "exact length, low cost" },
         { "id": "model_elevenlabs-sound-effects-v2", "name": "ElevenLabs Sound Effects 2", "note": "loops" },
         { "id": "model_elevenlabs-music-v2-5", "name": "ElevenLabs Music 2.5", "note": "music with structure" },
         { "id": "model_sonilo-v1-1-text-to-music", "name": "Sonilo V1.1 Music", "note": "fast music beds" }
@@ -108,28 +128,8 @@
       ]
     },
     {
-      "id": "environment",
-      "title": "Environment",
-      "capability": "txt2img",
-      "importer": "sky",
-      "folder": "Environments",
-      "recommend": false,
-      "modes": ["generate", "hdri"],
-      "hint": "360 skies on a sky sphere, or HDR lighting on an HDRI Backdrop.",
-      "starter_prompts": [
-        "golden hour over rolling hills, scattered clouds",
-        "alien desert at dusk with two moons",
-        "overcast harbor morning, soft light"
-      ],
-      "models": [
-        { "id": "model_scenario-skybox-gpt", "name": "Scenario Skybox GPT", "mode": "generate", "note": "best quality" },
-        { "id": "model_scenario-skybox-flux", "name": "Scenario Skybox Flux", "mode": "generate", "note": "many styles" },
-        { "id": "model_hdri-skybox", "name": "HDRi Skybox", "mode": "hdri", "note": "HDR lighting from a panorama" }
-      ]
-    },
-    {
       "id": "render",
-      "title": "Render",
+      "title": "Restyle",
       "capability": "img2img",
       "importer": "texture",
       "folder": "Renders",

@@ -19,8 +19,6 @@ namespace ScenarioUI
 	FScenarioSession* Session();
 	/** A titled block used by every page. */
 	TSharedRef<SWidget> Section(const FText& Title, const TSharedRef<SWidget>& Body);
-	/** The big Generate button bound to a form model. */
-	TSharedRef<SWidget> GenerateButton(const TSharedRef<FScenarioCreateModel>& Model, const FText& Hint);
 }
 
 /** Sign in with Scenario (browser or code) or with an API key. */
@@ -67,54 +65,30 @@ public:
 	void Construct(const FArguments& InArgs);
 	virtual ~SScenarioCreatePage() override;
 	void FocusPrompt();
+	/** The model picker, or the workflow picker on the Workflow lane. */
 	void OpenPicker();
 
 private:
 	TSharedRef<SWidget> BuildLanes();
 	TSharedRef<SWidget> BuildModes();
 	TSharedRef<SWidget> BuildModelCard();
+	TSharedRef<SWidget> BuildModelMenu();
+	TSharedRef<SWidget> BuildRecent();
+	TSharedRef<SWidget> BuildActionBar();
 	TSharedRef<SWidget> BuildDestination();
-	TSharedRef<SWidget> BuildTray();
-	void RefreshTray();
+	void RefreshRecent();
 	void OnModelChanged();
+	void ShowSuggestions();
 
 	TSharedPtr<FScenarioCreateModel> Model;
 	TSharedPtr<SScenarioForm> Form;
 	TSharedPtr<SBox> ModesBox;
-	TSharedPtr<SVerticalBox> Tray;
-	TArray<FString> TrayIds;
+	TSharedPtr<SWidget> ModelCard;
+	TSharedPtr<class SHorizontalBox> Recent;
+	TArray<FString> RecentShown;
 	FString ModesFor;
 	FDelegateHandle ModelHandle;
 	FDelegateHandle SessionHandle;
-};
-
-class SScenarioWorkflowsPage : public SCompoundWidget
-{
-public:
-	SLATE_BEGIN_ARGS(SScenarioWorkflowsPage) {}
-	SLATE_END_ARGS()
-
-	void Construct(const FArguments& InArgs);
-	virtual ~SScenarioWorkflowsPage() override;
-
-private:
-	struct FWorkflow
-	{
-		FString Id;
-		FString Name;
-		FString Description;
-		bool bTeam = false;
-	};
-	using FItem = TSharedPtr<FWorkflow>;
-
-	void Load();
-	TSharedRef<ITableRow> MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner);
-
-	TSharedPtr<FScenarioCreateModel> Model;
-	TArray<FItem> Items;
-	TSharedPtr<SListView<FItem>> List;
-	FString Status;
-	bool bLoading = false;
 };
 
 class SScenarioLibraryPage : public SCompoundWidget
@@ -158,45 +132,21 @@ public:
 
 	void Construct(const FArguments& InArgs);
 	virtual ~SScenarioJobsPage() override;
+	/** all, active, ready or attention. */
+	void SetFilter(const FString& InFilter);
 
 private:
 	using FItem = TSharedPtr<FString>;
 	void Refresh();
 	TSharedRef<ITableRow> MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner);
+	bool Passes(const FScenarioJobRow& Row) const;
 
-	/** all, active, attention */
 	FString Filter = TEXT("all");
+	/** Empty for every type, else image, 3d, material, sky, audio or video. */
+	FString Kind;
 	TArray<FItem> Items;
 	TArray<FString> Shown;
 	TSharedPtr<SListView<FItem>> List;
-	FDelegateHandle SessionHandle;
-};
-
-class SScenarioResultsPage : public SCompoundWidget
-{
-public:
-	SLATE_BEGIN_ARGS(SScenarioResultsPage) {}
-	SLATE_END_ARGS()
-
-	void Construct(const FArguments& InArgs);
-	virtual ~SScenarioResultsPage() override;
-
-private:
-	using FItem = TSharedPtr<FString>;
-	using FCloud = TSharedPtr<FScenarioJobInfo>;
-	void Refresh();
-	void LoadCloud();
-	TSharedRef<ITableRow> MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner);
-	TSharedRef<ITableRow> MakeCloudRow(FCloud Item, const TSharedRef<STableViewBase>& Owner);
-
-	FString Lane;
-	TArray<FItem> Items;
-	TArray<FString> Shown;
-	TArray<FCloud> Cloud;
-	TSharedPtr<SListView<FItem>> List;
-	TSharedPtr<SListView<FCloud>> CloudList;
-	FString CloudStatus;
-	bool bCloudLoading = false;
 	FDelegateHandle SessionHandle;
 };
 

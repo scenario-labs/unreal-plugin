@@ -288,7 +288,7 @@ void SScenarioComposer::RefreshLatest()
 		return;
 	}
 	LatestId = Newest;
-	Latest->SetContent(Newest.IsEmpty() ? SNullWidget::NullWidget : StaticCastSharedRef<SWidget>(SNew(SScenarioJobCard).LocalId(Newest).bCompact(true)));
+	Latest->SetContent(Newest.IsEmpty() ? SNullWidget::NullWidget : StaticCastSharedRef<SWidget>(SNew(SScenarioJobCard).LocalId(Newest)));
 }
 
 #undef LOCTEXT_NAMESPACE

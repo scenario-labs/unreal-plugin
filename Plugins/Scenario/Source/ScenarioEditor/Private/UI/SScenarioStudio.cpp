@@ -3,15 +3,17 @@
 #include "SScenarioStudio.h"
 
 #include "Framework/Commands/UICommandList.h"
-#include "ScenarioCU.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "ScenarioCreateModel.h"
 #include "ScenarioEditorModule.h"
 #include "ScenarioSession.h"
 #include "ScenarioStyle.h"
+#include "ScenarioWidgets.h"
 #include "SScenarioPages.h"
+#include "SWarningOrErrorBox.h"
 #include "Styling/AppStyle.h"
-#include "Widgets/Images/SImage.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SSegmentedControl.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
@@ -36,6 +38,12 @@ namespace
 		}
 		return Count;
 	}
+
+	bool IsOffline()
+	{
+		FScenarioSession* S = ScenarioUI::Session();
+		return S && S->IsSignedIn() && (S->GetLastError().Kind == EScenarioErrorKind::Transport || S->GetLastError().Kind == EScenarioErrorKind::Timeout);
+	}
 }
 
 TSharedPtr<SScenarioStudio> SScenarioStudio::Current()
@@ -50,42 +58,46 @@ void SScenarioStudio::Construct(const FArguments& InArgs)
 
 	ChildSlot
 	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
+		SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(0.0f)
 		[
-			BuildHeader()
-		]
-		+ SVerticalBox::Slot()
-		.FillHeight(1.0f)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			SNew(SWidgetSwitcher)
+			.WidgetIndex(this, &SScenarioStudio::GateIndex)
+			+ SWidgetSwitcher::Slot()
 			[
-				BuildRail()
+				SNew(SScenarioSignIn)
 			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
+			+ SWidgetSwitcher::Slot()
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Center)
+			.Padding(24.0f)
 			[
-				SNew(SWidgetSwitcher)
-				.WidgetIndex(this, &SScenarioStudio::GateIndex)
-				+ SWidgetSwitcher::Slot()
+				SNew(SBox)
+				.MaxDesiredWidth(560.0f)
 				[
-					SNew(SScenarioSignIn)
+					SNew(SScenarioWorkspacePicker)
 				]
-				+ SWidgetSwitcher::Slot()
-				.HAlign(HAlign_Center)
-				.VAlign(VAlign_Center)
-				.Padding(24.0f)
+			]
+			+ SWidgetSwitcher::Slot()
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				[
-					SNew(SBox)
-					.MaxDesiredWidth(640.0f)
-					[
-						SNew(SScenarioWorkspacePicker)
-					]
+					BuildTopBar()
 				]
-				+ SWidgetSwitcher::Slot()
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(ScenarioUI::Gutter, ScenarioUI::RowGap))
+				[
+					SNew(SWarningOrErrorBox)
+					.MessageStyle(EMessageStyle::Warning)
+					.Message(LOCTEXT("Offline", "Offline. Jobs continue on Scenario and resume here when you are back."))
+					.Visibility_Lambda([]() { return IsOffline() ? EVisibility::Visible : EVisibility::Collapsed; })
+				]
+				+ SVerticalBox::Slot()
+				.FillHeight(1.0f)
 				[
 					SAssignNew(PageBox, SBox)
 				]
@@ -102,7 +114,7 @@ int32 SScenarioStudio::GateIndex() const
 	{
 		return 0;
 	}
-	// The Connection page stays reachable to switch accounts or read diagnostics.
+	// Account and agents stays reachable to switch accounts or read diagnostics.
 	if (!Session->IsReady() && Page != ScenarioPages::Connection)
 	{
 		return 1;
@@ -110,155 +122,143 @@ int32 SScenarioStudio::GateIndex() const
 	return 2;
 }
 
-TSharedRef<SWidget> SScenarioStudio::BuildHeader()
+TSharedRef<SWidget> SScenarioStudio::BuildTopBar()
 {
+	TSharedRef<SSegmentedControl<FName>> Nav = SNew(SSegmentedControl<FName>)
+		.UniformPadding(FMargin(12.0f, 3.0f))
+		.Value_Lambda([this]() { return Page == ScenarioPages::Connection ? NAME_None : Page; })
+		.OnValueChanged_Lambda([this](FName Value) { SetPage(Value); })
+		+ SSegmentedControl<FName>::Slot(ScenarioPages::Create)
+			.Text(LOCTEXT("Create", "Create"))
+			.ToolTip(LOCTEXT("CreateTip", "Generate images, 3D, materials, skies, audio, video, or run a workflow."))
+		+ SSegmentedControl<FName>::Slot(ScenarioPages::Library)
+			.Text(LOCTEXT("Library", "Library"))
+			.ToolTip(LOCTEXT("LibraryTip", "Assets on Scenario and the ones imported into this project."))
+		+ SSegmentedControl<FName>::Slot(ScenarioPages::Jobs)
+			.Text_Lambda([]()
+			{
+				const int32 Active = CountJobs(true);
+				return Active > 0 ? FText::Format(LOCTEXT("JobsCount", "Jobs {0}"), FText::AsNumber(Active)) : LOCTEXT("Jobs", "Jobs");
+			})
+			.Icon_Lambda([]() { return CountJobs(false) > 0 ? FAppStyle::GetBrush("Icons.WarningWithColor") : nullptr; })
+			.ToolTip_Lambda([]()
+			{
+				const int32 Unresolved = CountJobs(false);
+				const int32 Active = CountJobs(true);
+				if (Unresolved > 0)
+				{
+					return FText::Format(LOCTEXT("JobsAttentionTip", "{0} need attention. Every request, its state and cost."), FText::AsNumber(Unresolved));
+				}
+				return Active > 0 ? FText::Format(LOCTEXT("JobsRunningTip", "{0} running. Every request, its state and cost."), FText::AsNumber(Active))
+					: LOCTEXT("JobsTip", "Every request, its state and cost. Survives restarts.");
+			});
+
 	return SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-		.Padding(FMargin(10.0f, 6.0f))
+		.BorderImage(FAppStyle::GetBrush("Brushes.Header"))
+		.Padding(FMargin(ScenarioUI::Gutter, 4.0f))
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				SNew(SImage).Image(FScenarioStyle::Get().GetBrush("Scenario.Mark"))
+				Nav
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
+			.MaxWidth(220.0f)
 			.VAlign(VAlign_Center)
-			.Padding(8.0f, 0.0f, 16.0f, 0.0f)
+			.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Text(LOCTEXT("Scenario", "Scenario")).Font(FScenarioStyle::Font(11, true))
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			[
-				SNew(SButton)
-				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ToolTipText(LOCTEXT("WorkspaceTip", "The Scenario team and project every request runs in. Click to change it."))
-				.OnClicked_Lambda([this]() { SetPage(ScenarioPages::Connection); return FReply::Handled(); })
+				SNew(SComboButton)
+				.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+				.HasDownArrow(true)
+				.ToolTipText_Lambda([]()
+				{
+					FScenarioSession* S = ScenarioUI::Session();
+					return S ? FText::Format(LOCTEXT("ProjectTip", "Every request runs in this Scenario project (team {0}). Click to switch."), FText::FromString(S->GetWorkspace().TeamName))
+						: FText::GetEmpty();
+				})
+				.OnGetMenuContent(this, &SScenarioStudio::BuildProjectMenu)
+				.ButtonContent()
 				[
 					SNew(STextBlock)
 					.Text_Lambda([]()
 					{
 						FScenarioSession* S = ScenarioUI::Session();
-						if (!S || !S->IsSignedIn())
-						{
-							return LOCTEXT("NotSignedIn", "Not signed in");
-						}
-						return S->GetWorkspace().IsSet() ? FText::FromString(S->GetWorkspace().Label()) : LOCTEXT("ChooseProject", "Choose a project");
+						return S && S->GetWorkspace().IsSet() ? FText::FromString(S->GetWorkspace().ProjectName) : LOCTEXT("ChooseProject", "Choose a project");
 					})
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 				]
 			]
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			.VAlign(VAlign_Center)
-			.Padding(16.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.Text_Lambda([]()
-				{
-					FScenarioSession* S = ScenarioUI::Session();
-					const double Used = S && S->IsReady() ? S->GetUsageThisMonth() : -1.0;
-					return Used < 0.0 ? FText::GetEmpty() : FText::Format(LOCTEXT("Used", "Used this month: {0}"), FText::FromString(ScenarioCU::Format(Used)));
-				})
-				.ToolTipText(LOCTEXT("UsedTip", "Creative Units the project used this month, across all members and tools. Scenario has no balance read for plugins."))
-				.ColorAndOpacity(FScenarioStyle::Muted())
-			]
-			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 0.0f, 12.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("Offline", "Offline. Jobs continue on Scenario and resume here when you are back."))
-				.ColorAndOpacity(FScenarioStyle::Warning())
-				.Visibility_Lambda([]()
-				{
-					FScenarioSession* S = ScenarioUI::Session();
-					const bool bOffline = S && S->IsSignedIn() && (S->GetLastError().Kind == EScenarioErrorKind::Transport || S->GetLastError().Kind == EScenarioErrorKind::Timeout);
-					return bOffline ? EVisibility::Visible : EVisibility::Collapsed;
-				})
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
+			.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 			[
 				FScenarioEditorModule::MakeHeaderStatus()
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f, 0.0f, 0.0f, 0.0f)
+			[
+				ScenarioUI::IconButton(TEXT("Icons.Settings"), LOCTEXT("AccountTip", "Open Account and agents: sign-in, project, usage, Scenario MCP for agents, diagnostics."),
+					FSimpleDelegate::CreateLambda([this]() { SetPage(Page == ScenarioPages::Connection ? ScenarioPages::Create : ScenarioPages::Connection); }))
 			]
 		];
 }
 
-TSharedRef<SWidget> SScenarioStudio::BuildRail()
+TSharedRef<SWidget> SScenarioStudio::BuildProjectMenu()
 {
-	struct FEntry
+	FMenuBuilder Menu(true, nullptr);
+	FScenarioSession* Session = ScenarioUI::Session();
+	if (!Session)
 	{
-		FName Id;
-		FText Label;
-		FText Tip;
-	};
-	const TArray<FEntry> Entries = {
-		{ ScenarioPages::Create, LOCTEXT("Create", "Create"), LOCTEXT("CreateTip", "Generate images, video, 3D, materials, audio and skies.") },
-		{ ScenarioPages::Workflows, LOCTEXT("Workflows", "Workflows"), LOCTEXT("WorkflowsTip", "Run your team's and Scenario's featured workflows.") },
-		{ ScenarioPages::Library, LOCTEXT("Library", "Library"), LOCTEXT("LibraryTip", "Your Scenario project's assets, and what this project generated.") },
-		{ ScenarioPages::Jobs, LOCTEXT("Jobs", "Jobs"), LOCTEXT("JobsTip", "Every request, its state and cost. Survives restarts.") },
-		{ ScenarioPages::Results, LOCTEXT("Results", "Results"), LOCTEXT("ResultsTip", "Finished generations, and jobs on Scenario not in this project yet.") },
-		{ ScenarioPages::Connection, LOCTEXT("Connection", "Connection"), LOCTEXT("ConnectionTip", "Account, project, agents and diagnostics.") },
-	};
-	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
-	for (const FEntry& Entry : Entries)
-	{
-		const FName Id = Entry.Id;
-		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 2.0f)
-		[
-			SNew(SCheckBox)
-			.Style(FAppStyle::Get(), "ToggleButtonCheckbox")
-			.ToolTipText(Entry.Tip)
-			.IsChecked_Lambda([this, Id]() { return Page == Id ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-			.OnCheckStateChanged_Lambda([this, Id](ECheckBoxState) { SetPage(Id); })
-			[
-				SNew(SBox)
-				.MinDesiredWidth(110.0f)
-				.Padding(FMargin(10.0f, 6.0f))
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(STextBlock).Text(Entry.Label)
-					]
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					[
-						SNew(STextBlock)
-						.Text_Lambda([Id]()
-						{
-							if (Id != ScenarioPages::Jobs)
-							{
-								return FText::GetEmpty();
-							}
-							// Unresolved jobs need a look first; otherwise the running ones.
-							const int32 Unresolved = CountJobs(false);
-							if (Unresolved > 0)
-							{
-								return FText::Format(LOCTEXT("JobsUnresolved", "{0} to check"), FText::AsNumber(Unresolved));
-							}
-							const int32 Active = CountJobs(true);
-							return Active > 0 ? FText::Format(LOCTEXT("JobsRunning", "{0} running"), FText::AsNumber(Active)) : FText::GetEmpty();
-						})
-						.ColorAndOpacity_Lambda([Id]() { return Id == ScenarioPages::Jobs && CountJobs(false) > 0 ? FScenarioStyle::Warning() : FScenarioStyle::Accent(); })
-					]
-				]
-			]
-		];
+		return Menu.MakeWidget();
 	}
-	return SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-		.Padding(6.0f)
-		[
-			Box
-		];
+	if (Session->GetAuthMode() != EScenarioAuthMode::OAuth)
+	{
+		Menu.AddMenuEntry(LOCTEXT("KeyScope", "An API key belongs to one project"), LOCTEXT("KeyScopeTip", "Sign in with Scenario to switch projects."), FSlateIcon(),
+			FUIAction(FExecuteAction(), FCanExecuteAction::CreateLambda([]() { return false; })));
+		return Menu.MakeWidget();
+	}
+	for (const FScenarioTeam& Team : Session->GetTeams())
+	{
+		Menu.BeginSection(NAME_None, FText::FromString(Team.Name));
+		for (const FScenarioProject& Project : Team.Projects)
+		{
+			FScenarioWorkspace Workspace;
+			Workspace.TeamId = Team.Id;
+			Workspace.TeamName = Team.Name;
+			Workspace.ProjectId = Project.Id;
+			Workspace.ProjectName = Project.Name;
+			Menu.AddMenuEntry(FText::FromString(Project.Name), FText::Format(LOCTEXT("UseProjectTip", "Generate in {0} / {1}. Running jobs continue and stay in Jobs."), FText::FromString(Team.Name), FText::FromString(Project.Name)), FSlateIcon(),
+				FUIAction(
+					FExecuteAction::CreateLambda([Workspace]()
+					{
+						if (FScenarioSession* S = ScenarioUI::Session())
+						{
+							S->SetWorkspace(Workspace);
+						}
+					}),
+					FCanExecuteAction(),
+					FIsActionChecked::CreateLambda([Workspace]()
+					{
+						FScenarioSession* S = ScenarioUI::Session();
+						return S && S->GetWorkspace().ProjectId == Workspace.ProjectId;
+					})),
+				NAME_None, EUserInterfaceActionType::RadioButton);
+		}
+		Menu.EndSection();
+	}
+	return Menu.MakeWidget();
 }
 
 TSharedRef<SWidget> SScenarioStudio::PageWidget(FName InPage)
@@ -268,21 +268,13 @@ TSharedRef<SWidget> SScenarioStudio::PageWidget(FName InPage)
 		return Found->ToSharedRef();
 	}
 	TSharedPtr<SWidget> Widget;
-	if (InPage == ScenarioPages::Workflows)
-	{
-		Widget = SNew(SScenarioWorkflowsPage);
-	}
-	else if (InPage == ScenarioPages::Library)
+	if (InPage == ScenarioPages::Library)
 	{
 		Widget = SNew(SScenarioLibraryPage);
 	}
 	else if (InPage == ScenarioPages::Jobs)
 	{
 		Widget = SNew(SScenarioJobsPage);
-	}
-	else if (InPage == ScenarioPages::Results)
-	{
-		Widget = SNew(SScenarioResultsPage);
 	}
 	else if (InPage == ScenarioPages::Connection)
 	{
@@ -298,7 +290,19 @@ TSharedRef<SWidget> SScenarioStudio::PageWidget(FName InPage)
 
 void SScenarioStudio::SetPage(FName InPage)
 {
-	Page = InPage.IsNone() ? ScenarioPages::Create : InPage;
+	// Older page names still open the right place: menus, toasts and agents use them.
+	FName Target = InPage.IsNone() ? ScenarioPages::Create : InPage;
+	if (Target == ScenarioPages::Workflows)
+	{
+		FScenarioCreateModel::Get()->EnterWorkflowLane();
+		Target = ScenarioPages::Create;
+	}
+	if (Target == ScenarioPages::Results)
+	{
+		Target = ScenarioPages::Jobs;
+		StaticCastSharedRef<SScenarioJobsPage>(PageWidget(ScenarioPages::Jobs))->SetFilter(TEXT("ready"));
+	}
+	Page = Target;
 	if (PageBox.IsValid())
 	{
 		PageBox->SetContent(PageWidget(Page));

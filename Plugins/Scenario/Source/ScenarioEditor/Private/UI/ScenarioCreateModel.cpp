@@ -13,7 +13,10 @@
 #include "ScenarioFiles.h"
 #include "ScenarioJson.h"
 #include "ScenarioSettings.h"
+#include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
+#include "ScenarioWidgets.h"
+#include "SScenarioJobCard.h"
 
 #define LOCTEXT_NAMESPACE "ScenarioCreate"
 
@@ -65,6 +68,55 @@ namespace
 		}
 		return TEXT("image");
 	}
+
+	/**
+	 * A lane always opens on a model: the last one used if the project still
+	 * allows it, else the lane's default, else its first allowed pick.
+	 */
+	FString ResolveModel(const FScenarioLane& Lane, const FString& Mode, const FString& Saved)
+	{
+		const UScenarioProjectSettings& Project = UScenarioProjectSettings::Get();
+		auto Allowed = [&Project](const FString& Id) { return !Id.IsEmpty() && Project.IsModelAllowed(Id); };
+		const bool bSavedFits = Lane.ModelsFor(Mode).ContainsByPredicate([&Saved](const FScenarioLaneModel& Model) { return Model.Id == Saved; })
+			|| !Lane.Models.ContainsByPredicate([&Saved](const FScenarioLaneModel& Model) { return Model.Id == Saved; });
+		if (Allowed(Saved) && bSavedFits)
+		{
+			return Saved;
+		}
+		const FString Default = FScenarioLanes::Get().DefaultModel(Lane.Id, Mode);
+		if (Allowed(Default))
+		{
+			return Default;
+		}
+		for (const FScenarioLaneModel& Model : Lane.ModelsFor(Mode))
+		{
+			if (Allowed(Model.Id))
+			{
+				return Model.Id;
+			}
+		}
+		for (const FScenarioLaneModel& Model : Lane.Models)
+		{
+			if (Allowed(Model.Id))
+			{
+				return Model.Id;
+			}
+		}
+		return FString();
+	}
+
+	/** The mode a lane model belongs to, or the current one. */
+	FString ModeOf(const FScenarioLane& Lane, const FString& ModelId, const FString& Current)
+	{
+		for (const FScenarioLaneModel& Model : Lane.Models)
+		{
+			if (Model.Id == ModelId && !Model.Mode.IsEmpty())
+			{
+				return Model.Mode;
+			}
+		}
+		return Current;
+	}
 }
 
 TSharedRef<FScenarioCreateModel> FScenarioCreateModel::Get()
@@ -74,15 +126,6 @@ TSharedRef<FScenarioCreateModel> FScenarioCreateModel::Get()
 		Instance = MakeShared<FScenarioCreateModel>();
 	}
 	return Instance.ToSharedRef();
-}
-
-TSharedRef<FScenarioCreateModel> FScenarioCreateModel::MakeForWorkflows()
-{
-	TSharedRef<FScenarioCreateModel> Model = MakeShared<FScenarioCreateModel>();
-	Model->bWorkflow = true;
-	Model->LaneId.Reset();
-	Model->Subscribe();
-	return Model;
 }
 
 void FScenarioCreateModel::Subscribe()
@@ -106,17 +149,11 @@ void FScenarioCreateModel::Initialize()
 	const FString Saved = UScenarioEditorSettings::Get().LastModelFor(LaneId);
 	const FScenarioLane* Lane = GetLane();
 	Mode = Lane && Lane->Modes.Num() > 0 ? Lane->Modes[0] : FString();
-	ModelId = !Saved.IsEmpty() ? Saved : FScenarioLanes::Get().DefaultModel(LaneId, Mode);
-	if (const FScenarioLane* Owner = FScenarioLanes::Get().LaneForModel(ModelId))
+	if (Lane)
 	{
-		for (const FScenarioLaneModel& Model : Owner->Models)
-		{
-			if (Model.Id == ModelId && !Model.Mode.IsEmpty())
-			{
-				Mode = Model.Mode;
-				break;
-			}
-		}
+		Mode = ModeOf(*Lane, Saved, Mode);
+		ModelId = ResolveModel(*Lane, Mode, Saved);
+		Mode = ModeOf(*Lane, ModelId, Mode);
 	}
 	LoadSchema();
 }
@@ -146,30 +183,18 @@ const FScenarioLane* FScenarioCreateModel::GetLane() const
 
 void FScenarioCreateModel::SetLane(const FString& InLane)
 {
-	if (InLane == LaneId || !FScenarioLanes::Get().Find(InLane))
+	if ((InLane == LaneId && !bWorkflow && !ModelId.IsEmpty()) || !FScenarioLanes::Get().Find(InLane))
 	{
 		return;
 	}
+	bWorkflow = false;
+	WorkflowDescription.Reset();
 	LaneId = InLane;
 	const FScenarioLane* Lane = GetLane();
-	Mode = Lane->Modes.Num() > 0 ? Lane->Modes[0] : FString();
-	FString Next = UScenarioEditorSettings::Get().LastModelFor(LaneId);
-	if (Next.IsEmpty())
-	{
-		Next = FScenarioLanes::Get().DefaultModel(LaneId, Mode);
-	}
-	else
-	{
-		for (const FScenarioLaneModel& Model : Lane->Models)
-		{
-			if (Model.Id == Next && !Model.Mode.IsEmpty())
-			{
-				Mode = Model.Mode;
-				break;
-			}
-		}
-	}
-	ModelId = Next;
+	const FString Saved = UScenarioEditorSettings::Get().LastModelFor(LaneId);
+	Mode = ModeOf(*Lane, Saved, Lane->Modes.Num() > 0 ? Lane->Modes[0] : FString());
+	ModelId = ResolveModel(*Lane, Mode, Saved);
+	Mode = ModeOf(*Lane, ModelId, Mode);
 	ModelNameOverride.Reset();
 	LoadSchema();
 }
@@ -188,7 +213,7 @@ void FScenarioCreateModel::SetMode(const FString& InMode)
 		Changed(true);
 		return;
 	}
-	ModelId = FScenarioLanes::Get().DefaultModel(LaneId, Mode);
+	ModelId = Lane ? ResolveModel(*Lane, Mode, FString()) : FString();
 	ModelNameOverride.Reset();
 	LoadSchema();
 }
@@ -198,6 +223,10 @@ FString FScenarioCreateModel::GetModelName() const
 	if (!ModelNameOverride.IsEmpty())
 	{
 		return ModelNameOverride;
+	}
+	if (bWorkflow)
+	{
+		return ModelId.IsEmpty() ? FString() : FString(TEXT("Workflow"));
 	}
 	if (const FScenarioLane* Lane = FScenarioLanes::Get().LaneForModel(ModelId))
 	{
@@ -264,6 +293,8 @@ void FScenarioCreateModel::SetModel(const FString& InModelId, const FString& InN
 		return;
 	}
 	ModelNameOverride = InName;
+	bWorkflow = false;
+	WorkflowDescription.Reset();
 	const FScenarioLane* Current = GetLane();
 	const bool bInLane = Current && Current->Models.ContainsByPredicate([&InModelId](const FScenarioLaneModel& Model) { return Model.Id == InModelId; });
 	if (!bInLane)
@@ -307,8 +338,96 @@ void FScenarioCreateModel::SetWorkflow(const FString& WorkflowId, const FString&
 	ModelId = WorkflowId;
 	ModelNameOverride = Name;
 	WorkflowDescription = Description;
-	References.Reset();
+	if (!WorkflowId.IsEmpty())
+	{
+		UScenarioEditorSettings::GetMutable().SetLastModel(TEXT("workflow"), WorkflowId);
+	}
+	LoadWorkflows();
 	LoadSchema();
+}
+
+void FScenarioCreateModel::EnterWorkflowLane()
+{
+	if (bWorkflow)
+	{
+		return;
+	}
+	const FString Saved = UScenarioEditorSettings::Get().LastModelFor(TEXT("workflow"));
+	const FScenarioWorkflowItem* Known = Workflows.FindByPredicate([&Saved](const FScenarioWorkflowItem& Item) { return Item.Id == Saved; });
+	SetWorkflow(Saved, Known ? Known->Name : FString(), Known ? Known->Description : FString());
+}
+
+void FScenarioCreateModel::LoadWorkflows(bool bForce)
+{
+	FScenarioSession* Session = SessionOrNull();
+	if (!Session || !Session->IsReady())
+	{
+		return;
+	}
+	const FString Key = Session->GetWorkspace().ProjectId;
+	if (bLoadingWorkflows || (!bForce && WorkflowsFor == Key))
+	{
+		return;
+	}
+	WorkflowsFor = Key;
+	bLoadingWorkflows = true;
+	WorkflowsError.Reset();
+	OnChanged.Broadcast();
+
+	auto Parse = [](const FScenarioReply& Reply, bool bTeam, TArray<FScenarioWorkflowItem>& Out)
+	{
+		for (const TSharedPtr<FJsonValue>& Value : ScenarioJson::GetArray(Reply.Value, TEXT("workflows")))
+		{
+			const TSharedPtr<FJsonObject> Row = Value->Type == EJson::Object ? Value->AsObject() : nullptr;
+			const FString Id = ScenarioJson::GetString(Row, TEXT("id"));
+			if (Id.IsEmpty() || Out.ContainsByPredicate([&Id](const FScenarioWorkflowItem& Item) { return Item.Id == Id; }))
+			{
+				continue;
+			}
+			FScenarioWorkflowItem Item;
+			Item.Id = Id;
+			Item.Name = ScenarioJson::GetString(Row, TEXT("name"), Id);
+			Item.Description = ScenarioJson::GetString(Row, TEXT("description"), ScenarioJson::GetString(Row, TEXT("shortDescription")));
+			Item.bTeam = bTeam;
+			Out.Add(Item);
+		}
+	};
+	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
+	Session->Api().ListWorkflows(TEXT("private"), TEXT("ready"), 50, FString(), {}, [WeakThis, Parse](const FScenarioReply& Team)
+	{
+		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		FScenarioSession* S = SessionOrNull();
+		if (!This.IsValid() || !S)
+		{
+			return;
+		}
+		TArray<FScenarioWorkflowItem> Found;
+		Parse(Team, true, Found);
+		const FString TeamError = Team.bOk ? FString() : Team.Error.Message;
+		S->Api().ListWorkflows(TEXT("public"), TEXT("ready"), 30, FString(), { TEXT("featured") }, [WeakThis, Parse, TeamError, Found](const FScenarioReply& Featured) mutable
+		{
+			const TSharedPtr<FScenarioCreateModel> Later = WeakThis.Pin();
+			if (!Later.IsValid())
+			{
+				return;
+			}
+			Parse(Featured, false, Found);
+			Later->Workflows = MoveTemp(Found);
+			Later->bLoadingWorkflows = false;
+			Later->WorkflowsError = !TeamError.IsEmpty() ? TeamError : (Featured.bOk ? FString() : Featured.Error.Message);
+			// The lane opened on a saved workflow before its name was known.
+			if (Later->bWorkflow && Later->ModelNameOverride.IsEmpty())
+			{
+				const FString Id = Later->ModelId;
+				if (const FScenarioWorkflowItem* Known = Later->Workflows.FindByPredicate([&Id](const FScenarioWorkflowItem& Item) { return Item.Id == Id; }))
+				{
+					Later->ModelNameOverride = Known->Name;
+					Later->WorkflowDescription = Known->Description;
+				}
+			}
+			Later->OnChanged.Broadcast();
+		});
+	});
 }
 
 TArray<FScenarioLaneModel> FScenarioCreateModel::QuickPicks() const
@@ -1081,73 +1200,203 @@ EScenarioGenerateState FScenarioCreateModel::GetState() const
 
 FText FScenarioCreateModel::GetButtonText() const
 {
-	switch (GetState())
+	const EScenarioGenerateState State = GetState();
+	if (State == EScenarioGenerateState::Submitting)
 	{
-	case EScenarioGenerateState::SignedOut: return LOCTEXT("SignedOut", "Sign in to generate");
-	case EScenarioGenerateState::NeedsWorkspace: return LOCTEXT("NeedsWorkspace", "Choose a project");
-	case EScenarioGenerateState::NoModel: return LOCTEXT("NoModel", "Choose a model");
-	case EScenarioGenerateState::LoadingModel: return LOCTEXT("LoadingModel", "Loading model...");
-	case EScenarioGenerateState::ModelError: return LOCTEXT("ModelError", "Model unavailable");
-	case EScenarioGenerateState::Uploading: return LOCTEXT("Uploading", "Uploading reference...");
-	case EScenarioGenerateState::Pricing: return LOCTEXT("Pricing", "Checking price...");
-	case EScenarioGenerateState::PriceFailed: return LOCTEXT("PriceFailed", "Price unavailable (Retry)");
-	case EScenarioGenerateState::SpendingOff: return LOCTEXT("SpendingOff", "Spending off");
-	case EScenarioGenerateState::Blocked: return LOCTEXT("Blocked", "Waiting for Scenario...");
-	case EScenarioGenerateState::Submitting: return LOCTEXT("Submitting", "Waiting for Scenario...");
+		return LOCTEXT("Sending", "Sending...");
+	}
+	if (State == EScenarioGenerateState::PriceFailed)
+	{
+		return LOCTEXT("RetryPrice", "Retry price");
+	}
+	double CU = -1.0;
+	bool bApprox = false;
+	if (State == EScenarioGenerateState::Priced)
+	{
+		const FScenarioQuote* Quote = CurrentQuote();
+		CU = Quote ? Quote->CU : ExpectedCU;
+	}
+	else if ((State == EScenarioGenerateState::Pricing || State == EScenarioGenerateState::NeedsInput || State == EScenarioGenerateState::SpendingOff) && EstimateModel == ModelId)
+	{
+		// The last known price of this model: exact once checked for this request, "~" until then.
+		CU = EstimateCU;
+		bApprox = State != EScenarioGenerateState::Pricing;
+	}
+	// While the last request runs or was just made, a click sends a second, paid request.
+	const bool bAgain = !LastLocalId.IsEmpty() && SentLane == GetLaneKey() && (IsSentJobRunning() || GetHint().Tone == EScenarioHintTone::Success);
+	const FText Verb = bAgain ? LOCTEXT("GenerateAgain", "Generate again") : LOCTEXT("GenerateVerb", "Generate");
+	if (CU < 0.0)
+	{
+		return Verb;
+	}
+	return FText::Format(LOCTEXT("GeneratePrice", "{0} · {1}{2}"), Verb, FText::FromString(bApprox ? TEXT("~") : TEXT("")), FText::FromString(ScenarioCU::Format(CU)));
+}
+
+bool FScenarioCreateModel::IsPriceStale() const
+{
+	return GetState() == EScenarioGenerateState::Pricing;
+}
+
+FScenarioHint FScenarioCreateModel::GetHint() const
+{
+	FScenarioHint Hint;
+	auto Set = [&Hint](EScenarioHintTone Tone, const FText& Text, EScenarioHintAction Primary = EScenarioHintAction::None, EScenarioHintAction Secondary = EScenarioHintAction::None)
+	{
+		Hint.Tone = Tone;
+		Hint.Text = Text;
+		Hint.Primary = Primary;
+		Hint.Secondary = Secondary;
+	};
+	const EScenarioGenerateState State = GetState();
+	const FText Name = FText::FromString(GetModelName());
+	switch (State)
+	{
+	case EScenarioGenerateState::SignedOut:
+		Set(EScenarioHintTone::Info, LOCTEXT("HintSignIn", "Sign in to Scenario to generate."));
+		return Hint;
+	case EScenarioGenerateState::NeedsWorkspace:
+		Set(EScenarioHintTone::Info, LOCTEXT("HintProject", "Choose a Scenario project first."));
+		return Hint;
+	case EScenarioGenerateState::NoModel:
+		Set(EScenarioHintTone::Info, bWorkflow ? LOCTEXT("HintNoWorkflow", "Pick a workflow first.") : LOCTEXT("HintNoModel", "Pick a model first."), EScenarioHintAction::ChangeModel);
+		return Hint;
+	case EScenarioGenerateState::LoadingModel:
+		Set(EScenarioHintTone::Busy, FText::Format(LOCTEXT("HintLoading", "Loading {0} settings..."), Name));
+		return Hint;
+	case EScenarioGenerateState::ModelError:
+		Set(EScenarioHintTone::Error, FText::FromString(SchemaError), EScenarioHintAction::ChangeModel);
+		return Hint;
+	case EScenarioGenerateState::SpendingOff:
+		Set(EScenarioHintTone::Info, LOCTEXT("HintNoSpend", "SCENARIO_NO_SPEND is set: prices only, nothing is sent."));
+		return Hint;
+	case EScenarioGenerateState::Blocked:
+		Set(EScenarioHintTone::Warning, LOCTEXT("HintBlocked", "An identical request may still be running."), EScenarioHintAction::OpenJobs);
+		return Hint;
+	case EScenarioGenerateState::PriceFailed:
+		Set(EScenarioHintTone::Error, FText::Format(LOCTEXT("HintPriceFailed", "Price unavailable: {0}"), FText::FromString(PriceError.Message)));
+		return Hint;
+	case EScenarioGenerateState::Uploading:
+	{
+		float Progress = 0.0f;
+		for (const FScenarioReference& Reference : References)
+		{
+			Progress = Reference.bUploading ? FMath::Max(Progress, Reference.Progress) : Progress;
+		}
+		Set(EScenarioHintTone::Busy, FText::Format(LOCTEXT("HintUploading", "Uploading reference... {0}%"), FText::AsNumber(FMath::RoundToInt(Progress * 100.0f))));
+		return Hint;
+	}
+	default:
+		break;
+	}
+	if (!LastError.IsEmpty())
+	{
+		Set(EScenarioHintTone::Error, FText::FromString(LastError));
+		return Hint;
+	}
+
+	// The request this form sent last, on the lane it was sent from.
+	FScenarioSession* Session = SessionOrNull();
+	const FScenarioJobRow* Row = Session && !LastLocalId.IsEmpty() && SentLane == GetLaneKey() ? Session->Ledger().Find(LastLocalId) : nullptr;
+	if (Row && Row->Kind != TEXT("prompt_spark") && Row->State != EScenarioJobState::Dismissed)
+	{
+		Hint.LocalId = Row->LocalId;
+		const FText Model = FText::FromString(ScenarioJobActions::ModelLabel(*Row));
+		const FText Cost = ScenarioJobActions::CostText(*Row);
+		switch (ScenarioJobActions::View(*Row))
+		{
+		case ScenarioJobActions::EView::Sending:
+			Set(EScenarioHintTone::Busy, LOCTEXT("HintSending", "Sending to Scenario..."));
+			return Hint;
+		case ScenarioJobActions::EView::Queued:
+			Set(EScenarioHintTone::Busy, FText::Format(LOCTEXT("HintQueued", "Queued at Scenario for {0} · {1}. It lands in Recent."), Model, Cost));
+			return Hint;
+		case ScenarioJobActions::EView::Running:
+			Set(EScenarioHintTone::Busy, Row->Progress > 0.0
+				? FText::Format(LOCTEXT("HintRunningPct", "Generating with {0}: {1}% · {2}. It lands in Recent."), Model, FText::AsNumber(FMath::RoundToInt(Row->Progress * 100.0)), Cost)
+				: FText::Format(LOCTEXT("HintRunning", "Generating with {0} · {1}. It lands in Recent."), Model, Cost));
+			return Hint;
+		case ScenarioJobActions::EView::Downloading:
+		case ScenarioJobActions::EView::Importing:
+			Set(EScenarioHintTone::Busy, FText::Format(LOCTEXT("HintFinishing", "{0}: {1}..."), Model, ScenarioJobActions::ChipText(*Row)));
+			return Hint;
+		case ScenarioJobActions::EView::Ready:
+			Set(EScenarioHintTone::Success, FText::Format(LOCTEXT("HintReady", "Ready: {0}."), Model), EScenarioHintAction::ImportAndPlace, EScenarioHintAction::ImportOnly);
+			return Hint;
+		case ScenarioJobActions::EView::Imported:
+		{
+			UScenarioSubsystem* Subsystem = UScenarioSubsystem::Get();
+			const FString Folder = Subsystem ? ScenarioUI::ShortPath(Subsystem->DestinationFor(*Row)) : FString();
+			Set(EScenarioHintTone::Success, FText::Format(LOCTEXT("HintImported", "Imported into {0}."), FText::FromString(Folder)), EScenarioHintAction::Show);
+			return Hint;
+		}
+		case ScenarioJobActions::EView::DownloadStopped:
+			Set(EScenarioHintTone::Warning, ScenarioJobActions::StateText(*Row), EScenarioHintAction::OpenJobs);
+			return Hint;
+		case ScenarioJobActions::EView::Failed:
+		case ScenarioJobActions::EView::Blocked:
+			Set(EScenarioHintTone::Error, FText::Format(LOCTEXT("HintFailed", "{0}: {1}"), Model, ScenarioJobActions::StateText(*Row)), EScenarioHintAction::Details);
+			return Hint;
+		case ScenarioJobActions::EView::Unknown:
+			Set(EScenarioHintTone::Warning, LOCTEXT("HintUnknown", "We do not know if Scenario received this request."), EScenarioHintAction::CheckNow);
+			return Hint;
+		default:
+			break;
+		}
+	}
+
+	switch (State)
+	{
+	case EScenarioGenerateState::Submitting:
+		Set(EScenarioHintTone::Busy, LOCTEXT("HintSubmitting", "Sending to Scenario..."));
+		break;
 	case EScenarioGenerateState::NeedsInput:
 	{
 		const FScenarioField* Field = FirstProblemField();
-		if (!Field)
+		if (!Field || Field->Type == EScenarioFieldType::Prompt)
 		{
-			return LOCTEXT("FixReference", "Fix the reference");
+			Set(EScenarioHintTone::None, Field ? LOCTEXT("HintPrompt", "Write a prompt to generate.") : FText::FromString(FString::Join(Problems(), TEXT(" "))));
 		}
-		if (Field->Type == EScenarioFieldType::Prompt)
+		else
 		{
-			return LOCTEXT("NeedsPrompt", "Needs a prompt");
+			Set(EScenarioHintTone::None, FText::Format(LOCTEXT("HintField", "Add {0} first."), FText::FromString(Field->Label.ToLower())));
 		}
-		return FText::Format(LOCTEXT("NeedsField", "Needs {0}"), FText::FromString(Field->Label.ToLower()));
+		break;
 	}
-	case EScenarioGenerateState::Priced:
-	{
-		const FScenarioQuote* Quote = CurrentQuote();
-		const double CU = Quote ? Quote->CU : ExpectedCU;
-		// While the last request runs, the button says that a click sends a second, paid request.
-		return IsSentJobRunning()
-			? FText::Format(LOCTEXT("GenerateAnother", "Generate another · {0}"), FText::FromString(ScenarioCU::Format(CU)))
-			: FText::Format(LOCTEXT("Generate", "Generate · {0}"), FText::FromString(ScenarioCU::Format(CU)));
+	case EScenarioGenerateState::Pricing:
+		Set(EScenarioHintTone::Busy, LOCTEXT("HintPricing", "Checking price (free)..."));
+		break;
+	default:
+		break;
 	}
-	}
-	return FText::GetEmpty();
+	return Hint;
 }
 
 FText FScenarioCreateModel::GetButtonTooltip() const
 {
+	const TSharedPtr<FUICommandInfo> Command = FScenarioCommands::IsRegistered() ? FScenarioCommands::Get().Generate : nullptr;
+	const FText Chord = Command.IsValid() ? Command->GetInputText() : FText::GetEmpty();
 	switch (GetState())
 	{
-	case EScenarioGenerateState::SignedOut:
-		return LOCTEXT("SignedOutTip", "Sign in on the Connection page (Scenario account or API key).");
-	case EScenarioGenerateState::NeedsWorkspace:
-		return LOCTEXT("NeedsWorkspaceTip", "Your account has several projects. Choose the one to generate in on the Connection page.");
-	case EScenarioGenerateState::ModelError:
-		return FText::FromString(SchemaError);
-	case EScenarioGenerateState::NeedsInput:
-		return FText::FromString(FString::Join(Problems(), TEXT("\n")));
-	case EScenarioGenerateState::PriceFailed:
-		return FText::FromString(PriceError.Message + TEXT("\nClick to check the price again."));
-	case EScenarioGenerateState::SpendingOff:
-		return LOCTEXT("SpendingOffTip", "SCENARIO_NO_SPEND=1 is set for this editor: prices are checked, nothing is sent.");
-	case EScenarioGenerateState::Blocked:
-		return LOCTEXT("BlockedTip", "An identical request may already be running on Scenario. Open Jobs to check it or mark it as not sent.");
 	case EScenarioGenerateState::Priced:
 	{
 		const FScenarioQuote* Quote = CurrentQuote();
 		const FText Price = FText::FromString(ScenarioCU::Format(Quote ? Quote->CU : ExpectedCU));
-		return Quote
-			? FText::Format(LOCTEXT("PricedTip", "Sends this exact request to {0}. Scenario charges {1} for it (Ctrl+Enter)."), FText::FromString(GetModelName()), Price)
+		const FText Text = Quote
+			? FText::Format(LOCTEXT("PricedTip", "Sends this exact request to {0}. Scenario charges {1} for it."), FText::FromString(GetModelName()), Price)
 			: FText::Format(LOCTEXT("PricedStaleTip", "The price was {0} a moment ago. Clicking checks it again and sends only if it is unchanged."), Price);
+		return Chord.IsEmpty() ? Text : FText::Format(LOCTEXT("WithChord", "{0} ({1})"), Text, Chord);
 	}
+	case EScenarioGenerateState::PriceFailed:
+		return LOCTEXT("RetryTip", "Checks the price again. Free.");
+	case EScenarioGenerateState::NeedsInput:
+		return FText::FromString(FString::Join(Problems(), TEXT("\n")));
+	case EScenarioGenerateState::Blocked:
+		return LOCTEXT("BlockedTip", "An identical request may already be running on Scenario. Open Jobs to check it or mark it as not sent.");
 	default:
-		return GetButtonText();
+	{
+		const FText Line = GetHint().Text;
+		return Line.IsEmpty() ? LOCTEXT("GenerateTip", "Sends the request to Scenario once its price is checked.") : Line;
+	}
 	}
 }
 
@@ -1260,6 +1509,7 @@ void FScenarioCreateModel::Submit()
 		}
 		This->bSubmitting = false;
 		This->LastLocalId = Result.Value;
+		This->SentLane = This->GetLaneKey();
 		This->LastError = Result.bOk ? FString() : Result.Error.Message;
 		if (Result.bOk)
 		{
@@ -1306,6 +1556,48 @@ bool FScenarioCreateModel::OnDebounce(float DeltaSeconds)
 	return false;
 }
 
+void FScenarioCreateModel::Estimate()
+{
+	// Only an empty prompt stands between the form and a price: price the lane's example prompt instead.
+	FScenarioSession* Session = SessionOrNull();
+	const FScenarioLane* Lane = GetLane();
+	const FScenarioField* Missing = FirstProblemField();
+	if (!Session || bEstimating || EstimateModel == ModelId || Problems().Num() != 1 || !Missing || Missing->Type != EScenarioFieldType::Prompt)
+	{
+		return;
+	}
+	const FString Example = !bWorkflow && Lane && Lane->StarterPrompts.Num() > 0 ? Lane->StarterPrompts[0] : FString(TEXT("a small stone lantern"));
+	FScenarioRunRequest Request = BuildRequest();
+	if (!Request.Parameters.IsValid())
+	{
+		return;
+	}
+	Request.Parameters->SetStringField(Missing->Name, Example);
+	bEstimating = true;
+	const FString For = ModelId;
+	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
+	Session->Price(Request, true, [WeakThis, For](const TScenarioResult<FScenarioQuote>& Result)
+	{
+		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		if (!This.IsValid())
+		{
+			return;
+		}
+		This->bEstimating = false;
+		if (Result.bOk && For == This->ModelId && This->EstimateModel != For)
+		{
+			This->EstimateCU = Result.Value.CU;
+			This->EstimateModel = For;
+		}
+		This->OnChanged.Broadcast();
+		// The model changed while this one was priced.
+		if (For != This->ModelId)
+		{
+			This->Estimate();
+		}
+	});
+}
+
 void FScenarioCreateModel::PriceNow(bool bAutomatic)
 {
 	FScenarioSession* Session = SessionOrNull();
@@ -1313,8 +1605,13 @@ void FScenarioCreateModel::PriceNow(bool bAutomatic)
 	{
 		return;
 	}
-	if (References.ContainsByPredicate([](const FScenarioReference& Reference) { return Reference.bUploading; }) || Problems().Num() > 0)
+	if (References.ContainsByPredicate([](const FScenarioReference& Reference) { return Reference.bUploading; }))
 	{
+		return;
+	}
+	if (Problems().Num() > 0)
+	{
+		Estimate();
 		return;
 	}
 	const FScenarioRunRequest Request = BuildRequest();
@@ -1351,6 +1648,8 @@ void FScenarioCreateModel::PriceNow(bool bAutomatic)
 		This->PricedFingerprint = Fp;
 		This->ExpectedExact = Result.Value.Exact;
 		This->ExpectedCU = Result.Value.CU;
+		This->EstimateCU = Result.Value.CU;
+		This->EstimateModel = This->ModelId;
 		if (bSendNow)
 		{
 			if (bSamePrice)

@@ -9,7 +9,11 @@
 class SBox;
 class SScenarioCreatePage;
 
-/** The Studio tab: header, left rail and the pages. Signed out, every page shows the sign-in. */
+/**
+ * The Studio tab: a top bar (Create, Library, Jobs, the project, agents and
+ * the Account gear) over the current page. Signed out, or before a project
+ * is chosen, the tab shows the sign-in or the project picker alone.
+ */
 class SScenarioStudio : public SCompoundWidget
 {
 public:
@@ -21,6 +25,7 @@ public:
 	virtual FReply OnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 
+	/** Opens a page. Workflows opens Create on the Workflow lane, Results opens Jobs on Ready. */
 	void SetPage(FName InPage);
 	FName GetPage() const { return Page; }
 	/** The Create page, created on first use. */
@@ -30,8 +35,8 @@ public:
 	static TSharedPtr<SScenarioStudio> Current();
 
 private:
-	TSharedRef<SWidget> BuildHeader();
-	TSharedRef<SWidget> BuildRail();
+	TSharedRef<SWidget> BuildTopBar();
+	TSharedRef<SWidget> BuildProjectMenu();
 	TSharedRef<SWidget> PageWidget(FName InPage);
 	int32 GateIndex() const;
 

@@ -4,8 +4,13 @@
 
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
+#include "ScenarioCreateModel.h"
 #include "ScenarioSettings.h"
 #include "ScenarioStyle.h"
+#include "ScenarioWidgets.h"
+#include "SPrimaryButton.h"
+#include "Styling/StyleColors.h"
+#include "Widgets/Input/SSegmentedControl.h"
 #include "ScenarioSubsystem.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
@@ -519,6 +524,323 @@ void SScenarioModelPicker::Choose(const FItem& Item)
 }
 
 FReply SScenarioModelPicker::OnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
+{
+	const FKey Key = KeyEvent.GetKey();
+	if (Key == EKeys::Escape)
+	{
+		if (const TSharedPtr<SWindow> Pinned = Window.Pin())
+		{
+			Pinned->RequestDestroyWindow();
+		}
+		return FReply::Handled();
+	}
+	if ((Key == EKeys::Up || Key == EKeys::Down) && Items.Num() > 0)
+	{
+		int32 Index = Items.IndexOfByKey(Selected);
+		Index = FMath::Clamp(Index + (Key == EKeys::Down ? 1 : -1), 0, Items.Num() - 1);
+		Selected = Items[Index];
+		List->SetSelection(Selected, ESelectInfo::OnNavigation);
+		List->RequestScrollIntoView(Selected);
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Enter && Selected.IsValid())
+	{
+		Choose(Selected);
+		return FReply::Handled();
+	}
+	return FReply::Unhandled();
+}
+
+// Workflows
+
+void SScenarioModelPicker::OpenWorkflows(TFunction<void(const FScenarioWorkflowItem& Workflow)> OnPicked, const FString& CurrentId)
+{
+	TSharedPtr<SScenarioWorkflowPicker> Picker;
+	const TSharedRef<SWindow> Window = SNew(SWindow)
+		.Title(LOCTEXT("WorkflowsTitle", "Choose a workflow"))
+		.ClientSize(FVector2D(900.0f, 580.0f))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		[
+			SAssignNew(Picker, SScenarioWorkflowPicker)
+			.CurrentId(CurrentId)
+		];
+	Picker->OnPicked = MoveTemp(OnPicked);
+	Picker->Window = Window;
+	Window->SetWidgetToFocusOnActivate(Picker->SearchBox);
+	const TSharedPtr<SWindow> Root = FGlobalTabmanager::Get()->GetRootWindow();
+	if (Root.IsValid())
+	{
+		FSlateApplication::Get().AddWindowAsNativeChild(Window, Root.ToSharedRef());
+	}
+	else
+	{
+		FSlateApplication::Get().AddWindow(Window);
+	}
+}
+
+void SScenarioWorkflowPicker::Construct(const FArguments& InArgs)
+{
+	CurrentId = InArgs._CurrentId;
+	const TSharedRef<FScenarioCreateModel> Model = FScenarioCreateModel::Get();
+	ModelHandle = Model->OnChanged.AddSP(this, &SScenarioWorkflowPicker::Refresh);
+	Model->LoadWorkflows();
+	auto Count = [Model](bool bTeam) { int32 N = 0; for (const FScenarioWorkflowItem& Item : Model->GetWorkflows()) { N += Item.bTeam == bTeam ? 1 : 0; } return N; };
+
+	ChildSlot
+	[
+		SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(ScenarioUI::SectionGap)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SAssignNew(SearchBox, SSearchBox)
+					.HintText(LOCTEXT("SearchWorkflows", "Search workflows..."))
+					.OnTextChanged_Lambda([this](const FText& InText) { Text = InText.ToString(); Refresh(); })
+					.OnKeyDownHandler_Lambda([this](const FGeometry& Geometry, const FKeyEvent& KeyEvent) { return OnKeyDown(Geometry, KeyEvent); })
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(ScenarioUI::SectionGap, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SSegmentedControl<FString>)
+					.UniformPadding(FMargin(8.0f, 2.0f))
+					.Value_Lambda([this]() { return Source; })
+					.OnValueChanged_Lambda([this](const FString& Value) { Source = Value; Refresh(); })
+					+ SSegmentedControl<FString>::Slot(TEXT("all")).Text(LOCTEXT("AllWorkflows", "All"))
+					+ SSegmentedControl<FString>::Slot(TEXT("team")).Text_Lambda([Count]() { return FText::Format(LOCTEXT("TeamCount", "Team {0}"), FText::AsNumber(Count(true))); })
+						.ToolTip(LOCTEXT("TeamWorkflowsTip", "Workflows your team built in this project."))
+					+ SSegmentedControl<FString>::Slot(TEXT("featured")).Text_Lambda([Count]() { return FText::Format(LOCTEXT("FeaturedCount", "Featured {0}"), FText::AsNumber(Count(false))); })
+						.ToolTip(LOCTEXT("FeaturedWorkflowsTip", "Workflows Scenario features for every project."))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
+				[
+					ScenarioUI::IconButton(TEXT("Icons.Refresh"), LOCTEXT("RefreshWorkflows", "Reload the workflows from Scenario. Free."),
+						FSimpleDelegate::CreateLambda([]() { FScenarioCreateModel::Get()->LoadWorkflows(true); }))
+				]
+			]
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
+			[
+				SNew(SSplitter)
+				+ SSplitter::Slot()
+				.Value(0.5f)
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()
+					[
+						SAssignNew(List, SListView<FItem>)
+						.ListItemsSource(&Items)
+						.SelectionMode(ESelectionMode::Single)
+						.OnGenerateRow(this, &SScenarioWorkflowPicker::MakeRow)
+						.OnSelectionChanged_Lambda([this](FItem Item, ESelectInfo::Type) { if (Item.IsValid()) { Selected = Item; } })
+						.OnMouseButtonDoubleClick_Lambda([this](FItem Item) { Choose(Item); })
+					]
+					+ SOverlay::Slot()
+					.HAlign(HAlign_Center)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([Model, this]()
+						{
+							if (Model->IsLoadingWorkflows())
+							{
+								return LOCTEXT("WorkflowsLoading", "Loading workflows...");
+							}
+							if (!Model->GetWorkflowsError().IsEmpty())
+							{
+								return FText::FromString(Model->GetWorkflowsError());
+							}
+							return Text.IsEmpty() ? LOCTEXT("NoWorkflows", "No ready workflow here yet. Build one on scenario.com.")
+								: FText::Format(LOCTEXT("NoWorkflowMatch", "Nothing matches \"{0}\"."), FText::FromString(Text));
+						})
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.Visibility_Lambda([this]() { return Items.Num() == 0 ? EVisibility::Visible : EVisibility::Collapsed; })
+					]
+				]
+				+ SSplitter::Slot()
+				.Value(0.5f)
+				[
+					SNew(SBorder)
+					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+					.Padding(ScenarioUI::SectionGap)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot()
+						.FillHeight(1.0f)
+						[
+							SNew(SScrollBox)
+							+ SScrollBox::Slot()
+							[
+								SNew(SVerticalBox)
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								[
+									SNew(STextBlock)
+									.Text_Lambda([this]() { return Selected.IsValid() ? FText::FromString(Selected->Name) : LOCTEXT("PickWorkflow", "Pick a workflow on the left."); })
+									.Font(ScenarioUI::Font(ScenarioUI::EText::Title))
+									.AutoWrapText(true)
+								]
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.HAlign(HAlign_Left)
+								.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
+								[
+									SNew(SBox)
+									.Visibility_Lambda([this]() { return Selected.IsValid() ? EVisibility::Visible : EVisibility::Collapsed; })
+									[
+										ScenarioUI::Chip(MakeAttributeLambda([this]() { return Selected.IsValid() && Selected->bTeam ? LOCTEXT("TeamChip", "Team") : LOCTEXT("FeaturedChip", "Featured"); }), FStyleColors::AccentGray)
+									]
+								]
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
+								[
+									SNew(STextBlock)
+									.Text_Lambda([this]() { return Selected.IsValid() ? FText::FromString(Selected->Description) : FText::GetEmpty(); })
+									.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+									.AutoWrapText(true)
+								]
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, 0.0f)
+								[
+									SNew(STextBlock)
+									.Text(LOCTEXT("WorkflowPriceNote", "The exact price shows on Generate once the inputs are filled, checked for free."))
+									.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+									.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+									.AutoWrapText(true)
+									.Visibility_Lambda([this]() { return Selected.IsValid() ? EVisibility::Visible : EVisibility::Collapsed; })
+								]
+							]
+						]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.HAlign(HAlign_Right)
+						[
+							SNew(SPrimaryButton)
+							.Text(LOCTEXT("UseWorkflow", "Use this workflow"))
+							.IsEnabled_Lambda([this]() { return Selected.IsValid(); })
+							.OnClicked_Lambda([this]() { Choose(Selected); return FReply::Handled(); })
+						]
+					]
+				]
+			]
+		]
+	];
+	Refresh();
+}
+
+SScenarioWorkflowPicker::~SScenarioWorkflowPicker()
+{
+	FScenarioCreateModel::Get()->OnChanged.Remove(ModelHandle);
+}
+
+void SScenarioWorkflowPicker::Refresh()
+{
+	const FString SelectedId = Selected.IsValid() ? Selected->Id : CurrentId;
+	TArray<FItem> Next;
+	for (const FScenarioWorkflowItem& Item : FScenarioCreateModel::Get()->GetWorkflows())
+	{
+		if ((Source == TEXT("team") && !Item.bTeam) || (Source == TEXT("featured") && Item.bTeam))
+		{
+			continue;
+		}
+		if (!Text.IsEmpty() && !Item.Name.Contains(Text) && !Item.Description.Contains(Text))
+		{
+			continue;
+		}
+		Next.Add(MakeShared<FScenarioWorkflowItem>(Item));
+	}
+	const bool bSame = Next.Num() == Items.Num() && [&]()
+	{
+		for (int32 Index = 0; Index < Next.Num(); ++Index)
+		{
+			if (Next[Index]->Id != Items[Index]->Id)
+			{
+				return false;
+			}
+		}
+		return true;
+	}();
+	if (bSame)
+	{
+		return;
+	}
+	Items = MoveTemp(Next);
+	Selected.Reset();
+	for (const FItem& Item : Items)
+	{
+		if (Item->Id == SelectedId)
+		{
+			Selected = Item;
+		}
+	}
+	if (!Selected.IsValid() && Items.Num() > 0)
+	{
+		Selected = Items[0];
+	}
+	if (List.IsValid())
+	{
+		List->RequestListRefresh();
+		if (Selected.IsValid())
+		{
+			List->SetSelection(Selected, ESelectInfo::Direct);
+			List->RequestScrollIntoView(Selected);
+		}
+	}
+}
+
+TSharedRef<ITableRow> SScenarioWorkflowPicker::MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner)
+{
+	return SNew(STableRow<FItem>, Owner)
+		.Padding(FMargin(ScenarioUI::Gutter, 4.0f))
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				ScenarioUI::Line(FText::FromString(Item->Name))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				ScenarioUI::Line(FText::FromString(Item->Description), ScenarioUI::EText::Meta, true)
+			]
+		];
+}
+
+void SScenarioWorkflowPicker::Choose(const FItem& Item)
+{
+	if (!Item.IsValid())
+	{
+		return;
+	}
+	const FScenarioWorkflowItem Copy = *Item;
+	const TFunction<void(const FScenarioWorkflowItem&)> Callback = OnPicked;
+	if (const TSharedPtr<SWindow> Pinned = Window.Pin())
+	{
+		Pinned->RequestDestroyWindow();
+	}
+	if (Callback)
+	{
+		Callback(Copy);
+	}
+}
+
+FReply SScenarioWorkflowPicker::OnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
 	const FKey Key = KeyEvent.GetKey();
 	if (Key == EKeys::Escape)

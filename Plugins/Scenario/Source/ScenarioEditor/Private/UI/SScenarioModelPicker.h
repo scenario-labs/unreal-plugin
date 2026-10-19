@@ -10,6 +10,7 @@
 
 class SSearchBox;
 class SWindow;
+struct FScenarioWorkflowItem;
 
 /**
  * Choose a model: every Scenario model plus the team's trained ones, from the
@@ -31,6 +32,8 @@ public:
 
 	/** Opens the picker in its own window (non-modal). */
 	static void Open(const FString& Modality, const FString& Chip, FOnPicked OnPicked, const TArray<FString>& QuickPicks = {}, const FString& CurrentId = FString());
+	/** Opens the workflow picker: the team's workflows and Scenario's featured ones. */
+	static void OpenWorkflows(TFunction<void(const FScenarioWorkflowItem& Workflow)> OnPicked, const FString& CurrentId = FString());
 
 	void Construct(const FArguments& InArgs);
 	virtual ~SScenarioModelPicker() override;
@@ -65,4 +68,38 @@ private:
 	TSharedPtr<SListView<FItem>> List;
 	TSharedPtr<class SBox> ChipsBox;
 	FDelegateHandle CatalogHandle;
+};
+
+/** Choose a workflow: search, Team or Featured, and the description before running it. */
+class SScenarioWorkflowPicker : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SScenarioWorkflowPicker) {}
+		SLATE_ARGUMENT(FString, CurrentId)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs);
+	virtual ~SScenarioWorkflowPicker() override;
+	virtual FReply OnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
+	virtual bool SupportsKeyboardFocus() const override { return true; }
+
+	TFunction<void(const FScenarioWorkflowItem& Workflow)> OnPicked;
+	TWeakPtr<SWindow> Window;
+	TSharedPtr<SSearchBox> SearchBox;
+
+private:
+	using FItem = TSharedPtr<FScenarioWorkflowItem>;
+
+	void Refresh();
+	void Choose(const FItem& Item);
+	TSharedRef<ITableRow> MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner);
+
+	FString Text;
+	/** all, team or featured. */
+	FString Source = TEXT("all");
+	FString CurrentId;
+	TArray<FItem> Items;
+	FItem Selected;
+	TSharedPtr<SListView<FItem>> List;
+	FDelegateHandle ModelHandle;
 };

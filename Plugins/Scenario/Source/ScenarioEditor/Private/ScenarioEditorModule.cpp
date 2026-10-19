@@ -340,6 +340,19 @@ void FScenarioEditorModule::RegisterTabs()
 	{
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
+			// The running count stays visible when the tab sits behind another one.
+			.Label_Lambda([]()
+			{
+				int32 Running = 0;
+				if (FScenarioSession* S = ScenarioUI::Session())
+				{
+					for (const FScenarioJobRow& Row : S->Ledger().Rows())
+					{
+						Running += Row.IsActive() ? 1 : 0;
+					}
+				}
+				return Running > 0 ? FText::Format(LOCTEXT("StudioTabRunning", "Scenario · {0}"), FText::AsNumber(Running)) : LOCTEXT("StudioTabLabel", "Scenario");
+			})
 			[
 				SNew(SScenarioStudio)
 			];

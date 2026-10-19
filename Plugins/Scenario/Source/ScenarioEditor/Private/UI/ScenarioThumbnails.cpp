@@ -2,6 +2,7 @@
 
 #include "ScenarioThumbnails.h"
 
+#include "AssetThumbnail.h"
 #include "Async/Async.h"
 #include "Brushes/SlateDynamicImageBrush.h"
 #include "HttpModule.h"
@@ -29,8 +30,18 @@ void FScenarioThumbnails::Shutdown()
 {
 	bShutDown = true;
 	Brushes.Reset();
+	Pool.Reset();
 	Queue.Reset();
 	OnLoaded.Clear();
+}
+
+TSharedPtr<FAssetThumbnailPool> FScenarioThumbnails::AssetPool()
+{
+	if (!Pool.IsValid() && !bShutDown)
+	{
+		Pool = MakeShared<FAssetThumbnailPool>(64);
+	}
+	return Pool;
 }
 
 const FSlateBrush* FScenarioThumbnails::ForFile(const FString& Path)
