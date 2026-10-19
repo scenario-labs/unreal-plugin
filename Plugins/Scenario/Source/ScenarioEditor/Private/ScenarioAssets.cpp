@@ -6,7 +6,7 @@
 #include "AssetImportTask.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
-#include "Async/Async.h"
+#include "Containers/Ticker.h"
 #include "Editor.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
@@ -217,7 +217,9 @@ void ScenarioAssets::ImportFile(const FString& File, const FString& PackagePath,
 			{
 				Weak.Add(Object);
 			}
-			AsyncTask(ENamedThreads::GameThread, [OnDone, Weak, File]()
+			// The core ticker, not a game-thread task: tasks can run inside a render flush (a window
+			// resize, say), where saving the imported packages trips asset streaming checks.
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([OnDone, Weak, File](float)
 			{
 				TArray<UObject*> Objects;
 				for (const TWeakObjectPtr<UObject>& Object : Weak)
@@ -228,7 +230,8 @@ void ScenarioAssets::ImportFile(const FString& File, const FString& PackagePath,
 					}
 				}
 				OnDone(Objects, Objects.Num() > 0 ? FString() : FString::Printf(TEXT("Unreal imported nothing from %s."), *FPaths::GetCleanFilename(File)));
-			});
+				return false;
+			}));
 		});
 		return;
 	}
