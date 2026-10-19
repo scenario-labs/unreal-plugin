@@ -141,6 +141,12 @@ struct SCENARIOCORE_API FScenarioModelPage
 	FString NextPageToken;
 };
 
+struct SCENARIOCORE_API FScenarioAssetPage
+{
+	TArray<FScenarioAssetInfo> Assets;
+	FString NextPageToken;
+};
+
 struct SCENARIOCORE_API FScenarioWaitResult
 {
 	TArray<FScenarioJobInfo> Jobs;
@@ -196,6 +202,8 @@ public:
 	/** search target=models with URLs, used for thumbnails and text search. */
 	void SearchModels(const FString& Query, bool bPublic, int32 Limit, TCallback<TArray<FScenarioModelSummary>> OnDone);
 	void SearchAssets(const FString& Query, const FString& Kind, int32 Limit, int32 Offset, TCallback<TArray<FScenarioAssetInfo>> OnDone);
+	/** The project's assets, newest first, read from the project itself (assets_list). Kind image, 3d, audio, video or empty. */
+	void ListAssets(const FString& Kind, int32 Limit, const FString& PageToken, TCallback<FScenarioAssetPage> OnDone);
 	void Recommend(const FString& Capability, const FString& Prompt, int32 Limit, FScenarioReplyCallback OnDone);
 
 	void ListTeams(TCallback<TArray<FScenarioTeam>> OnDone);

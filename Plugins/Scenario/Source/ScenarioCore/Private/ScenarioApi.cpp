@@ -134,7 +134,17 @@ FScenarioAssetInfo FScenarioAssetInfo::FromJson(const TSharedPtr<FJsonObject>& O
 	Asset.Height = static_cast<int32>(ScenarioJson::GetNumber(Metadata, TEXT("height"), ScenarioJson::GetNumber(Object, TEXT("height"))));
 	Asset.ParentJobId = FirstString(Metadata, { TEXT("parentJobId"), TEXT("jobId") });
 	Asset.ModelId = FirstString(Metadata, { TEXT("modelId") });
+	if (Asset.ModelId.IsEmpty())
+	{
+		// assets_list flattens the essentials of metadata to the top level.
+		Asset.ModelId = ScenarioJson::GetString(Object, TEXT("modelId"));
+	}
 	Asset.Prompt = ScenarioJson::GetString(Metadata, TEXT("prompt"));
+	if (Asset.Prompt.IsEmpty() && !ScenarioJson::GetString(Object, TEXT("prompt")).StartsWith(TEXT("asset_")))
+	{
+		// A prompt kept as a text asset comes back as its asset id: not a title.
+		Asset.Prompt = ScenarioJson::GetString(Object, TEXT("prompt"));
+	}
 	if (Asset.Kind.IsEmpty())
 	{
 		const FString Mime = Asset.MimeType.ToLower();
@@ -720,6 +730,61 @@ void FScenarioApi::SearchAssets(const FString& Query, const FString& Kind, int32
 			}
 		}
 		OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Ok(Assets));
+	});
+}
+
+void FScenarioApi::ListAssets(const FString& Kind, int32 Limit, const FString& PageToken, TCallback<FScenarioAssetPage> OnDone)
+{
+	// search ranks the whole team's index before it narrows to the project, so a small project in a
+	// large team can get an empty first page. assets_list reads the project itself.
+	static const TMap<FString, TArray<FString>> Types = {
+		{ TEXT("image"), { TEXT("txt2img"), TEXT("img2img"), TEXT("uploaded") } },
+		{ TEXT("3d"), { TEXT("uploaded-3d"), TEXT("img23d"), TEXT("txt23d"), TEXT("3d23d") } },
+		{ TEXT("video"), { TEXT("img2video"), TEXT("txt2video"), TEXT("uploaded-video") } },
+		{ TEXT("audio"), { TEXT("txt2audio"), TEXT("audio2audio"), TEXT("uploaded-audio") } },
+	};
+	TSharedPtr<FJsonObject> Parameters = Args();
+	if (const TArray<FString>* Group = Types.Find(Kind))
+	{
+		TArray<TSharedPtr<FJsonValue>> List;
+		for (const FString& Type : *Group)
+		{
+			List.Add(MakeShared<FJsonValueString>(Type));
+		}
+		TSharedPtr<FJsonObject> Filters = Args();
+		Filters->SetArrayField(TEXT("types"), List);
+		Parameters->SetObjectField(TEXT("filters"), Filters);
+	}
+	Parameters->SetNumberField(TEXT("limit"), FMath::Clamp(Limit, 1, 100));
+	if (!PageToken.IsEmpty())
+	{
+		Parameters->SetStringField(TEXT("page_token"), PageToken);
+	}
+	Parameters->SetBoolField(TEXT("include_urls"), true);
+	TSharedPtr<FJsonObject> Arguments = Args();
+	Arguments->SetStringField(TEXT("name"), TEXT("assets_list"));
+	Arguments->SetObjectField(TEXT("parameters"), Parameters);
+	BackendRef->CallTool(TEXT("scenario_tool_execute_read"), Arguments, [OnDone](const FScenarioReply& Reply)
+	{
+		if (!Reply.bOk)
+		{
+			OnDone(FailFrom<FScenarioAssetPage>(Reply));
+			return;
+		}
+		FScenarioAssetPage Page;
+		for (const TSharedPtr<FJsonValue>& Row : ScenarioJson::GetArray(Reply.Value, TEXT("assets")))
+		{
+			if (Row.IsValid() && Row->Type == EJson::Object)
+			{
+				FScenarioAssetInfo Asset = FScenarioAssetInfo::FromJson(Row->AsObject());
+				if (!Asset.AssetId.IsEmpty())
+				{
+					Page.Assets.Add(MoveTemp(Asset));
+				}
+			}
+		}
+		Page.NextPageToken = ScenarioJson::GetString(Reply.Value, TEXT("nextPaginationToken"));
+		OnDone(TScenarioResult<FScenarioAssetPage>::Ok(Page));
 	});
 }
 

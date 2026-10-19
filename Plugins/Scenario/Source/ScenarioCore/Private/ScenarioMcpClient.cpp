@@ -73,6 +73,8 @@ const TArray<FString>& FScenarioMcpClient::ReadTools()
 		TEXT("model_schema_get"), TEXT("models_list"), TEXT("model_get"), TEXT("job_get"), TEXT("jobs_list"), TEXT("jobs_wait"), TEXT("asset_get"),
 		TEXT("asset_download"), TEXT("assets_list"), TEXT("recommend"), TEXT("search"), TEXT("usage"), TEXT("teams_list"),
 		TEXT("projects_list"), TEXT("workflows_list"), TEXT("workflow_get"), TEXT("collections_list"),
+		// Runs read-class catalog tools only; Scenario refuses any other.
+		TEXT("scenario_tool_execute_read"),
 	};
 	return Tools;
 }
@@ -171,13 +173,24 @@ void FScenarioMcpClient::CallTool(const FString& Tool, const TSharedPtr<FJsonObj
 	}
 	if (Auth->NeedsWorkspaceArguments() && Tool != TEXT("teams_list"))
 	{
-		if (!TeamId.IsEmpty() && !Arguments->HasField(TEXT("team_id")))
+		// A catalog read takes the workspace inside the parameters of the tool it runs.
+		TSharedPtr<FJsonObject> Target = Arguments;
+		if (Tool == TEXT("scenario_tool_execute_read"))
 		{
-			Arguments->SetStringField(TEXT("team_id"), TeamId);
+			Target = ScenarioJson::GetObject(Arguments, TEXT("parameters"));
+			if (!Target.IsValid())
+			{
+				Target = MakeShared<FJsonObject>();
+				Arguments->SetObjectField(TEXT("parameters"), Target);
+			}
 		}
-		if (!ProjectId.IsEmpty() && !Arguments->HasField(TEXT("project_id")) && Tool != TEXT("projects_list"))
+		if (!TeamId.IsEmpty() && !Target->HasField(TEXT("team_id")))
 		{
-			Arguments->SetStringField(TEXT("project_id"), ProjectId);
+			Target->SetStringField(TEXT("team_id"), TeamId);
+		}
+		if (!ProjectId.IsEmpty() && !Target->HasField(TEXT("project_id")) && Tool != TEXT("projects_list"))
+		{
+			Target->SetStringField(TEXT("project_id"), ProjectId);
 		}
 	}
 	const int32 Attempts = IsRetryable(Tool, Arguments) ? ReadAttempts : 1;
