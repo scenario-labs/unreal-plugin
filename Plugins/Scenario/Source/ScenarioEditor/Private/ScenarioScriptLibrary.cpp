@@ -2,6 +2,8 @@
 
 #include "ScenarioScriptLibrary.h"
 
+#include "Engine/Texture2D.h"
+#include "ImageCore.h"
 #include "ScenarioActions.h"
 #include "ScenarioJson.h"
 #include "ScenarioSubsystem.h"
@@ -105,6 +107,91 @@ bool UScenarioScriptLibrary::IsReady()
 {
 	const UScenarioSubsystem* S = UScenarioSubsystem::Get();
 	return S && S->Session().IsReady();
+}
+
+bool UScenarioScriptLibrary::FindPanoramaSun(UTexture2D* Panorama, float& AzimuthDegrees, float& ElevationDegrees, float& Strength)
+{
+	AzimuthDegrees = 0.0f;
+	ElevationDegrees = 0.0f;
+	Strength = 0.0f;
+#if WITH_EDITORONLY_DATA
+	FImage Source;
+	if (!Panorama || !Panorama->Source.IsValid() || !Panorama->Source.GetMipImage(Source, 0))
+	{
+		return false;
+	}
+	// Linear light at 256 x 128: a box filter keeps the sun's energy, and a cell is about 1.4 degrees.
+	constexpr int32 Width = 256;
+	constexpr int32 Height = 128;
+	FImage Small;
+	FImageCore::ResizeImageAllocDest(Source, Small, Width, Height, ERawImageFormat::RGBA32F, EGammaSpace::Linear,
+		FImageCore::EResizeImageFilter::Box | FImageCore::EResizeImageFilter::Flag_WrapX);
+	const TArrayView64<FLinearColor> Pixels = Small.AsRGBA32F();
+	auto Luminance = [&Pixels](int32 X, int32 Y)
+	{
+		const FLinearColor& C = Pixels[(int64)Y * Width + ((X % Width) + Width) % Width];
+		return FMath::Max(0.0f, 0.2126f * C.R + 0.7152f * C.G + 0.0722f * C.B);
+	};
+
+	// The brightest cell of the upper half (the sky), and the sky's median.
+	TArray<float> Sky;
+	Sky.Reserve(Width * Height / 2);
+	int32 BestX = 0;
+	int32 BestY = 0;
+	float Best = -1.0f;
+	for (int32 Y = 0; Y < Height / 2; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			const float L = Luminance(X, Y);
+			Sky.Add(L);
+			if (L > Best)
+			{
+				Best = L;
+				BestX = X;
+				BestY = Y;
+			}
+		}
+	}
+	if (Best <= 0.0f)
+	{
+		return false;
+	}
+	Sky.Sort();
+	const float Median = Sky[Sky.Num() / 2];
+
+	// Centre of the bright region around that cell (a clipped sun is a disc of equal cells), wrapping in azimuth.
+	double SumX = 0.0;
+	double SumY = 0.0;
+	double SumW = 0.0;
+	for (int32 DY = -6; DY <= 6; ++DY)
+	{
+		const int32 Y = BestY + DY;
+		if (Y < 0 || Y >= Height / 2)
+		{
+			continue;
+		}
+		for (int32 DX = -8; DX <= 8; ++DX)
+		{
+			const float L = Luminance(BestX + DX, Y);
+			if (L >= 0.9f * Best)
+			{
+				SumX += L * (BestX + DX + 0.5);
+				SumY += L * (Y + 0.5);
+				SumW += L;
+			}
+		}
+	}
+	const double U = SumX / SumW / Width;
+	const double V = SumY / SumW / Height;
+	// The sky material reads u = atan2(d.y, d.x) / 2pi + 0.5 and v = acos(d.z) / pi.
+	AzimuthDegrees = (float)FRotator::NormalizeAxis((U - 0.5) * 360.0);
+	ElevationDegrees = (float)(90.0 - V * 180.0);
+	Strength = Best / FMath::Max(Median, 1.0e-4f);
+	return true;
+#else
+	return false;
+#endif
 }
 
 UScenarioRunActionAsync* UScenarioRunActionAsync::RunScenarioAction(const FString& Name, const FString& ArgumentsJson)

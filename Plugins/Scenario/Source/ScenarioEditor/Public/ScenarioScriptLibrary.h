@@ -7,6 +7,8 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ScenarioScriptLibrary.generated.h"
 
+class UTexture2D;
+
 /** State of an action started from a script. */
 USTRUCT(BlueprintType)
 struct SCENARIOEDITOR_API FScenarioScriptCall
@@ -65,6 +67,20 @@ public:
 	/** Signed in with a project chosen. */
 	UFUNCTION(BlueprintPure, Category = "Scenario|Scripting")
 	static bool IsReady();
+
+	/**
+	 * The sun in an equirectangular panorama: the brightest region of its upper
+	 * half. Azimuth and elevation are in degrees, in the Scenario sky sphere's
+	 * mapping: azimuth 0 looks along world +X and 90 along +Y, elevation 90 is
+	 * straight up. Strength is that region's brightness over the sky's median:
+	 * about 3 or more is a clear sun, near 1 an overcast sky. A directional
+	 * light lit from there has pitch -Elevation and yaw Azimuth + 180.
+	 * False when the texture has no source image.
+	 * Python returns (azimuth, elevation, strength), or None when it is false:
+	 * found = unreal.ScenarioScriptLibrary.find_panorama_sun(texture)
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Scenario|Scripting")
+	static bool FindPanoramaSun(UTexture2D* Panorama, float& AzimuthDegrees, float& ElevationDegrees, float& Strength);
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnScenarioActionFinished, bool, bOk, const FString&, ResultJson, const FString&, Error);
