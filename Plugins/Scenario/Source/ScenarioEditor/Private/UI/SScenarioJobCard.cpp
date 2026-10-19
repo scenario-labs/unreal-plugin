@@ -566,13 +566,7 @@ namespace ScenarioJobActions
 		}
 		FScenarioPlaceOptions Options;
 		Options.Placement = bPlace ? EScenarioPlacement::Auto : EScenarioPlacement::None;
-		Subsystem->ImportJob(LocalId, Options, [](const FScenarioChangeReport& Report)
-		{
-			if (!Report.bOk)
-			{
-				FScenarioEditorModule::Toast(LOCTEXT("ImportFailed", "Import failed"), FText::FromString(Report.Error), false);
-			}
-		});
+		Subsystem->ImportJobWithNotice(LocalId, Options);
 	}
 
 	void Show(const FString& LocalId)

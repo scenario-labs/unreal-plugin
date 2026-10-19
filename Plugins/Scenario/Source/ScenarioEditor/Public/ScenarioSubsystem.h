@@ -120,6 +120,8 @@ public:
 
 	/** Imports a finished job's files, then places them as asked, in one undo step. */
 	void ImportJob(const FString& LocalId, const FScenarioPlaceOptions& Options, TFunction<void(const FScenarioChangeReport&)> OnDone = nullptr);
+	/** ImportJob for the person at the editor: a failure (with Try again) or a note shows as a notification. */
+	void ImportJobWithNotice(const FString& LocalId, const FScenarioPlaceOptions& Options);
 	bool IsImporting(const FString& LocalId) const { return Importing.Contains(LocalId); }
 	/** The last import report of a job in this session. */
 	const FScenarioChangeReport* LastReport(const FString& LocalId) const { return Reports.Find(LocalId); }

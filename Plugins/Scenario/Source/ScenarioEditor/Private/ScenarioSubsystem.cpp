@@ -356,7 +356,7 @@ void UScenarioSubsystem::OnFilesReady(const FString& LocalId)
 	// Agents and scripts import through their own calls; the person's results import here when asked to.
 	if (UScenarioEditorSettings::Get().bAutoImport && Row->Source == TEXT("person") && !Row->bImported)
 	{
-		ImportJob(LocalId, FScenarioPlaceOptions());
+		ImportJobWithNotice(LocalId, FScenarioPlaceOptions());
 	}
 }
 
@@ -415,8 +415,8 @@ void UScenarioSubsystem::Notify(const FScenarioJobRow& Row, EScenarioJobState Pr
 			FScenarioEditorModule::Toast(FText::Format(LOCTEXT("Ready", "Ready: {0}"), Model), Prompt, true,
 				{ LOCTEXT("Import", "Import"), LOCTEXT("ImportPlace", "Import and place") },
 				{
-					[LocalId]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJob(LocalId, FScenarioPlaceOptions()); } },
-					[LocalId]() { if (UScenarioSubsystem* Self = Get()) { FScenarioPlaceOptions Options; Options.Placement = EScenarioPlacement::Auto; Self->ImportJob(LocalId, Options); } },
+					[LocalId]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJobWithNotice(LocalId, FScenarioPlaceOptions()); } },
+					[LocalId]() { if (UScenarioSubsystem* Self = Get()) { FScenarioPlaceOptions Options; Options.Placement = EScenarioPlacement::Auto; Self->ImportJobWithNotice(LocalId, Options); } },
 				});
 		}
 		if (Row.Source == TEXT("person"))
@@ -514,9 +514,9 @@ bool UScenarioSubsystem::UpdateProgress(const FScenarioJobRow& Row)
 			return Out;
 		};
 		Content.Actions.Add(Action(LOCTEXT("ProgressImportPlace", "Import and place"),
-			[LocalId]() { if (UScenarioSubsystem* Self = Get()) { FScenarioPlaceOptions Options; Options.Placement = EScenarioPlacement::Auto; Self->ImportJob(LocalId, Options); } }, SNotificationItem::CS_Success));
+			[LocalId]() { if (UScenarioSubsystem* Self = Get()) { FScenarioPlaceOptions Options; Options.Placement = EScenarioPlacement::Auto; Self->ImportJobWithNotice(LocalId, Options); } }, SNotificationItem::CS_Success));
 		Content.Actions.Add(Action(LOCTEXT("ProgressImport", "Import only"),
-			[LocalId]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJob(LocalId, FScenarioPlaceOptions()); } }, SNotificationItem::CS_Success));
+			[LocalId]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJobWithNotice(LocalId, FScenarioPlaceOptions()); } }, SNotificationItem::CS_Success));
 		Content.Actions.Add(Action(LOCTEXT("ProgressDetails", "Details"),
 			[]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); }, SNotificationItem::CS_Fail));
 		FScenarioToastAction Jobs = Action(LOCTEXT("ProgressJobs", "Open Jobs"), []() { FScenarioEditorModule::OpenStudio(ScenarioPages::Jobs); }, SNotificationItem::CS_Pending);
@@ -543,6 +543,24 @@ bool UScenarioSubsystem::UpdateProgress(const FScenarioJobRow& Row)
 	Item->ExpireAndFadeout();
 	ProgressItems.Remove(LocalId);
 	return true;
+}
+
+void UScenarioSubsystem::ImportJobWithNotice(const FString& LocalId, const FScenarioPlaceOptions& Options)
+{
+	ImportJob(LocalId, Options, [LocalId, Options](const FScenarioChangeReport& Report)
+	{
+		if (!Report.bOk)
+		{
+			FScenarioEditorModule::Toast(LOCTEXT("ImportFailedNotice", "Import failed"), FText::FromString(Report.Error), false,
+				{ LOCTEXT("ImportTryAgain", "Try again") },
+				{ [LocalId, Options]() { if (UScenarioSubsystem* Self = Get()) { Self->ImportJobWithNotice(LocalId, Options); } } });
+		}
+		else if (Report.Warnings.Num() > 0)
+		{
+			// A placement that needs a plugin, or a material with nothing selected, still imports: say what is left to do.
+			FScenarioEditorModule::Toast(LOCTEXT("ImportedNote", "Imported, with a note"), FText::FromString(Report.Warnings[0]), true);
+		}
+	});
 }
 
 void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceOptions& Options, TFunction<void(const FScenarioChangeReport&)> OnDone)
