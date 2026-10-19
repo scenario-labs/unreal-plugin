@@ -6,7 +6,11 @@
 #include "Framework/Commands/Commands.h"
 #include "Styling/SlateStyle.h"
 
-/** Scenario's own brushes (the black and white mark). Everything else uses the editor's style. */
+/**
+ * Scenario's style set: the black and white mark, the stroke icons, and the
+ * cards, buttons, chips and fields shared with Scenario's other engine
+ * plugins. Widgets reach it through ScenarioUI::Style().
+ */
 class FScenarioStyle
 {
 public:
@@ -21,7 +25,7 @@ public:
 	static FSlateColor Warning();
 	static FSlateColor Error();
 	static FSlateColor Success();
-	/** The editor's primary blue, for live state such as running jobs. */
+	/** Blue, for live state such as running jobs. */
 	static FSlateColor Accent();
 
 private:

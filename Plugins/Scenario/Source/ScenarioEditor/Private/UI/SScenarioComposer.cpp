@@ -77,10 +77,10 @@ namespace
 	{
 		switch (Tone)
 		{
-		case EScenarioHintTone::Error: return FStyleColors::Error;
-		case EScenarioHintTone::Warning: return FStyleColors::Warning;
-		case EScenarioHintTone::Success: return FStyleColors::Success;
-		default: return FSlateColor::UseSubduedForeground();
+		case EScenarioHintTone::Error: return ScenarioUI::Palette::Error();
+		case EScenarioHintTone::Warning: return ScenarioUI::Palette::Warning();
+		case EScenarioHintTone::Success: return ScenarioUI::Palette::Success();
+		default: return FSlateColor(ScenarioUI::Palette::Dim());
 		}
 	}
 }
