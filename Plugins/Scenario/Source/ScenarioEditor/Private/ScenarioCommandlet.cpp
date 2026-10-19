@@ -2,6 +2,7 @@
 
 #include "ScenarioCommandlet.h"
 
+#include "AssetCompilingManager.h"
 #include "Async/TaskGraphInterfaces.h"
 #include "Containers/Ticker.h"
 #include "HttpManager.h"
@@ -17,7 +18,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogScenarioCommandlet, Display, All);
 
 namespace
 {
-	/** Pumps the game thread (tickers, HTTP, queued tasks) until Done or the deadline. */
+	/** Pumps the game thread (tickers, HTTP, queued tasks, asset builds) until Done or the deadline. */
 	bool Pump(const TFunction<bool()>& Done, double Seconds)
 	{
 		const double Deadline = FPlatformTime::Seconds() + Seconds;
@@ -34,6 +35,8 @@ namespace
 			FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
 			FHttpModule::Get().GetHttpManager().Tick(Delta);
 			FTSTicker::GetCoreTicker().Tick(Delta);
+			// Mesh and texture builds finish here; the engine loop that usually ticks them does not run in a commandlet.
+			FAssetCompilingManager::Get().ProcessAsyncTasks(true);
 			FPlatformProcess::Sleep(0.02f);
 		}
 		return true;
