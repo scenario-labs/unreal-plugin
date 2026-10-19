@@ -199,12 +199,12 @@ if result.done:
 **Command line** (build machines, batch jobs):
 
 ```sh
-UnrealEditor-Cmd MyProject.uproject -run=Scenario -Generate \
+UnrealEditor-Cmd MyProject.uproject -run=ScenarioEditor.Scenario -Generate \
   -Model=<model id> -Params='{"prompt":"mossy stone well"}' -MaxCU=20 \
   -Destination=/Game/Scenario/Batch -Import -Save
 ```
 
-`-MaxCU` is required: the run stops before sending if the quoted price is higher. `-Params=@file.json` reads the settings from a file. `-run=Scenario -Action=<name> -Args=<json>` runs any single action. Each step prints one JSON line. Sign in once in the editor (or with an API key) before using it.
+`-MaxCU` is required: the run stops before sending if the quoted price is higher. `-Params=@file.json` reads the settings from a file. `-run=ScenarioEditor.Scenario -Action=<name> -Args=<json>` runs any single action. Each step prints one JSON line. Sign in once in the editor (or with an API key) before using it.
 
 ## 13. Settings
 

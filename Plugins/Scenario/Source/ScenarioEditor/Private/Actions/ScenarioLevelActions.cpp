@@ -783,7 +783,7 @@ void FScenarioActions::RegisterLevelActions()
 				TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 				Json->SetStringField(TEXT("state"), TEXT("pending_approval"));
 				Json->SetStringField(TEXT("review"), App->Review);
-				Json->SetStringField(TEXT("next"), TEXT("The person sees Apply and Decline in the editor. job_status shows imported once applied."));
+				Json->SetStringField(TEXT("next"), TEXT("The person sees Approve and Decline in the editor. job_status shows imported once applied."));
 				Done(FScenarioActionResult::Ok(Json));
 			});
 		Action.bProposeWhenDenied = true;

@@ -14,7 +14,7 @@ struct SCENARIOEDITOR_API FScenarioCaller
 	FString Source = TEXT("agent");
 	/** The agent client from initialize (claude-code, codex...) or the script's name. */
 	FString Client;
-	/** Import, place, save and remove. Agents: "Allow agents to change this project". */
+	/** Import, place, save and remove. Agents: "Change this project" on the Agent page. */
 	bool bCanChangeProject = false;
 	/** Agents: "Allow agents to run Python". */
 	bool bCanRunPython = false;

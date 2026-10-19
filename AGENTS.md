@@ -77,7 +77,9 @@ use. Nothing else from the plugin is compiled into a packaged game.
     the editor's Python.
   - `ScenarioScriptLibrary`: Blueprint and Python entry points (start and poll,
     plus the async node "Run Scenario Action").
-  - `ScenarioCommandlet`: `-run=Scenario` for scripted generations.
+  - `ScenarioCommandlet`: `-run=ScenarioEditor.Scenario` for scripted generations
+    (module-qualified: the engine looks up commandlets before PostEngineInit
+    modules load).
   - `UI/`: Slate views: Studio, Create page, model picker, forms, job cards,
     Jobs, Library, Workflows, Agent and Settings pages, sign-in, viewport
     composer, style and thumbnails.

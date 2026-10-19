@@ -253,7 +253,7 @@ TSharedRef<SWidget> SScenarioStudio::BuildHeader()
 				SNew(SBorder)
 				.BorderImage(Style().GetBrush("Scenario.Usage"))
 				.Padding(FMargin(10.0f, 3.0f))
-				.ToolTipText(LOCTEXT("UsageTip", "Creative Units spent today from this editor (charged, or quoted until Scenario reports the charge). Team usage is on Settings."))
+				.ToolTipText(LOCTEXT("UsageTip", "Creative Units spent today from this editor (charged, or quoted until Scenario reports the charge). The project's month is on Settings and Jobs."))
 				.Visibility_Lambda([this]() { return !IsNarrow() && TodayCU() > 0.0 ? EVisibility::Visible : EVisibility::Collapsed; })
 				[
 					SNew(STextBlock)

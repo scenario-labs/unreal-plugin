@@ -20,7 +20,7 @@ struct SCENARIOAGENT_API FScenarioAgentActivity
 	double Seconds = 0.0;
 };
 
-/** The local MCP server for agents, its token, the activity log and the Agents section of the Connection page. */
+/** The local MCP server for agents, its token, the activity log and the Agents section of the Studio's Agent page. */
 class SCENARIOAGENT_API FScenarioAgentModule : public IModuleInterface
 {
 public:
