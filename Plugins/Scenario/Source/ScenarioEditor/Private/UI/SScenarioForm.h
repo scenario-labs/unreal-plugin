@@ -7,14 +7,19 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 
+class FAssetThumbnail;
 class FScenarioCreateModel;
 class SBox;
+class SGridPanel;
 class SMultiLineEditableTextBox;
+class SVerticalBox;
+struct FScenarioReference;
 
 /**
- * The form of a model or workflow, built from its schema: prompt (with
- * Prompt Spark), references, settings and "More settings". Every edit goes to
- * the shared model, which re-checks the price.
+ * The form of a model or workflow, built from its schema: the prompt (with
+ * Examples and Improve prompt), references as drop-in slots, and settings in
+ * a Details-style grid. Every edit goes to the shared model, which re-checks
+ * the price; prices only show on the buttons that spend.
  */
 class SScenarioForm : public SCompoundWidget
 {
@@ -35,22 +40,46 @@ private:
 	FString Signature() const;
 
 	TSharedRef<SWidget> BuildPrompt(const FScenarioField& Field);
-	TSharedRef<SWidget> BuildReferences(const FScenarioField& Field);
-	TSharedRef<SWidget> BuildField(const FScenarioField& Field);
+	TSharedRef<SWidget> BuildExamples();
+	TSharedRef<SWidget> BuildImprove();
+	TSharedRef<SWidget> BuildSlots(const FScenarioField& Field);
+	TSharedRef<SWidget> BuildSlot(const FScenarioField& Field, const FScenarioReference& Reference, int32 IndexInField);
+	TSharedRef<SWidget> BuildAddSlot(const FScenarioField& Field);
+	TSharedRef<SWidget> BuildAddMenu(FScenarioField Field);
 	TSharedRef<SWidget> BuildControl(const FScenarioField& Field);
-	TSharedRef<SWidget> Section(const FText& Title, const TSharedRef<SWidget>& Body, const TSharedPtr<SWidget>& Extra = nullptr);
-	void ShowError(const FString& Error);
+	TSharedRef<SWidget> BuildSize(const FScenarioField& Width, const FScenarioField& Height);
+	/** One Details-style row: the label column, then the value. */
+	void AddRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FText& Label, const FText& Tooltip, const TSharedRef<SWidget>& Value, bool bOptional, bool bMore);
+	void AddFieldRow(const TSharedRef<SGridPanel>& Grid, int32& Row, const FScenarioField& Field, bool bMore);
+	/** Runs an add-reference action and shows its error under References. */
+	void RunAdd(TFunction<FString()> Action);
+
+	// Improve prompt: priced for free while typing, one click runs it.
+	void SchedulePriceSpark();
+	void PriceSpark(bool bRunAfter, const FString& ShownPrice);
+	void RunSpark();
+	bool IsSparkPriced() const;
+	void SetSparkMessage(const FString& Text, bool bError);
+	void RefreshVariants();
 
 	TSharedPtr<FScenarioCreateModel> Model;
 	TSharedPtr<SBox> Content;
 	TSharedPtr<SMultiLineEditableTextBox> PromptBox;
+	TSharedPtr<SVerticalBox> VariantsBox;
+	TArray<TSharedPtr<FAssetThumbnail>> SlotThumbnails;
 	FString BuiltSignature;
 	FDelegateHandle ModelHandle;
 	bool bShowMore = false;
+	FString InlineError;
 
+	FString LastPrompt;
 	FString SparkPrice;
 	FString SparkPricedPrompt;
+	double SparkPricedAt = 0.0;
+	bool bSparkPricing = false;
+	bool bSparkRunning = false;
 	TArray<FString> SparkVariants;
-	bool bSparkBusy = false;
-	FString InlineError;
+	FString SparkMessage;
+	bool bSparkMessageError = false;
+	TSharedPtr<class FActiveTimerHandle> SparkTimer;
 };

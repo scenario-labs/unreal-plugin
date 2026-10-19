@@ -81,6 +81,8 @@ struct FScenarioReference
 	FString Label;
 	FString LocalPath;
 	FString AssetId;
+	/** The Content Browser asset it came from, for its thumbnail. */
+	FString ObjectPath;
 	float Progress = 0.0f;
 	FString Error;
 	bool bUploading = false;
@@ -92,6 +94,8 @@ struct FScenarioReference
  * Generate button. Prices are checked automatically (debounced) while the
  * form changes; Generate only sends a request whose fresh quote matches it.
  */
+struct FAssetData;
+
 class FScenarioCreateModel : public TSharedFromThis<FScenarioCreateModel>
 {
 public:
@@ -128,7 +132,7 @@ public:
 	bool IsLoadingWorkflows() const { return bLoadingWorkflows; }
 	const FString& GetWorkflowsError() const { return WorkflowsError; }
 	void LoadWorkflows(bool bForce = false);
-	/** Modality of the current lane for the picker (image, 3d, video, audio). */
+	/** The picker tab for the current lane (image, 3d, material, sky, video, audio). */
 	FString PickerModality() const;
 
 	// Form
@@ -158,6 +162,10 @@ public:
 	FString AddViewportCapture(const FString& Field);
 	/** Adds the Content Browser selection (textures, meshes, sounds). Returns an error or empty. */
 	FString AddContentSelection(const FString& Field);
+	/** Adds assets (dropped or selected). Assets from Scenario are reused without an upload. Returns an error or empty. */
+	FString AddAssets(const FString& Field, const TArray<FAssetData>& Assets);
+	/** Adds local files (dropped from the desktop). Returns an error or empty. */
+	FString AddFiles(const FString& Field, const TArray<FString>& Paths);
 	/** Adds the selected actors exported as one GLB (3D edits). Returns an error or empty. */
 	FString AddSelectedActors(const FString& Field);
 	/**
@@ -202,8 +210,10 @@ public:
 
 	// Prompt tools (each priced and clicked separately)
 
-	void PriceSpark(TFunction<void(const FString& PriceText)> OnDone);
-	void RunSpark(TFunction<void(const TArray<FString>& Variants, const FString& Error)> OnDone);
+	/** A free dry run of Prompt Spark for the prompt as it is now: the exact price, or why there is none. */
+	void PriceSpark(TFunction<void(const FString& Price, const FString& Error)> OnDone);
+	/** LocalId is the Spark job's row in the job list, empty when nothing was sent. */
+	void RunSpark(TFunction<void(const TArray<FString>& Variants, const FString& Error, const FString& LocalId)> OnDone);
 
 	/** Suggest: Scenario's recommendation for the prompt. */
 	void Suggest(TFunction<void(const TArray<TPair<FString, FString>>& Models, const FString& Error)> OnDone);

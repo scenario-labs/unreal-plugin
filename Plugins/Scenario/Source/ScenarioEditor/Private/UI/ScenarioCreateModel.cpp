@@ -445,6 +445,15 @@ TArray<FScenarioLaneModel> FScenarioCreateModel::QuickPicks() const
 
 FString FScenarioCreateModel::PickerModality() const
 {
+	// The picker has Material and Sky tabs of their own.
+	if (LaneId == TEXT("material"))
+	{
+		return TEXT("material");
+	}
+	if (LaneId == TEXT("environment"))
+	{
+		return TEXT("sky");
+	}
 	return ModalityForLane(LaneId);
 }
 
@@ -520,6 +529,10 @@ void FScenarioCreateModel::SchemaLoaded(const TArray<FScenarioField>& NewFields)
 	const FString OldPrompt = GetPrompt();
 
 	Fields = NewFields;
+	if (!bWorkflow)
+	{
+		FScenarioLanes::Get().ApplyFieldLabels(LaneId, ModelId, Fields);
+	}
 	Values = ScenarioSchema::InitialValues(Fields, bWorkflow ? nullptr : FScenarioLanes::Get().Presets(ModelId));
 
 	// Keep what the person typed or chose when the new model has the same setting.
@@ -719,7 +732,7 @@ void FScenarioCreateModel::ApplyValues(const TSharedPtr<FJsonObject>& InValues)
 		}
 		if (Field->IsFile())
 		{
-			// Asset ids from an earlier run ("Use settings"): reused, nothing uploaded.
+			// Asset ids from an earlier run ("Reuse settings"): reused, nothing uploaded.
 			References.RemoveAll([Field](const FScenarioReference& Reference) { return Reference.Field == Field->Name; });
 			TArray<FString> Ids;
 			if (Pair.Value->Type == EJson::Array)
@@ -1011,8 +1024,18 @@ FString FScenarioCreateModel::AddContentSelection(const FString& Field)
 	{
 		return TEXT("Select a texture, mesh or sound in the Content Browser first.");
 	}
+	return AddAssets(Field, Selected);
+}
+
+FString FScenarioCreateModel::AddAssets(const FString& Field, const TArray<FAssetData>& Assets)
+{
+	UScenarioSubsystem* Subsystem = UScenarioSubsystem::Get();
+	if (!Subsystem)
+	{
+		return TEXT("Scenario is not ready yet.");
+	}
 	TArray<FString> Errors;
-	for (const FAssetData& Asset : Selected)
+	for (const FAssetData& Asset : Assets)
 	{
 		FScenarioUploadSource Source;
 		FString Error;
@@ -1021,7 +1044,26 @@ FString FScenarioCreateModel::AddContentSelection(const FString& Field)
 			Errors.Add(Error);
 			continue;
 		}
+		const int32 Id = NextReferenceId;
 		Error = Source.AssetId.IsEmpty() ? AddReferenceFile(Field, Source.Path, Source.Label) : AddReferenceAsset(Field, Source.AssetId, Source.Label);
+		if (!Error.IsEmpty())
+		{
+			Errors.Add(Error);
+		}
+		else if (FScenarioReference* Added = FindReference(Id))
+		{
+			Added->ObjectPath = Asset.GetSoftObjectPath().ToString();
+		}
+	}
+	return FString::Join(Errors, TEXT(" "));
+}
+
+FString FScenarioCreateModel::AddFiles(const FString& Field, const TArray<FString>& Paths)
+{
+	TArray<FString> Errors;
+	for (const FString& Path : Paths)
+	{
+		const FString Error = AddReferenceFile(Field, Path, FString());
 		if (!Error.IsEmpty())
 		{
 			Errors.Add(Error);
@@ -1719,44 +1761,43 @@ FScenarioRunRequest FScenarioCreateModel::SparkRequest() const
 	return Request;
 }
 
-void FScenarioCreateModel::PriceSpark(TFunction<void(const FString& PriceText)> OnDone)
+void FScenarioCreateModel::PriceSpark(TFunction<void(const FString& Price, const FString& Error)> OnDone)
 {
 	FScenarioSession* Session = SessionOrNull();
 	if (!Session)
 	{
-		OnDone(TEXT("Sign in first."));
+		OnDone(FString(), TEXT("Sign in first."));
 		return;
 	}
 	if (GetPrompt().TrimStartAndEnd().IsEmpty())
 	{
-		OnDone(TEXT("Write a few words first."));
+		OnDone(FString(), TEXT("Write a few words first."));
 		return;
 	}
 	Session->Price(SparkRequest(), false, [OnDone](const TScenarioResult<FScenarioQuote>& Result)
 	{
-		OnDone(Result.bOk ? ScenarioCU::Format(Result.Value.CU) : Result.Error.Message);
+		OnDone(Result.bOk ? ScenarioCU::Format(Result.Value.CU) : FString(), Result.bOk ? FString() : Result.Error.Message);
 	});
 }
 
-void FScenarioCreateModel::RunSpark(TFunction<void(const TArray<FString>& Variants, const FString& Error)> OnDone)
+void FScenarioCreateModel::RunSpark(TFunction<void(const TArray<FString>& Variants, const FString& Error, const FString& LocalId)> OnDone)
 {
 	FScenarioSession* Session = SessionOrNull();
 	if (!Session)
 	{
-		OnDone({}, TEXT("Sign in first."));
+		OnDone({}, TEXT("Sign in first."), FString());
 		return;
 	}
 	Session->Submit(SparkRequest(), FString(), FString(), [OnDone](const TScenarioResult<FString>& Result)
 	{
 		if (!Result.bOk)
 		{
-			OnDone({}, Result.Error.Message);
+			OnDone({}, Result.Error.Message, FString());
 			return;
 		}
 		FScenarioSession* Session = SessionOrNull();
 		const TSharedPtr<FJsonObject> Reply = Session ? Session->GetSparkResult(Result.Value) : nullptr;
-		const TArray<FString> Variants = FScenarioApi::SparkPrompts(Reply);
-		OnDone(Variants, Variants.Num() == 0 ? TEXT("Prompt Spark returned no variants.") : FString());
+		OnDone(FScenarioApi::SparkPrompts(Reply), FString(), Result.Value);
 	});
 }
 

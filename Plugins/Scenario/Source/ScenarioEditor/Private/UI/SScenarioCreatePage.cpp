@@ -23,7 +23,6 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Images/SThrobber.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SHyperlink.h"
 #include "Widgets/Input/SSegmentedControl.h"
@@ -190,42 +189,6 @@ void SScenarioCreatePage::Construct(const FArguments& InArgs)
 				.AutoHeight()
 				[
 					SAssignNew(Form, SScenarioForm).Model(Model)
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
-				[
-					SNew(SHorizontalBox)
-					.Visibility_Lambda([M]() { return M->IsUnrealReadyModel() ? EVisibility::Visible : EVisibility::Collapsed; })
-					.ToolTipText_Lambda([]()
-					{
-						return FText::Format(LOCTEXT("UnrealReadyTip", "Adds these constraints to the prompt sent to Scenario: {0}"), FText::FromString(FScenarioLanes::Get().UnrealReadyPrompt()));
-					})
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SBox)
-						.WidthOverride(ScenarioUI::LabelWidth)
-						[
-							SNew(STextBlock).Text(LOCTEXT("UnrealReady", "Unreal-ready")).Font(ScenarioUI::Font(ScenarioUI::EText::Body))
-						]
-					]
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SCheckBox)
-						.IsChecked_Lambda([M]() { return M->IsUnrealReady() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-						.OnCheckStateChanged_Lambda([M](ECheckBoxState State) { M->SetUnrealReady(State == ECheckBoxState::Checked); })
-					]
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					.VAlign(VAlign_Center)
-					.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
-					[
-						ScenarioUI::Line(LOCTEXT("UnrealReadyNote", "real-world scale, pivot at the base, clean topology"), ScenarioUI::EText::Meta, true)
-					]
 				]
 			]
 		]
