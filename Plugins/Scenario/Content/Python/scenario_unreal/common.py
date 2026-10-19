@@ -194,8 +194,68 @@ def footprint(mesh, scale):
     return max(hi.x - lo.x, hi.y - lo.y) * scale * 0.5
 
 
+MASK_WORDS = ("metallic", "roughness", "occlusion", "orm", "specular")
+COLOR_WORDS = ("normal", "basecolor", "albedo", "emissive", "diffuse")
+mesh_fixes = []  # what ensure_mesh changed since the tool's report last read it
+_checked = set()
+
+
+def _shape_count(body):
+    geometry = body.get_editor_property("agg_geom")
+    count = 0
+    for name in ("sphere_elems", "box_elems", "sphyl_elems", "convex_elems", "tapered_capsule_elems"):
+        try:
+            count += len(geometry.get_editor_property(name))
+        except Exception:
+            pass
+    return count
+
+
+def ensure_mesh(mesh):
+    """Safety net for meshes imported before the plugin set them up: mask textures (metallic,
+    roughness, occlusion) become linear, and a mesh with no collision gets its own triangles
+    as collision, so the player walks against it and through its openings. Once per mesh."""
+    path = mesh.get_path_name()
+    if path in _checked or not path.startswith("/Game/"):
+        return
+    _checked.add(path)
+    changed = []
+    for slot in mesh.get_editor_property("static_materials"):
+        material = slot.get_editor_property("material_interface")
+        if not isinstance(material, unreal.MaterialInstance):
+            continue
+        for value in material.get_editor_property("texture_parameter_values"):
+            name = str(value.get_editor_property("parameter_info").get_editor_property("name")).lower()
+            texture = value.get_editor_property("parameter_value")
+            if texture is None or any(w in name for w in COLOR_WORDS) or not any(w in name for w in MASK_WORDS):
+                continue
+            if texture.get_editor_property("srgb"):
+                texture.set_editor_property("srgb", False)
+                assets().save_loaded_asset(texture, False)
+                changed.append(f"{texture.get_name()} set to linear")
+    body = mesh.get_editor_property("body_setup")
+    try:
+        bare = body is not None and _shape_count(body) == 0 and \
+            body.get_editor_property("collision_trace_flag") != unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE
+    except Exception:
+        bare = False
+    if bare:
+        body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
+        mesh.set_editor_property("body_setup", body)
+        mesh.modify()
+        try:
+            mesh.post_edit_change()
+        except Exception:
+            pass
+        assets().save_loaded_asset(mesh, False)
+        changed.append("collision from its triangles")
+    if changed:
+        mesh_fixes.append(f"{mesh.get_name()}: {', '.join(changed)}")
+
+
 def place_mesh(mesh, x, y, yaw=0.0, scale=1.0, ground=None, label=None, folder=None, tags=(), lift=0.0):
     """Places a mesh centered on (x, y) with its lowest point on the ground."""
+    ensure_mesh(mesh)
     lo, hi = mesh_box(mesh)
     cx, cy = (lo.x + hi.x) * 0.5 * scale, (lo.y + hi.y) * 0.5 * scale
     r = math.radians(yaw)
