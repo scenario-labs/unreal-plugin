@@ -68,7 +68,7 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | `scenario_status` | Signed in, team and project, permissions, spending rules, server address |
 | `scene_summary` | Level, World Partition state, selection, camera, actor counts by class, a page of actors with ids and tags |
 | `object_detail` | One actor: transform, bounds, components, materials per slot, Scenario provenance |
-| `screenshot_viewport` | PNG of the active level viewport, returned as an image |
+| `screenshot_viewport` | PNG of the active level viewport, returned as an image; with `camera` (`location_m`, then `look_at_m` or `pitch` and `yaw`, and `fov`) it renders that view and leaves your viewport where it is |
 | `find_assets`, `asset_detail` | Search the Content Browser; details and mesh checks for one asset |
 | `output_log` | Recent warnings and errors, or Scenario and Interchange messages |
 | `select_objects` | Selects actors in the level |

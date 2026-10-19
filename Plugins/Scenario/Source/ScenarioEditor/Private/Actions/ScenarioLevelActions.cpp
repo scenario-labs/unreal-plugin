@@ -60,6 +60,58 @@ namespace
 		return Vec(FVector(R.Pitch, R.Yaw, R.Roll));
 	}
 
+	/** Reads [x, y, z] in meters as centimeters. */
+	bool ReadMeters(const TSharedPtr<FJsonObject>& Args, const FString& Name, FVector& Out)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+		if (!Args->TryGetArrayField(Name, Items) || Items->Num() != 3)
+		{
+			return false;
+		}
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			double Value = 0.0;
+			if (!(*Items)[Index].IsValid() || !(*Items)[Index]->TryGetNumber(Value))
+			{
+				return false;
+			}
+			Out[Index] = Value * 100.0;
+		}
+		return true;
+	}
+
+	/** screenshot_viewport's camera: location_m, then look_at_m or pitch and yaw, and fov. */
+	bool ReadCamera(const TSharedPtr<FJsonObject>& Args, FScenarioCaptureCamera& Out, FString& OutError)
+	{
+		if (!ReadMeters(Args, TEXT("location_m"), Out.Location))
+		{
+			OutError = TEXT("camera needs location_m: [x, y, z] in meters.");
+			return false;
+		}
+		FVector Target;
+		if (ReadMeters(Args, TEXT("look_at_m"), Target))
+		{
+			if (Target.Equals(Out.Location, 1.0))
+			{
+				OutError = TEXT("camera look_at_m is the camera location.");
+				return false;
+			}
+			Out.Rotation = (Target - Out.Location).Rotation();
+		}
+		else
+		{
+			double Pitch = 0.0;
+			double Yaw = 0.0;
+			Args->TryGetNumberField(TEXT("pitch"), Pitch);
+			Args->TryGetNumberField(TEXT("yaw"), Yaw);
+			Out.Rotation = FRotator(FMath::Clamp(Pitch, -89.0, 89.0), Yaw, 0.0);
+		}
+		double Fov = 70.0;
+		Args->TryGetNumberField(TEXT("fov"), Fov);
+		Out.Fov = FMath::Clamp(Fov, 10.0, 150.0);
+		return true;
+	}
+
 	bool FromScenario(const AActor* Actor)
 	{
 		return Actor && Actor->Tags.Contains(ScenarioPlacement::ActorTag);
@@ -376,8 +428,13 @@ void FScenarioActions::RegisterLevelActions()
 
 	// screenshot_viewport
 	Register(Make(TEXT("screenshot_viewport"), EScenarioActionKind::Read,
-		TEXT("Image of the active level viewport's camera (no gizmos), returned to you, with the world, camera, FOV and size it shows."),
-		Object({ { TEXT("width"), TEXT("integer"), TEXT("Default 1024, max 1920.") }, { TEXT("height"), TEXT("integer"), TEXT("Default 576, max 1080.") } }),
+		TEXT("Image of the active level viewport's camera (no gizmos), returned to you, with the world, camera, FOV and size it shows. ")
+		TEXT("Pass camera to render another view without moving the person's viewport (also works with no viewport open)."),
+		Object({
+			{ TEXT("width"), TEXT("integer"), TEXT("Default 1024, max 1920.") },
+			{ TEXT("height"), TEXT("integer"), TEXT("Default 576, max 1080.") },
+			{ TEXT("camera"), TEXT("object"), TEXT("Optional view: location_m [x, y, z] in meters, then look_at_m [x, y, z] or pitch and yaw in degrees, and fov (default 70).") },
+		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -389,7 +446,15 @@ void FScenarioActions::RegisterLevelActions()
 			}
 			FString Error;
 			FString Description;
-			const FString Path = S->CaptureViewport(Int(Args, TEXT("width"), 1024, 128, 1920), Int(Args, TEXT("height"), 576, 128, 1080), Error, &Description);
+			FScenarioCaptureCamera Camera;
+			const TSharedPtr<FJsonObject> CameraArgs = Obj(Args, TEXT("camera"));
+			if (CameraArgs.IsValid() && !ReadCamera(CameraArgs, Camera, Error))
+			{
+				Done(FScenarioActionResult::Fail(TEXT("Invalid"), Error));
+				return;
+			}
+			const FString Path = S->CaptureViewport(Int(Args, TEXT("width"), 1024, 128, 1920), Int(Args, TEXT("height"), 576, 128, 1080), Error, &Description,
+				CameraArgs.IsValid() ? &Camera : nullptr);
 			TArray<uint8> Png;
 			if (Path.IsEmpty() || !FFileHelper::LoadFileToArray(Png, *Path))
 			{
