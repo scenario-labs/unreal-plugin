@@ -26,11 +26,13 @@
 #include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
 #include "ScenarioThumbnails.h"
+#include "ScenarioWidgets.h"
 #include "SScenarioComposer.h"
 #include "SScenarioJobCard.h"
 #include "SScenarioModelPicker.h"
 #include "SScenarioPages.h"
 #include "SScenarioStudio.h"
+#include "SScenarioToast.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SButton.h"
@@ -625,35 +627,17 @@ void FScenarioEditorModule::OpenSettings(bool bProject)
 
 void FScenarioEditorModule::Toast(const FText& Text, const FText& SubText, bool bSuccess, const TArray<FText>& ButtonLabels, const TArray<TFunction<void()>>& Buttons)
 {
-	if (!FSlateApplication::IsInitialized())
-	{
-		return;
-	}
-	FNotificationInfo Info(Text);
-	Info.SubText = SubText;
-	Info.ExpireDuration = Buttons.Num() > 0 ? 10.0f : 5.0f;
-	Info.bFireAndForget = true;
-	Info.bUseSuccessFailIcons = true;
-	Info.Image = FScenarioStyle::Get().GetBrush("Scenario.Mark");
-	TSharedRef<TWeakPtr<SNotificationItem>> Item = MakeShared<TWeakPtr<SNotificationItem>>();
+	FScenarioToastContent Content;
+	Content.Title = Text;
+	Content.Detail = SubText;
 	for (int32 Index = 0; Index < FMath::Min(ButtonLabels.Num(), Buttons.Num()); ++Index)
 	{
-		const TFunction<void()> Action = Buttons[Index];
-		Info.ButtonDetails.Add(FNotificationButtonInfo(ButtonLabels[Index], FText::GetEmpty(), FSimpleDelegate::CreateLambda([Action, Item]()
-		{
-			Action();
-			if (const TSharedPtr<SNotificationItem> Pinned = Item->Pin())
-			{
-				Pinned->ExpireAndFadeout();
-			}
-		}), SNotificationItem::CS_None));
+		FScenarioToastAction Action;
+		Action.Label = ButtonLabels[Index];
+		Action.Run = Buttons[Index];
+		Content.Actions.Add(MoveTemp(Action));
 	}
-	const TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(Info);
-	if (Notification.IsValid())
-	{
-		*Item = Notification;
-		Notification->SetCompletionState(bSuccess ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
-	}
+	SScenarioToast::Show(Content, bSuccess ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail, Buttons.Num() > 0 ? 10.0f : 5.0f);
 }
 
 void FScenarioEditorModule::RegisterConnectionSection(FName Name, FSectionFactory Factory)

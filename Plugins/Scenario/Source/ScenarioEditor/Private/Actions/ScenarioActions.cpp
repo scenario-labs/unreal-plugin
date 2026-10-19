@@ -14,6 +14,7 @@
 #include "ScenarioSchema.h"
 #include "ScenarioSettings.h"
 #include "ScenarioStyle.h"
+#include "SScenarioToast.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
 #define LOCTEXT_NAMESPACE "ScenarioActions"
@@ -533,19 +534,26 @@ namespace ScenarioActionHelpers
 			OnAnswer(bApproved);
 		});
 
-		FNotificationInfo Info(Title);
-		Info.SubText = Detail;
-		Info.bFireAndForget = false;
-		Info.Image = FScenarioStyle::Get().GetBrush("Scenario.Mark");
-		Info.ButtonDetails.Add(FNotificationButtonInfo(LOCTEXT("Approve", "Approve"), FText::GetEmpty(), FSimpleDelegate::CreateLambda([Answer]() { (*Answer)(true); }), SNotificationItem::CS_Pending));
-		Info.ButtonDetails.Add(FNotificationButtonInfo(LOCTEXT("Decline", "Decline"), FText::GetEmpty(), FSimpleDelegate::CreateLambda([Answer]() { (*Answer)(false); }), SNotificationItem::CS_Pending));
-		const TSharedPtr<SNotificationItem> Item = FSlateNotificationManager::Get().AddNotification(Info);
+		FScenarioToastContent Content;
+		Content.Title = Title;
+		Content.Detail = Detail;
+		Content.CloseTooltip = LOCTEXT("DeclineClose", "Decline this spend and close.");
+		Content.OnClosed = [Answer]() { (*Answer)(false); };
+		FScenarioToastAction Approve;
+		Approve.Label = LOCTEXT("Approve", "Approve");
+		Approve.Run = [Answer]() { (*Answer)(true); };
+		Approve.States = { SNotificationItem::CS_Pending };
+		Approve.bCloses = false;
+		FScenarioToastAction Decline = Approve;
+		Decline.Label = LOCTEXT("Decline", "Decline");
+		Decline.Run = [Answer]() { (*Answer)(false); };
+		Content.Actions = { Approve, Decline };
+		const TSharedPtr<SNotificationItem> Item = SScenarioToast::Show(Content, SNotificationItem::CS_Pending, 0.0f);
 		if (!Item.IsValid())
 		{
 			(*Answer)(false);
 			return;
 		}
-		Item->SetCompletionState(SNotificationItem::CS_Pending);
 		State->Item = Item;
 		State->Timer = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Answer](float)
 		{
