@@ -38,6 +38,8 @@ namespace
 		Light->SetAttenuationRadius(Radius);
 		Light->SetLightColor(FLinearColor(1.0f, 0.8f, 0.45f));
 		Light->SetCastShadows(false);
+		// Fog scatters a point light into a wide halo: keep it a hint, so the glow reads as a glow and not a blown-out ball.
+		Light->SetVolumetricScatteringIntensity(0.4f);
 		return Light;
 	}
 
@@ -65,7 +67,8 @@ AScenarioPickup::AScenarioPickup()
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Mesh->SetGenerateOverlapEvents(false);
 
-	Glow = MakeGlow(this, Trigger, 30.0f, 450.0f);
+	// About twice a lit stone lantern: easy to spot at dusk, still a glow at noon.
+	Glow = MakeGlow(this, Trigger, 8.0f, 450.0f);
 }
 
 void AScenarioPickup::BeginPlay()
@@ -125,7 +128,7 @@ AScenarioGoal::AScenarioGoal()
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Trigger);
 
-	Glow = MakeGlow(this, Trigger, 80.0f, 900.0f);
+	Glow = MakeGlow(this, Trigger, 20.0f, 900.0f);
 	Glow->SetRelativeLocation(FVector(0.0f, 0.0f, 150.0f));
 }
 
