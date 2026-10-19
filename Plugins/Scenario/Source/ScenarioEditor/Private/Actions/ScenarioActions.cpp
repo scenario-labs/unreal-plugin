@@ -138,7 +138,7 @@ void FScenarioActions::Call(const FString& Name, const TSharedPtr<FJsonObject>& 
 	}
 	if (Action->Kind == EScenarioActionKind::Change && !Caller.bCanChangeProject && !Action->bProposeWhenDenied)
 	{
-		Finish(FScenarioActionResult::Fail(TEXT("Permission"), TEXT("Changing the project is off for agents. Use prepare_result_application and apply_result_application: the person gets a proposal to apply, or can turn on \"Allow agents to change this project\".")));
+		Finish(FScenarioActionResult::Fail(TEXT("Permission"), TEXT("Changing the project is off for agents. Use prepare_result_application and apply_result_application: the person gets a proposal to approve, or can turn on \"Change this project\" on the Agent page.")));
 		return;
 	}
 

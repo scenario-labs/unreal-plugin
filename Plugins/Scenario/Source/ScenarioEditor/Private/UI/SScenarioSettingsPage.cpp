@@ -447,7 +447,7 @@ void SScenarioSettingsPage::Rebuild()
 				.FillWidth(1.0f)
 				.VAlign(VAlign_Center)
 				[
-					FieldLabel(LOCTEXT("Usage", "Team usage this month"), LOCTEXT("UsageHint", "Every member and tool, from Scenario"))
+					FieldLabel(LOCTEXT("Usage", "Project usage this month"), LOCTEXT("UsageHint", "Every member and tool, from Scenario"))
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()

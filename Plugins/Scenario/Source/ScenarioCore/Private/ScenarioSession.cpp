@@ -825,7 +825,7 @@ FString FScenarioSession::CanSubmit(const FScenarioRunRequest& Request, const FS
 	}
 	if (LedgerPtr->Blocks(Fp))
 	{
-		return TEXT("An identical request may already be running on Scenario. Resolve it in Jobs (Check Scenario or Mark as not sent) first.");
+		return TEXT("An identical request may already be running on Scenario. Resolve it in Jobs first: Check, or Mark as not sent in the card's menu.");
 	}
 	return FString();
 }

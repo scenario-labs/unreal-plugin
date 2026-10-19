@@ -11,7 +11,7 @@ How Scenario for Unreal Engine is built, for contributors and reviewers. The cod
    |                       ScenarioAgent: local Scenario MCP server (127.0.0.1:9877)
    |                               |
    v                               v
- ScenarioEditor: action registry  <-  Python, Blueprints, -run=Scenario commandlet
+ ScenarioEditor: action registry  <-  Python, Blueprints, -run=ScenarioEditor.Scenario commandlet
    |  import (Interchange), placement (one transaction), provenance, Slate UI
    v
  ScenarioCore: session, quotes, job list, transfers, OAuth, credential store
