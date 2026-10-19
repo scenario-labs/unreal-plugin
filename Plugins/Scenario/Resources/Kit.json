@@ -6,7 +6,7 @@
       "kind": "change",
       "undo": false,
       "time_limit": 180,
-      "description": "Creates and opens a new walkable level under /Game/Scenario/Worlds: sun, sky light and fog for the time of day, a ground, invisible walls around the play area, a player start and the project's third-person game mode. Generate the Scenario assets first or in parallel; pass them here or to dress_world. Fails if the open level has unsaved changes.",
+      "description": "Creates and opens a new walkable level under /Game/Scenario/Worlds: sun, sky light and fog for the time of day (mist for ground fog), a ground, invisible walls around the play area, a player start and the project's third-person game mode. Generate the Scenario assets first or in parallel; pass them here or to dress_world. Fails if the open level has unsaved changes.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -16,7 +16,8 @@
           "ground_material": { "type": "string", "description": "Material from a Scenario material result (created_assets path). Tiled in world space." },
           "ground_tile_m": { "type": "number", "description": "Meters per texture tile on the ground. Default 4." },
           "sky": { "type": "string", "description": "Material or panorama texture from a Scenario environment (skybox) result." },
-          "game_mode": { "type": "string", "description": "Blueprint game mode path. Default auto: the project's Third Person, First Person or Top Down template game mode." }
+          "game_mode": { "type": "string", "description": "Blueprint game mode path. Default auto: the project's Third Person, First Person or Top Down template game mode." },
+          "mist": { "type": "number", "description": "Ground fog from 0 (clear air, default) to 1 (dense). Above 0 the fog is volumetric: light shafts and lantern glow show in it. 0.6 to 0.9 for a misty scene." }
         },
         "required": ["name"]
       }
@@ -26,7 +27,7 @@
       "kind": "change",
       "undo": true,
       "time_limit": 300,
-      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), props scattered with spacing and a clear path from the player start to the landmark, plus ground material, sky and looping ambient sound. Meshes are scaled to height_m and rest on the ground. Call again with replace true to redo the layout.",
+      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -37,9 +38,20 @@
               "mesh": { "type": "string", "description": "Static mesh path (or its import folder)." },
               "height_m": { "type": "number", "description": "Default 6." },
               "at_m": { "type": "array", "items": { "type": "number" }, "description": "[x, y] in meters. Default [0, 0]." },
-              "front_yaw": { "type": "number", "description": "Degrees to add if the mesh's front does not face the player." }
+              "front_yaw": { "type": "number", "description": "Degrees added so the mesh's front faces the player. Default -90: Scenario 3D models (glTF) face +Y. Try 90, 0 or 180 if it faces away." }
             },
             "required": ["mesh"]
+          },
+          "path": {
+            "type": "object",
+            "description": "A flat paved strip from the player start to the landmark (or the world's center), in a world-aligned material. Props stay off it.",
+            "properties": {
+              "material": { "type": "string", "description": "Material from a Scenario material result (stone, gravel, planks)." },
+              "width_m": { "type": "number", "description": "Default 3.5." },
+              "tile_m": { "type": "number", "description": "Meters per texture tile. Default 2." },
+              "tint": { "type": "array", "items": { "type": "number" }, "description": "[r, g, b] 0 to 1, multiplies the color." }
+            },
+            "required": ["material"]
           },
           "props": {
             "type": "array",
@@ -50,9 +62,11 @@
                 "mesh": { "type": "string" },
                 "count": { "type": "integer", "description": "Default 6." },
                 "height_m": { "description": "Height in meters, or [min, max] for variety. Default 1.5.", "oneOf": [ { "type": "number" }, { "type": "array", "items": { "type": "number" } } ] },
-                "area": { "type": "string", "enum": ["anywhere", "edges", "center", "around_landmark", "path_sides"], "description": "path_sides lines both sides of the path (lanterns, fences). Default anywhere." },
+                "area": { "type": "string", "enum": ["anywhere", "edges", "center", "around_landmark", "path_sides", "on_path"], "description": "path_sides lines both sides of the path, evenly spaced (lanterns, fences). on_path puts gates and arches across the path so the player walks through them (torii): the widest side crosses the path, and a single gate marks the start of the path. Default anywhere." },
                 "spacing_m": { "type": "number", "description": "Free space between props. Default 1.5." },
-                "yaw": { "description": "\"random\" (default), \"face_center\" or degrees.", "oneOf": [ { "type": "string" }, { "type": "number" } ] },
+                "yaw": { "description": "\"random\" (default), \"face_center\" or degrees. on_path sets its own.", "oneOf": [ { "type": "string" }, { "type": "number" } ] },
+                "front_yaw": { "type": "number", "description": "Degrees added to face_center (default -90, as for the landmark) or to on_path (default 0)." },
+                "light": { "description": "true, or {temperature_k (2200), intensity_cd (4), radius_m (4.5), height (0.63 of the prop's height)}: a warm point light inside each placed prop (lanterns, braziers). 48 lights at most per world.", "oneOf": [ { "type": "boolean" }, { "type": "object" } ] },
                 "sink_m": { "type": "number", "description": "Sinks the prop into the ground (rocks, roots). Default 0." }
               },
               "required": ["mesh"]
@@ -60,12 +74,14 @@
           },
           "ground_material": { "type": "string" },
           "ground_tile_m": { "type": "number" },
+          "ground_tint": { "type": "array", "items": { "type": "number" }, "description": "[r, g, b] 0 to 1, multiplies the ground's color (the ground_material given, or the one already on the ground)." },
           "sky": { "type": "string" },
+          "mist": { "type": "number", "description": "Ground fog from 0 to 1, as in build_world. Omit to keep the level's." },
           "ambient": { "type": "string", "description": "Sound from a Scenario audio result, looped over the whole world." },
           "ambient_volume": { "type": "number", "description": "Default 0.5." },
           "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
           "seed": { "type": "integer", "description": "Change it for another layout. Default 7." },
-          "replace": { "type": "boolean", "description": "Removes the props and landmark of the previous call first. Default true." }
+          "replace": { "type": "boolean", "description": "Removes the props, their lights and the landmark of the previous call first. Default true. A new path always replaces the old one." }
         }
       }
     },
@@ -210,7 +226,7 @@
       "kind": "read",
       "undo": false,
       "time_limit": 20,
-      "description": "What the kit made in the open level: kit world or not, size, props, landmark, sky, pickups, goal, game rules, films, Play running.",
+      "description": "What the kit made in the open level: kit world or not, size, props and their lights, landmark, path, sky, time of day, mist, pickups, goal, game rules, films. During Play it reports the player character instead (pawn, pawn_at_m); stop Play to read the level again.",
       "input_schema": { "type": "object", "properties": {} }
     },
     {
@@ -218,7 +234,7 @@
       "kind": "editor",
       "undo": false,
       "time_limit": 20,
-      "description": "Starts (or stops) Play in the editor so the person can walk the level or play the game.",
+      "description": "Starts (or stops) Play in the editor so the person can walk the level or play the game. Call kit_status a few seconds after starting: it reports the player character once it has spawned.",
       "input_schema": { "type": "object", "properties": { "action": { "type": "string", "enum": ["start", "stop"], "default": "start" } } }
     }
   ]

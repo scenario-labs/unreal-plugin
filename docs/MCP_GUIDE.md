@@ -106,21 +106,21 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 |---|---|
 | `prepare_result_application` | Plans an import: `import`, `place` (`at_location`, `at_pivot`, in front of the camera by default), `material` (on `actor_ids` or the selection), `environment`, `media_plate`, `mesh_edit`; returns a `review` text |
 | `apply_result_application` | Applies the plan, or returns `pending_approval` when changes are off; returns what changed and the import checks |
-| `save_changes` | Saves what the plugin created; `include_levels: true` also saves the level |
+| `save_changes` | Saves what the plugin created; `include_levels: true` also saves the open level (with its World Partition actors) and unsaved assets under the Scenario folder. An untitled level is not saved: the result says so |
 | `remove_scenario_items` | Removes actors the plugin placed and assets it imported, after Unreal's reference check |
 
 **Kit: worlds, games and films** (need "Allow agents to change this project"; distances in meters)
 
 | Tool | Does |
 |---|---|
-| `build_world` | New level with light for a time of day, ground, invisible walls, player start and the template game mode |
-| `dress_world` | Landmark, props with spacing and a clear path, ground material, sky and ambient sound on a `build_world` level |
+| `build_world` | New level with light for a time of day, `mist`, ground, invisible walls, player start and the template game mode |
+| `dress_world` | Landmark, a paved `path` from the player start, props with spacing (`path_sides` along the path, `on_path` for gates the player walks through, `light` for lanterns), ground material and tint, sky, mist and ambient sound on a `build_world` level. With a sky, the sun comes from the sun in the panorama when it shows a clear one |
 | `make_game` | Pickups, an optional goal, timer, music and HUD on the open level |
 | `dress_template` | Copies an Epic template level (platforming, combat...) and dresses the copy with Scenario materials, meshes, sky and music |
 | `make_film` | Level Sequence: camera moves (aerial, crane, orbit, walk, detail, rise), cuts, fades, music and sound effects |
 | `render_film`, `film_status` | Movie Render Queue render, then MP4 with sound when ffmpeg is installed; poll the status |
-| `kit_status` | What the kit made in the open level |
-| `play_level` | Starts or stops Play in the editor |
+| `kit_status` | What the kit made in the open level; during Play, the player character and where it stands |
+| `play_level` | Starts or stops Play in the editor; call `kit_status` a few seconds later to confirm the character spawned |
 
 ## 5. A session, step by step
 
