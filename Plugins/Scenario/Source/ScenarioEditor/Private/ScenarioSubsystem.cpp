@@ -750,7 +750,17 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 		}
 		if (Settings.bSaveImportedAssets)
 		{
-			Report.SavedFiles.Append(ScenarioAssets::SaveAssets(Created));
+			// A shared parent made for this import (M_Scenario_PBR, say) is saved with it: an instance on
+			// disk whose parent exists only in memory loads without its material.
+			TArray<UObject*> ToSave = Created;
+			for (const FString& Path : Report.CreatedAssets)
+			{
+				if (UObject* Object = FindObject<UObject>(nullptr, *Path))
+				{
+					ToSave.AddUnique(Object);
+				}
+			}
+			Report.SavedFiles.Append(ScenarioAssets::SaveAssets(ToSave));
 		}
 
 		// The job remembers what came out of each file.
