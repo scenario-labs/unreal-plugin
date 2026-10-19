@@ -231,10 +231,16 @@ int32 UScenarioCommandlet::Main(const FString& Params)
 		{
 			return 1;
 		}
-		if (FParse::Param(*Params, TEXT("Save")))
+		// With "Save imported assets" on (the default) the import has saved its files already: -Save has nothing left to do.
+		const TArray<TSharedPtr<FJsonValue>>* AlreadySaved = nullptr;
+		const bool bImportSaved = Applied.Data.IsValid() && Applied.Data->TryGetArrayField(TEXT("saved_files"), AlreadySaved) && AlreadySaved->Num() > 0;
+		if (FParse::Param(*Params, TEXT("Save")) && !bImportSaved)
 		{
 			FScenarioActionResult Saved;
-			RunAction(TEXT("save_changes"), MakeShared<FJsonObject>(), Saved);
+			if (!RunAction(TEXT("save_changes"), MakeShared<FJsonObject>(), Saved))
+			{
+				return 1;
+			}
 		}
 	}
 	return 0;
