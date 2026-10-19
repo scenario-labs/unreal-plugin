@@ -703,7 +703,7 @@ void FScenarioActions::RegisterScenarioActions()
 	// wait_for_job
 	{
 		FScenarioAction Action = Make(TEXT("wait_for_job"), EScenarioActionKind::Read,
-			TEXT("Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 150, max 160). Returns job_status."),
+			TEXT("Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s). Returns job_status, with still_running when it is not done yet."),
 			Object({ { TEXT("job_id"), TEXT("string") }, { TEXT("timeout_seconds"), TEXT("integer") } }, { TEXT("job_id") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 			{
@@ -721,7 +721,7 @@ void FScenarioActions::RegisterScenarioActions()
 					return;
 				}
 				const FString LocalId = First->LocalId;
-				const double Deadline = FPlatformTime::Seconds() + Int(Args, TEXT("timeout_seconds"), 150, 1, 160);
+				const double Deadline = FPlatformTime::Seconds() + Int(Args, TEXT("timeout_seconds"), 45, 1, 160);
 				TWeakObjectPtr<UScenarioSubsystem> Weak(S);
 				auto Check = [Weak, LocalId, Deadline, Done](float) -> bool
 				{

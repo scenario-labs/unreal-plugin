@@ -191,6 +191,7 @@ int32 UScenarioCommandlet::Main(const FString& Params)
 	// 3. Wait (several waits for long jobs; the job is never sent twice)
 	TSharedRef<FJsonObject> WaitArgs = MakeShared<FJsonObject>();
 	WaitArgs->SetStringField(TEXT("job_id"), JobId);
+	WaitArgs->SetNumberField(TEXT("timeout_seconds"), 160);
 	FScenarioActionResult Wait;
 	for (int32 Attempt = 0; Attempt < 8; ++Attempt)
 	{
