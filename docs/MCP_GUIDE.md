@@ -152,6 +152,7 @@ Ask: "Put a mossy stone well next to the selected house."
 | HTTP 401 | The token changed: click **Reconnect** for that agent. |
 | Connection refused | The editor is closed, or the server is off (the switch on the **Agent** page, or **Agent server** in Editor Preferences). |
 | The port is not 9877 | Another program held 9877, so the server took the next free port; **Set up** writes the right one. |
+| HTTP 401 or odd answers after the editor crashed, while the Agent page shows a port other than the one in the agent's config | A leftover program can still hold the old port: on macOS the crash reporter of a crashed editor keeps its sockets open. Quit `CrashReportClient` (Activity Monitor), or click **Reconnect** so the agent uses the editor's current port. |
 | `Auth: Not signed in` | Sign in from the Scenario toolbar button. |
 | `Declined` | You declined the spend or the change in the editor. The agent must not retry it. |
 | `pending_approval` | Waiting for **Approve** in the editor. The agent should check `job_status` later, not apply again. |

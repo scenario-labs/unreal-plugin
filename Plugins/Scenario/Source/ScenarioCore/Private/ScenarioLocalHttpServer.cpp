@@ -7,6 +7,7 @@
 #include "HAL/Event.h"
 #include "HAL/RunnableThread.h"
 #include "IPAddress.h"
+#include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "ScenarioCoreModule.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
@@ -55,6 +56,32 @@ namespace
 		default: return TEXT("Status");
 		}
 	}
+
+	/**
+	 * Whether something already accepts connections on this loopback port. On macOS and Linux a reusable
+	 * socket also sets SO_REUSEPORT, so a second editor (or a crash reporter that inherited a crashed
+	 * editor's socket) would bind the same port and agents would reach either one.
+	 */
+	bool IsPortAnswering(ISocketSubsystem& Sockets, const FIPv4Endpoint& Endpoint)
+	{
+		FSocket* Probe = Sockets.CreateSocket(NAME_Stream, TEXT("Scenario port probe"), false);
+		if (!Probe)
+		{
+			return false;
+		}
+		Probe->SetNonBlocking(true);
+		bool bAnswering = false;
+		if (Probe->Connect(*Endpoint.ToInternetAddr()))
+		{
+			// A refused connection reports readable and writable at once; an accepted one is writable with
+			// nothing to read yet (local servers wait for the request).
+			const bool bWritable = Probe->Wait(ESocketWaitConditions::WaitForWrite, FTimespan::FromMilliseconds(200));
+			bAnswering = bWritable && !Probe->Wait(ESocketWaitConditions::WaitForRead, FTimespan::Zero());
+		}
+		Probe->Close();
+		Sockets.DestroySocket(Probe);
+		return bAnswering;
+	}
 }
 
 FScenarioLocalResponse FScenarioLocalResponse::Text(int32 Status, const FString& Body, const FString& ContentType)
@@ -94,6 +121,11 @@ bool FScenarioLocalHttpServer::Start(int32 FirstPort, int32 Tries)
 	{
 		const int32 TryPort = FirstPort == 0 ? 0 : FirstPort + Offset;
 		FIPv4Endpoint Endpoint(FIPv4Address(127, 0, 0, 1), static_cast<uint16>(TryPort));
+		if (TryPort != 0 && IsPortAnswering(*Sockets, Endpoint))
+		{
+			UE_LOG(LogScenario, Log, TEXT("Scenario %s: port %d is in use by another program (another editor, or the crash reporter of one)."), *Name, TryPort);
+			continue;
+		}
 		FTcpSocketBuilder Builder = FTcpSocketBuilder(*FString::Printf(TEXT("Scenario %s"), *Name))
 			.AsNonBlocking()
 			.BoundToEndpoint(Endpoint)
