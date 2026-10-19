@@ -235,11 +235,15 @@ void FScenarioEditorModule::StartupModule()
 	RegisterTabs();
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FScenarioEditorModule::RegisterMenus));
 
-	if (GEngine && GEngine->IsInitialized())
+	// Plugins in the PostEngineInit phase load after OnPostEngineInit fires, and
+	// a module's editor subsystems are created after its StartupModule: start on
+	// the first tick where the subsystem exists.
+	PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
+	StartTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
 	{
 		OnPostEngineInit();
-	}
-	PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
+		return !bStarted;
+	}));
 }
 
 void FScenarioEditorModule::OnPostEngineInit()
@@ -249,6 +253,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 		return;
 	}
 	bStarted = true;
+	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
 	FScenarioCreateModel::Get()->Initialize();
 	if (FLevelEditorModule* LevelEditor = FModuleManager::GetModulePtr<FLevelEditorModule>(TEXT("LevelEditor")))
 	{
@@ -273,6 +278,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 void FScenarioEditorModule::ShutdownModule()
 {
 	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
+	FTSTicker::GetCoreTicker().RemoveTicker(StartTicker);
 	if (bStarted)
 	{
 		SScenarioComposer::Show(false);

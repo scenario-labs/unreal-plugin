@@ -18,6 +18,8 @@
 #include "ObjectTools.h"
 #include "ScenarioActions.h"
 #include "ScenarioAssets.h"
+#include "ScenarioCreateModel.h"
+#include "ScenarioEditorModule.h"
 #include "ScenarioFakes.h"
 #include "ScenarioJson.h"
 #include "ScenarioLedger.h"
@@ -74,7 +76,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioEditorRegistryTest, "Scenario.Editor.A
 bool FScenarioEditorRegistryTest::RunTest(const FString& Parameters)
 {
 	const TArray<FScenarioAction>& Actions = FScenarioActions::Get().All();
-	TestEqual(TEXT("39 actions"), Actions.Num(), 39);
+	TestEqual(TEXT("39 built-in actions and 9 kit actions"), Actions.Num(), 48);
 	TSet<FString> Names;
 	for (const FScenarioAction& Entry : Actions)
 	{
@@ -194,6 +196,16 @@ bool FScenarioEditorStudioTabTest::RunTest(const FString& Parameters)
 }
 
 /** Import of a PNG written on the fly, through the same path as a downloaded result, with no dialog. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioEditorStartedTest, "Scenario.Editor.Module.Started", SCENARIO_TEST_FLAGS)
+bool FScenarioEditorStartedTest::RunTest(const FString& Parameters)
+{
+	// The module starts on a tick after load; by the time tests run it has.
+	TestTrue(TEXT("editor module started"), FScenarioEditorModule::Get().IsStarted());
+	const TSharedRef<FScenarioCreateModel> Create = FScenarioCreateModel::Get();
+	TestTrue(TEXT("Create opens on a model"), Create->IsWorkflow() || !Create->GetModelId().IsEmpty());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioEditorImportPngTest, "Scenario.Editor.Import.Png", SCENARIO_TEST_FLAGS)
 bool FScenarioEditorImportPngTest::RunTest(const FString& Parameters)
 {

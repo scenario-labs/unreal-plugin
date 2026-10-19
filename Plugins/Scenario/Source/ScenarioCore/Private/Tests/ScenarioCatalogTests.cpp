@@ -259,6 +259,15 @@ bool FScenarioLanesTest::RunTest(const FString& Parameters)
 			TestTrue(FString::Printf(TEXT("lane %s has a starter prompt"), Id), Lane->StarterPrompts.Num() > 0);
 		}
 	}
+	// Every lane and mode opens on a model.
+	for (const FScenarioLane& Lane : Lanes.All())
+	{
+		TestFalse(FString::Printf(TEXT("lane %s default model"), *Lane.Id), Lanes.DefaultModel(Lane.Id, FString()).IsEmpty());
+		for (const FString& Mode : Lane.Modes)
+		{
+			TestFalse(FString::Printf(TEXT("lane %s mode %s default model"), *Lane.Id, *Mode), Lanes.DefaultModel(Lane.Id, Mode).IsEmpty());
+		}
+	}
 	TestEqual(TEXT("image default is cheap and fast"), Lanes.DefaultModel(TEXT("image")), FString(TEXT("model_openai-gpt-image-2-5-flare")));
 	TestTrue(TEXT("3d edit mode has models"), Lanes.Find(TEXT("3d")) && Lanes.Find(TEXT("3d"))->ModelsFor(TEXT("edit")).Num() > 0);
 	TestEqual(TEXT("wav preset for sonilo"), ScenarioJson::GetString(Lanes.Presets(TEXT("model_sonilo-v1-1-text-to-sound-effects")), TEXT("audioFormat")), FString(TEXT("wav")));

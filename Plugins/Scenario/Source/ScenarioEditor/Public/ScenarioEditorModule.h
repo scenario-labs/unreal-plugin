@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "Containers/Ticker.h"
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
 
@@ -49,6 +50,8 @@ public:
 
 	/** The Studio's keyboard commands (Generate, picker, Import and place). */
 	TSharedPtr<FUICommandList> GetCommands() const { return Commands; }
+	/** True once the Create model, composer and welcome have started. */
+	bool IsStarted() const { return bStarted; }
 
 private:
 	void OnPostEngineInit();
@@ -58,5 +61,6 @@ private:
 
 	TSharedPtr<FUICommandList> Commands;
 	FDelegateHandle PostEngineInitHandle;
+	FTSTicker::FDelegateHandle StartTicker;
 	bool bStarted = false;
 };
