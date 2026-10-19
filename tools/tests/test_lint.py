@@ -88,9 +88,9 @@ class ResourceTests(unittest.TestCase):
     def test_uplugin_modules_are_editor_only(self):
         plugin = {key: "x" for key in lint.UPLUGIN_KEYS}
         plugin["VersionName"] = "0.1.0"
-        plugin["Modules"] = [{"Name": "ScenarioCore", "Type": "Runtime"}]
+        plugin["Modules"] = [{"Name": "ScenarioCore", "Type": "Runtime"}, {"Name": "ScenarioGameplay", "Type": "Runtime"}]
         messages = [m for _, m in lint.check_uplugin(json.dumps(plugin))]
-        self.assertEqual(messages, ["module ScenarioCore must be Type Editor (nothing ships in a game)"])
+        self.assertEqual(messages, ["module ScenarioCore must be Type Editor (only ScenarioGameplay ships in a game)"])
 
     def test_skill_frontmatter(self):
         self.assertEqual(lint.check_skill("---\nname: a\ndescription: b\n---\n# A\n"), [])

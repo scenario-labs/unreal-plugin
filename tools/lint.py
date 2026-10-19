@@ -37,6 +37,8 @@ EM_DASH = chr(0x2014)
 UPLUGIN = "Plugins/Scenario/Scenario.uplugin"
 LANES = "Plugins/Scenario/Resources/Lanes.json"
 SKILL = "Plugins/Scenario/Resources/AgentSkill/SKILL.md"
+# The one runtime module: actors that games made with the kit use. No network code, no Scenario data.
+RUNTIME_MODULES = {"ScenarioGameplay"}
 UPLUGIN_KEYS = ("FileVersion", "Version", "VersionName", "FriendlyName", "Description", "Category", "CreatedBy", "Modules")
 LANE_KEYS = ("id", "title", "capability", "importer", "folder", "hint", "starter_prompts", "models")
 MODEL_KEYS = ("id", "name")
@@ -116,8 +118,8 @@ def check_uplugin(text: str) -> list[tuple[int, str]]:
         return [(getattr(error, "lineno", 1), f"invalid JSON: {error}")]
     problems = [(1, f"missing key {key}") for key in UPLUGIN_KEYS if key not in data]
     for module in data.get("Modules", []):
-        if module.get("Type") != "Editor":
-            problems.append((1, f"module {module.get('Name')} must be Type Editor (nothing ships in a game)"))
+        if module.get("Type") != "Editor" and module.get("Name") not in RUNTIME_MODULES:
+            problems.append((1, f"module {module.get('Name')} must be Type Editor (only ScenarioGameplay ships in a game)"))
     if not re.fullmatch(r"\d+\.\d+\.\d+", str(data.get("VersionName", ""))):
         problems.append((1, "VersionName must be X.Y.Z"))
     return problems
