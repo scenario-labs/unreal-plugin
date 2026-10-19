@@ -10,11 +10,12 @@
 #include "ScenarioMcpServer.h"
 #include "ScenarioSettings.h"
 #include "ScenarioTypes.h"
+#include "ScenarioWidgets.h"
 #include "Styling/AppStyle.h"
-#include "Styling/CoreStyle.h"
+#include "Styling/StyleColors.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
-#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -22,11 +23,6 @@
 
 namespace
 {
-	FSlateColor Muted()
-	{
-		return FSlateColor::UseSubduedForeground();
-	}
-
 	FText Ago(double Then)
 	{
 		if (Then <= 0.0)
@@ -64,100 +60,109 @@ namespace
 
 void SScenarioAgentsSection::Construct(const FArguments& InArgs)
 {
+	// On and off, in the section header.
+	const TSharedRef<SWidget> Switch = SNew(SCheckBox)
+		.ToolTipText(LOCTEXT("ServerTip", "Runs the local Scenario MCP server, so agents on this computer can price, generate and place assets here."))
+		.IsChecked_Lambda([]() { const TSharedPtr<FScenarioMcpServer> S = Server(); return S.IsValid() && S->IsRunning() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+		.OnCheckStateChanged_Lambda([this](ECheckBoxState State)
+		{
+			if (!FScenarioAgentModule::IsAvailable())
+			{
+				return;
+			}
+			FScenarioAgentModule& Module = FScenarioAgentModule::Get();
+			UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
+			if (State != ECheckBoxState::Checked)
+			{
+				Module.StopServer();
+				Settings.bAgentServer = false;
+			}
+			else
+			{
+				FString Error;
+				bMessageIsError = !Module.StartServer(Error);
+				Message = Error;
+				Settings.bAgentServer = !bMessageIsError;
+			}
+			Settings.SaveConfig();
+		})
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("On", "On"))
+			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+		];
+
 	ChildSlot
 	[
-		SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-		.Padding(12.0f)
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			ScenarioUI::SectionHeader(LOCTEXT("Title", "Agents (Scenario MCP)"), Switch)
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(ScenarioUI::Gutter, ScenarioUI::Gutter, ScenarioUI::Gutter, ScenarioUI::SectionGap))
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
-			[
-				SNew(STextBlock).Text(LOCTEXT("Title", "Agents")).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-			]
-			// Server state
+			// Server state.
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.AutoWrapText(true)
-					.Text_Lambda([]()
+				SNew(STextBlock)
+				.AutoWrapText(true)
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.Text_Lambda([]()
+				{
+					const TSharedPtr<FScenarioMcpServer> S = Server();
+					if (!S.IsValid() || !S->IsRunning())
 					{
-						const TSharedPtr<FScenarioMcpServer> S = Server();
-						if (!S.IsValid() || !S->IsRunning())
-						{
-							return LOCTEXT("Stopped", "The Scenario MCP server is off. Agents cannot reach this editor.");
-						}
-						return FText::Format(LOCTEXT("Running", "Listening on {0} (this computer only){1}."), FText::FromString(S->Url()),
-							S->bRequireToken ? LOCTEXT("WithToken", ", token required") : LOCTEXT("NoToken", ", no token"));
-					})
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
-				[
-					SNew(SButton)
-					.Text_Lambda([]() { const TSharedPtr<FScenarioMcpServer> S = Server(); return S.IsValid() && S->IsRunning() ? LOCTEXT("Stop", "Stop") : LOCTEXT("Start", "Start"); })
-					.OnClicked_Lambda([this]()
-					{
-						if (!FScenarioAgentModule::IsAvailable())
-						{
-							return FReply::Handled();
-						}
-						FScenarioAgentModule& Module = FScenarioAgentModule::Get();
-						UScenarioEditorSettings& Settings = UScenarioEditorSettings::GetMutable();
-						const TSharedPtr<FScenarioMcpServer> S = Server();
-						if (S.IsValid() && S->IsRunning())
-						{
-							Module.StopServer();
-							Settings.bAgentServer = false;
-						}
-						else
-						{
-							FString Error;
-							bMessageIsError = !Module.StartServer(Error);
-							Message = Error;
-							Settings.bAgentServer = !bMessageIsError;
-						}
-						Settings.SaveConfig();
-						return FReply::Handled();
-					})
-				]
+						return LOCTEXT("Stopped", "Off. Agents cannot reach this editor.");
+					}
+					return FText::Format(LOCTEXT("Running", "Agents on this computer can price, generate and place assets here. Listening on {0}{1}."), FText::FromString(S->Url()),
+						S->bRequireToken ? LOCTEXT("WithToken", ", token required") : LOCTEXT("NoToken", ", no token"));
+				})
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 10.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 			[
 				BuildClients()
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
 			[
 				SNew(STextBlock)
 				.AutoWrapText(true)
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
 				.Text_Lambda([this]() { return FText::FromString(Message); })
-				.ColorAndOpacity_Lambda([this]() { return bMessageIsError ? FSlateColor(FLinearColor(0.9f, 0.35f, 0.3f)) : Muted(); })
+				.ColorAndOpacity_Lambda([this]() { return bMessageIsError ? FSlateColor(FStyleColors::Error) : FSlateColor::UseSubduedForeground(); })
 				.Visibility_Lambda([this]() { return Message.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 12.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, ScenarioUI::RowGap)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("Permissions", "Permissions"))
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Section))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
 			[
 				BuildPermissions()
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 12.0f, 0.0f, 4.0f)
+			.Padding(0.0f, ScenarioUI::SectionGap, 0.0f, ScenarioUI::RowGap)
 			[
-				SNew(STextBlock).Text(LOCTEXT("Activity", "Activity")).Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+				SNew(STextBlock)
+				.Text(LOCTEXT("Activity", "Activity"))
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Section))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
@@ -210,50 +215,62 @@ TSharedRef<SWidget> SScenarioAgentsSection::BuildClients()
 	{
 		const FString Id = Client.Id;
 		const FString InfoName = Client.ClientInfoName;
-		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		auto IsConfigured = [this, Id]() { const bool* Found = Configured.Find(Id); return Found && *Found; };
+		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, ScenarioUI::RowGap)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.35f)
+			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Text(Client.Name)
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(0.65f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(STextBlock)
-				.ColorAndOpacity(Muted())
-				.Text_Lambda([this, Id, InfoName]()
-				{
-					const bool* Found = Configured.Find(Id);
-					const bool bConfigured = Found && *Found;
-					const TSharedPtr<FScenarioMcpServer> S = Server();
-					const double Seen = S.IsValid() ? S->LastSeen(InfoName) : 0.0;
-					return FText::Format(LOCTEXT("ClientState", "{0}, {1}"), bConfigured ? LOCTEXT("Configured", "configured") : LOCTEXT("NotConfigured", "not configured"), Ago(Seen));
-				})
+				SNew(SBox)
+				.WidthOverride(ScenarioUI::LabelWidth)
+				[
+					SNew(STextBlock)
+					.Text(Client.Name)
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+				]
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
+			[
+				ScenarioUI::Chip(
+					MakeAttributeLambda([IsConfigured]() { return IsConfigured() ? LOCTEXT("Connected", "Connected") : LOCTEXT("NotSetUp", "Not set up"); }),
+					MakeAttributeLambda([IsConfigured]() { return IsConfigured() ? FSlateColor(FStyleColors::AccentGreen) : FSlateColor(FStyleColors::AccentGray); }))
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				ScenarioUI::Line(MakeAttributeLambda([InfoName]()
+				{
+					const TSharedPtr<FScenarioMcpServer> S = Server();
+					return Ago(S.IsValid() ? S->LastSeen(InfoName) : 0.0);
+				}), ScenarioUI::EText::Meta, true)
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("Connect", "Connect"))
-				.ToolTipText(FText::Format(LOCTEXT("ConnectTip", "Writes the scenario-unreal entry for this client (only that entry, after a backup). {0}"), FText::FromString(ScenarioAgentClients::ConfigPath(Id))))
+				.Text_Lambda([IsConfigured]() { return IsConfigured() ? LOCTEXT("Reconnect", "Reconnect") : LOCTEXT("SetUp", "Set up"); })
+				.ToolTipText(FText::Format(LOCTEXT("ConnectTip", "Writes the scenario-unreal entry for this app with the current token (only that entry, after a backup). {0}"), FText::FromString(ScenarioAgentClients::ConfigPath(Id))))
 				.IsEnabled_Lambda([this, Id]() { return !Busy.Contains(Id); })
 				.OnClicked_Lambda([this, Id]() { Connect(Id); return FReply::Handled(); })
 			]
 		];
 	}
-	Box->AddSlot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+	Box->AddSlot().AutoHeight().Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
 	[
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("CopySetup", "Copy setup"))
-			.ToolTipText(LOCTEXT("CopySetupTip", "Copies the URL, the token and ready-made entries for other clients. The token is a password: share it with nobody."))
+			.Text(LOCTEXT("CopySetup", "Copy setup for another app"))
+			.ToolTipText(LOCTEXT("CopySetupTip", "Copies the URL, the token and ready-made entries for other apps. The token is a password: share it with nobody."))
 			.OnClicked_Lambda([this]()
 			{
 				FPlatformApplicationMisc::ClipboardCopy(*ScenarioAgentClients::SetupText(CurrentUrl(), CurrentToken()));
@@ -264,7 +281,7 @@ TSharedRef<SWidget> SScenarioAgentsSection::BuildClients()
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(6.0f, 0.0f, 0.0f, 0.0f)
+		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("InstallSkill", "Install the agent skill"))
@@ -279,18 +296,18 @@ TSharedRef<SWidget> SScenarioAgentsSection::BuildClients()
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(6.0f, 0.0f, 0.0f, 0.0f)
+		.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("Rotate", "New token"))
-			.ToolTipText(LOCTEXT("RotateTip", "Replaces the token. Every client must be connected again."))
+			.Text(LOCTEXT("Rotate", "New token..."))
+			.ToolTipText(LOCTEXT("RotateTip", "Replaces the token. Every app must be set up again."))
 			.IsEnabled_Lambda([]() { return UScenarioEditorSettings::Get().bAgentToken; })
 			.OnClicked_Lambda([this]()
 			{
-				if (FMessageDialog::Open(EAppMsgType::OkCancel, LOCTEXT("RotateConfirm", "Replace the agent token? Connected clients stop working until you press Connect again.")) == EAppReturnType::Ok)
+				if (FMessageDialog::Open(EAppMsgType::OkCancel, LOCTEXT("RotateConfirm", "Replace the agent token? Connected apps stop working until you press Reconnect.")) == EAppReturnType::Ok)
 				{
 					FScenarioAgentModule::Get().RotateToken();
-					Message = TEXT("New token in place. Press Connect for each client you use.");
+					Message = TEXT("New token in place. Press Reconnect for each app you use.");
 					bMessageIsError = false;
 				}
 				return FReply::Handled();
@@ -355,7 +372,10 @@ void SScenarioAgentsSection::RefreshActivity()
 	{
 		ActivityBox->AddSlot().AutoHeight()
 		[
-			SNew(STextBlock).ColorAndOpacity(Muted()).Text(LOCTEXT("NoActivity", "No agent calls yet in this session."))
+			SNew(STextBlock)
+			.Text(LOCTEXT("NoActivity", "No agent calls yet in this session."))
+			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 		];
 		return;
 	}
@@ -376,7 +396,8 @@ void SScenarioAgentsSection::RefreshActivity()
 		[
 			SNew(STextBlock)
 			.Text(FText::FromString(Line))
-			.ColorAndOpacity(Entry.bOk ? Muted() : FSlateColor(FLinearColor(0.9f, 0.6f, 0.3f)))
+			.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+			.ColorAndOpacity(Entry.bOk ? FSlateColor::UseSubduedForeground() : FSlateColor(FStyleColors::Warning))
 		];
 	}
 }

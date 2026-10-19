@@ -13,7 +13,9 @@
 #include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
 #include "SScenarioPages.h"
+#include "ScenarioWidgets.h"
 #include "Styling/AppStyle.h"
+#include "Styling/StyleColors.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -124,18 +126,44 @@ void SScenarioConnectionPage::Rebuild()
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 
 	// Account
-	Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
+	Box->AddSlot().AutoHeight()
 	[
 		ScenarioUI::Section(LOCTEXT("Account", "Account"),
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				SNew(STextBlock).Text_Lambda([]() { FScenarioSession* S = ScenarioUI::Session(); return S ? FText::FromString(AuthText(*S)) : FText::GetEmpty(); })
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([]() { FScenarioSession* S = ScenarioUI::Session(); return S ? FText::FromString(AuthText(*S)) : FText::GetEmpty(); })
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+					.AutoWrapText(true)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("SignOut", "Sign out"))
+					.ToolTipText(LOCTEXT("SignOutTip", "Removes the saved sign-in from this machine. Jobs and imported assets stay."))
+					.OnClicked_Lambda([]()
+					{
+						if (FScenarioSession* S = ScenarioUI::Session())
+						{
+							S->SignOut();
+						}
+						return FReply::Handled();
+					})
+				]
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 4.0f)
+			.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
 			[
 				SNew(STextBlock)
 				.Text_Lambda([]()
@@ -146,102 +174,91 @@ void SScenarioConnectionPage::Rebuild()
 						return FText::GetEmpty();
 					}
 					return S->IsCredentialStoreSecure()
-						? FText::Format(LOCTEXT("Stored", "Credentials are kept in: {0}. Never in project files."), FText::FromString(S->DescribeCredentialStore()))
-						: FText::Format(LOCTEXT("Insecure", "Credentials are kept in: {0}. This store is not encrypted on this system."), FText::FromString(S->DescribeCredentialStore()));
+						? FText::Format(LOCTEXT("Stored", "Sign-in kept in {0}, never in project files."), FText::FromString(S->DescribeCredentialStore()))
+						: FText::Format(LOCTEXT("Insecure", "Sign-in kept in {0}. This store is not encrypted on this system."), FText::FromString(S->DescribeCredentialStore()));
 				})
-				.ColorAndOpacity_Lambda([]() { FScenarioSession* S = ScenarioUI::Session(); return S && !S->IsCredentialStoreSecure() ? FScenarioStyle::Warning() : FScenarioStyle::Muted(); })
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity_Lambda([]() { FScenarioSession* S = ScenarioUI::Session(); return S && !S->IsCredentialStoreSecure() ? FSlateColor(FStyleColors::Warning) : FSlateColor::UseSubduedForeground(); })
 				.AutoWrapText(true)
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Left)
-			.Padding(0.0f, 6.0f, 0.0f, 0.0f)
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("SignOut", "Sign out"))
-				.ToolTipText(LOCTEXT("SignOutTip", "Removes the saved sign-in from this machine. Jobs and imported assets stay."))
-				.OnClicked_Lambda([]()
-				{
-					if (FScenarioSession* S = ScenarioUI::Session())
-					{
-						S->SignOut();
-					}
-					return FReply::Handled();
-				})
 			])
 	];
 
-	// Workspace
-	Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
+	// Team and project, and what the project used.
+	Box->AddSlot().AutoHeight()
 	[
 		ScenarioUI::Section(LOCTEXT("Workspace", "Team and project"),
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
-			[
-				SNew(STextBlock)
-				.Text_Lambda([]()
-				{
-					FScenarioSession* S = ScenarioUI::Session();
-					if (!S || !S->GetWorkspace().IsSet())
-					{
-						return LOCTEXT("NoWorkspace", "No project chosen yet.");
-					}
-					return FText::Format(LOCTEXT("Current", "Generating in {0}."), FText::FromString(S->GetWorkspace().Label()));
-				})
-			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
 				Session->GetAuthMode() == EScenarioAuthMode::OAuth
 					? StaticCastSharedRef<SWidget>(SNew(SScenarioWorkspacePicker))
 					: StaticCastSharedRef<SWidget>(SNew(STextBlock)
-						.Text(LOCTEXT("KeyScope", "An API key belongs to one project. Use another key to switch."))
-						.ColorAndOpacity(FScenarioStyle::Muted()))
-			])
-	];
-
-	// Usage
-	Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
-	[
-		ScenarioUI::Section(LOCTEXT("Usage", "Usage"),
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(STextBlock)
-				.Text_Lambda([]()
-				{
-					FScenarioSession* S = ScenarioUI::Session();
-					const double Used = S ? S->GetUsageThisMonth() : -1.0;
-					return Used < 0.0
-						? LOCTEXT("UsageUnknown", "Usage this month is not available yet.")
-						: FText::Format(LOCTEXT("UsageValue", "This project used {0} this month (all members, every tool)."), FText::FromString(ScenarioCU::Format(Used)));
-				})
-				.AutoWrapText(true)
+						.Text_Lambda([]()
+						{
+							FScenarioSession* S = ScenarioUI::Session();
+							const FText Current = S && S->GetWorkspace().IsSet()
+								? FText::Format(LOCTEXT("Current", "Generating in {0}."), FText::FromString(S->GetWorkspace().Label()))
+								: LOCTEXT("NoWorkspace", "No project chosen yet.");
+							return FText::Format(LOCTEXT("KeyScope", "{0} An API key belongs to one project: use another key to switch."), Current);
+						})
+						.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+						.AutoWrapText(true))
 			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("RefreshUsage", "Refresh"))
-				.OnClicked_Lambda([]()
-				{
-					if (FScenarioSession* S = ScenarioUI::Session())
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SBox)
+					.WidthOverride(ScenarioUI::LabelWidth)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("UsageLabel", "Usage"))
+						.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					]
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([]()
 					{
-						S->RefreshUsage();
-					}
-					return FReply::Handled();
-				})
+						FScenarioSession* S = ScenarioUI::Session();
+						const double Used = S ? S->GetUsageThisMonth() : -1.0;
+						return Used < 0.0
+							? LOCTEXT("UsageUnknown", "Usage unavailable")
+							: FText::Format(LOCTEXT("UsageValue", "{0} this month, all members and tools"), FText::FromString(ScenarioCU::Format(Used)));
+					})
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+					.AutoWrapText(true)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					ScenarioUI::IconButton(TEXT("Icons.Refresh"), LOCTEXT("RefreshUsage", "Refresh this month's usage. Free."),
+						FSimpleDelegate::CreateLambda([]()
+						{
+							if (FScenarioSession* S = ScenarioUI::Session())
+							{
+								S->RefreshUsage();
+							}
+						}))
+				]
 			])
 	];
 
 	// Sections other modules add (agents).
 	for (const TPair<FName, FScenarioEditorModule::FSectionFactory>& Section : FScenarioEditorModule::ConnectionSections())
 	{
-		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[Section.Value()];
+		Box->AddSlot().AutoHeight()[Section.Value()];
 	}
 
 	// Diagnostics
@@ -254,17 +271,18 @@ void SScenarioConnectionPage::Rebuild()
 			[
 				SNew(STextBlock)
 				.Text_Lambda([]() { return FText::FromString(SScenarioConnectionPage::Diagnostics()); })
-				.ColorAndOpacity(FScenarioStyle::Muted())
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 				.AutoWrapText(true)
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
-				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
 				[
 					SNew(SButton)
 					.Text(LOCTEXT("Copy", "Copy diagnostics"))
@@ -277,7 +295,7 @@ void SScenarioConnectionPage::Rebuild()
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
-				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
 				[
 					SNew(SButton)
 					.Text(LOCTEXT("Folder", "Open state folder"))
@@ -292,7 +310,7 @@ void SScenarioConnectionPage::Rebuild()
 				.AutoWidth()
 				[
 					SNew(SButton)
-					.Text(LOCTEXT("Settings", "Settings"))
+					.Text(LOCTEXT("Settings", "Editor Preferences"))
 					.ToolTipText(LOCTEXT("SettingsTip", "Opens Editor Preferences > Plugins > Scenario."))
 					.OnClicked_Lambda([]()
 					{
@@ -306,7 +324,6 @@ void SScenarioConnectionPage::Rebuild()
 	Content->SetContent(
 		SNew(SScrollBox)
 		+ SScrollBox::Slot()
-		.Padding(12.0f)
 		[
 			Box
 		]);

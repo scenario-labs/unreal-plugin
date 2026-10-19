@@ -30,7 +30,7 @@ public:
 
 	/** Opens (or focuses) the Studio tab on a page. */
 	static void OpenStudio(FName Page = NAME_None);
-	/** Opens the Studio's Create page on a lane with a model, for context menus and "Use settings". Sends nothing. */
+	/** Opens the Studio's Create page on a lane with a model, for context menus and "Reuse settings". Sends nothing. */
 	static void OpenCreate(const FString& Lane, const FString& ModelId = FString(), const TSharedPtr<class FJsonObject>& Values = nullptr);
 	static void ToggleComposer();
 	static bool IsComposerVisible();

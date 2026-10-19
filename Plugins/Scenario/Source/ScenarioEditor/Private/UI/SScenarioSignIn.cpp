@@ -8,7 +8,9 @@
 #include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
 #include "SScenarioPages.h"
+#include "ScenarioWidgets.h"
 #include "Styling/AppStyle.h"
+#include "Styling/StyleColors.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboButton.h"
@@ -32,24 +34,17 @@ namespace ScenarioUI
 
 	TSharedRef<SWidget> Section(const FText& Title, const TSharedRef<SWidget>& Body)
 	{
-		return SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-			.Padding(12.0f)
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(0.0f, 0.0f, 0.0f, 8.0f)
-				[
-					SNew(STextBlock)
-					.Text(Title)
-					.Font(FScenarioStyle::Font(10, true))
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					Body
-				]
+				SectionHeader(Title)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(FMargin(Gutter, Gutter, Gutter, SectionGap))
+			[
+				Body
 			];
 	}
 
@@ -93,7 +88,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("Tagline", "Every Scenario model, inside Unreal."))
-				.Font(FScenarioStyle::Font(16, true))
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Display))
 			]
 			// Browser sign-in
 			+ SVerticalBox::Slot()
@@ -102,7 +97,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 			[
 				SNew(SBox)
 				.MinDesiredWidth(280.0f)
-				.HeightOverride(36.0f)
+				.HeightOverride(32.0f)
 				.Visibility_Lambda([Signing]() { return Signing() ? EVisibility::Collapsed : EVisibility::Visible; })
 				[
 					SNew(SButton)
@@ -130,7 +125,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 					[
 						SNew(STextBlock)
 						.Text(LOCTEXT("SignIn", "Sign in with Scenario"))
-						.Font(FScenarioStyle::Font(11, true))
+						.Font(ScenarioUI::Font(ScenarioUI::EText::Title))
 					]
 				]
 			]
@@ -141,7 +136,8 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("OpensBrowser", "Opens your browser."))
-				.ColorAndOpacity(FScenarioStyle::Muted())
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 				.Visibility_Lambda([Signing]() { return Signing() ? EVisibility::Collapsed : EVisibility::Visible; })
 			]
 			// In progress
@@ -158,6 +154,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([this]() { return FText::FromString(Status); })
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 					.AutoWrapText(true)
 				]
 				+ SVerticalBox::Slot()
@@ -167,7 +164,7 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([this]() { return FText::FromString(DeviceCode); })
-					.Font(FScenarioStyle::Font(20, true))
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Display))
 					.Visibility_Lambda([this]() { return DeviceCode.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 				]
 				+ SVerticalBox::Slot()
@@ -318,7 +315,8 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 							FScenarioSession* S = ScenarioUI::Session();
 							return S ? FText::Format(LOCTEXT("StoredIn", "Stored in: {0}"), FText::FromString(S->DescribeCredentialStore())) : FText::GetEmpty();
 						})
-						.ColorAndOpacity(FScenarioStyle::Muted())
+						.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 					]
 				]
 			]
@@ -338,7 +336,8 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 					FScenarioSession* S = ScenarioUI::Session();
 					return S && S->GetLastError().Kind != EScenarioErrorKind::None ? FText::FromString(S->GetLastError().Message) : FText::GetEmpty();
 				})
-				.ColorAndOpacity(FScenarioStyle::Error())
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
+				.ColorAndOpacity(FStyleColors::Error)
 				.AutoWrapText(true)
 			]
 			// Privacy
@@ -352,7 +351,8 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text(LOCTEXT("Privacy", "Prompts and files you send go to Scenario. Nothing from this plugin ships in your game build."))
-					.ColorAndOpacity(FScenarioStyle::Muted())
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 					.AutoWrapText(true)
 				]
 				+ SHorizontalBox::Slot()
@@ -374,7 +374,8 @@ void SScenarioSignIn::Construct(const FArguments& InArgs)
 					"Sent to Scenario: the prompts and settings of each request, the references you add (viewport captures, files, exported meshes) and price checks.\n"
 					"Kept on this machine: your sign-in (system keychain), the job list and downloads (Saved/Scenario), provenance on imported assets.\n"
 					"Never sent: other project files, levels, source code. Usage statistics are off unless you turn them on in Editor Preferences."))
-				.ColorAndOpacity(FScenarioStyle::Muted())
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 				.AutoWrapText(true)
 			]
 		]
@@ -407,6 +408,7 @@ void SScenarioWorkspacePicker::Construct(const FArguments& InArgs)
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("PickWorkspace", "Choose the Scenario team and project to generate in. Unreal remembers it for this project."))
+			.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 			.AutoWrapText(true)
 		]
 		+ SVerticalBox::Slot()

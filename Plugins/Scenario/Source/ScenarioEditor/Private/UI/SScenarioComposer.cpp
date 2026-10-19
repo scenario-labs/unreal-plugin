@@ -3,6 +3,7 @@
 #include "SScenarioComposer.h"
 
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "IAssetViewport.h"
 #include "LevelEditor.h"
 #include "ScenarioCreateModel.h"
@@ -11,14 +12,17 @@
 #include "ScenarioSession.h"
 #include "ScenarioSettings.h"
 #include "ScenarioStyle.h"
+#include "ScenarioWidgets.h"
 #include "SScenarioJobCard.h"
 #include "SScenarioModelPicker.h"
 #include "SScenarioPages.h"
+#include "SSimpleComboButton.h"
 #include "Styling/AppStyle.h"
+#include "Styling/StyleColors.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SSegmentedControl.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -32,18 +36,52 @@ namespace
 	TWeakPtr<IAssetViewport> OverlayViewport;
 	TWeakPtr<SScenarioComposer> ComposerWidget;
 
-	/** The composer's lanes, in the spec's order; Sky is the Environment lane. */
-	const TArray<TPair<FString, FText>>& ComposerLanes()
+	void OpenPicker(const TSharedRef<FScenarioCreateModel>& M)
 	{
-		static const TArray<TPair<FString, FText>> Lanes = {
-			{ TEXT("image"), LOCTEXT("Image", "Image") },
-			{ TEXT("3d"), LOCTEXT("3D", "3D") },
-			{ TEXT("material"), LOCTEXT("Material", "Material") },
-			{ TEXT("audio"), LOCTEXT("Audio", "Audio") },
-			{ TEXT("environment"), LOCTEXT("Sky", "Sky") },
-			{ TEXT("render"), LOCTEXT("Render", "Render") },
-		};
-		return Lanes;
+		TArray<FString> Picks;
+		for (const FScenarioLaneModel& Pick : M->QuickPicks())
+		{
+			Picks.Add(Pick.Id);
+		}
+		SScenarioModelPicker::Open(M->PickerModality(), FString(), [M](const FString& Id, const FString& Name) { M->SetModel(Id, Name); }, Picks, M->GetModelId());
+	}
+
+	/** The lane's recommended models, then every model. */
+	TSharedRef<SWidget> ModelMenu(const TSharedRef<FScenarioCreateModel>& M)
+	{
+		FMenuBuilder Menu(true, nullptr);
+		const FScenarioLane* Lane = M->GetLane();
+		Menu.BeginSection(NAME_None, FText::Format(LOCTEXT("Recommended", "Recommended for {0}"), FText::FromString(Lane ? Lane->Title : FString())));
+		for (const FScenarioLaneModel& Pick : M->QuickPicks())
+		{
+			const FString Id = Pick.Id;
+			const FString Name = Pick.Name;
+			FString Note = Pick.Note;
+			if (!Note.IsEmpty())
+			{
+				Note[0] = FChar::ToUpper(Note[0]);
+			}
+			Menu.AddMenuEntry(FText::FromString(Name), FText::FromString(Note), FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([M, Id, Name]() { M->SetModel(Id, Name); }),
+					FCanExecuteAction(), FIsActionChecked::CreateLambda([M, Id]() { return M->GetModelId() == Id; })),
+				NAME_None, EUserInterfaceActionType::RadioButton);
+		}
+		Menu.EndSection();
+		Menu.AddSeparator();
+		Menu.AddMenuEntry(LOCTEXT("Browse", "Browse all models..."), LOCTEXT("BrowseTip", "Every Scenario model and your team's trained ones."),
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"), FUIAction(FExecuteAction::CreateLambda([M]() { OpenPicker(M); })));
+		return Menu.MakeWidget();
+	}
+
+	FSlateColor HintColor(EScenarioHintTone Tone)
+	{
+		switch (Tone)
+		{
+		case EScenarioHintTone::Error: return FStyleColors::Error;
+		case EScenarioHintTone::Warning: return FStyleColors::Warning;
+		case EScenarioHintTone::Success: return FStyleColors::Success;
+		default: return FSlateColor::UseSubduedForeground();
+		}
 	}
 }
 
@@ -100,29 +138,27 @@ void SScenarioComposer::Construct(const FArguments& InArgs)
 		SessionHandle = Session->OnChanged.AddSP(this, &SScenarioComposer::RefreshLatest);
 	}
 
-	TSharedRef<SHorizontalBox> Lanes = SNew(SHorizontalBox);
-	for (const TPair<FString, FText>& Entry : ComposerLanes())
+	// The Create lanes, as in the Studio.
+	TSharedRef<SSegmentedControl<FString>> Lanes = SNew(SSegmentedControl<FString>)
+		.UniformPadding(FMargin(8.0f, 2.0f))
+		.Value_Lambda([M]() { return M->GetLaneKey(); })
+		.OnValueChanged_Lambda([M](const FString& Lane) { M->SetLane(Lane); });
+	for (const FScenarioLane& Lane : FScenarioLanes::Get().All())
 	{
-		const FString Id = Entry.Key;
-		Lanes->AddSlot().AutoWidth().Padding(0.0f, 0.0f, 2.0f, 0.0f)
-		[
-			SNew(SCheckBox)
-			.Style(FAppStyle::Get(), "ToggleButtonCheckbox")
-			.IsChecked_Lambda([M, Id]() { return M->GetLaneId() == Id ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-			.OnCheckStateChanged_Lambda([M, Id](ECheckBoxState) { M->SetLane(Id); })
-			[
-				SNew(SBox).Padding(FMargin(6.0f, 1.0f))[SNew(STextBlock).Text(Entry.Value)]
-			]
-		];
+		Lanes->AddSlot(Lane.Id, false)
+			.Text(FText::FromString(Lane.Title))
+			.ToolTip(FText::FromString(Lane.Hint));
 	}
+	Lanes->RebuildChildren();
 
 	ChildSlot
 	[
 		SNew(SBorder)
 		.BorderImage(FAppStyle::GetBrush("Menu.Background"))
-		.Padding(10.0f)
+		.Padding(ScenarioUI::SectionGap)
 		[
 			SNew(SVerticalBox)
+			// Lane, model, Studio, close.
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
@@ -130,7 +166,7 @@ void SScenarioComposer::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
 				[
 					SNew(SImage).Image(FScenarioStyle::Get().GetBrush("Scenario.Mark.Small"))
 				]
@@ -143,59 +179,46 @@ void SScenarioComposer::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot()
 				.FillWidth(1.0f)
 				.VAlign(VAlign_Center)
-				.Padding(8.0f, 0.0f)
+				.HAlign(HAlign_Left)
+				.Padding(ScenarioUI::Gutter, 0.0f)
 				[
-					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-					.ToolTipText(LOCTEXT("ModelTip", "Changes the model (same as the Studio)."))
-					.OnClicked_Lambda([M]()
-					{
-						TArray<FString> Picks;
-						for (const FScenarioLaneModel& Pick : M->QuickPicks())
-						{
-							Picks.Add(Pick.Id);
-						}
-						SScenarioModelPicker::Open(M->PickerModality(), FString(), [M](const FString& Id, const FString& Name) { M->SetModel(Id, Name); }, Picks, M->GetModelId());
-						return FReply::Handled();
-					})
-					[
-						SNew(STextBlock)
-						.Text_Lambda([M]() { return FText::Format(LOCTEXT("Model", "{0} ▾"), FText::FromString(M->GetModelName())); })
-					]
+					SNew(SSimpleComboButton)
+					.Text_Lambda([M]() { const FString Name = M->GetModelName(); return Name.IsEmpty() ? LOCTEXT("PickModel", "Pick a model") : FText::FromString(Name); })
+					.HasDownArrow(true)
+					.ToolTipText(LOCTEXT("ModelTip", "Changes the model: the lane's recommended ones, or every model. The Studio uses the same form."))
+					.OnGetMenuContent_Lambda([M]() { return ModelMenu(M); })
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
 				[
 					SNew(SButton)
-					.Text(LOCTEXT("Settings", "Settings"))
-					.ToolTipText(LOCTEXT("SettingsTip", "Opens the full form in the Studio: references, settings, destination."))
+					.Text(LOCTEXT("OpenStudio", "Open in Studio"))
+					.ToolTipText(LOCTEXT("OpenStudioTip", "Opens the full form in the Studio: references, settings, destination."))
 					.OnClicked_Lambda([]() { FScenarioEditorModule::OpenStudio(ScenarioPages::Create); return FReply::Handled(); })
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-					.ToolTipText(LOCTEXT("CloseTip", "Hides the composer (Alt+Shift+Space brings it back)."))
-					.OnClicked_Lambda([]() { FScenarioEditorModule::ToggleComposer(); return FReply::Handled(); })
-					[
-						SNew(STextBlock).Text(FText::FromString(TEXT("×")))
-					]
+					ScenarioUI::IconButton(TEXT("Icons.X"), LOCTEXT("CloseTip", "Hide the composer (Alt+Shift+Space brings it back)."),
+						FSimpleDelegate::CreateLambda([]() { FScenarioEditorModule::ToggleComposer(); }))
 				]
 			]
+			// Prompt and Generate.
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
 				.FillWidth(1.0f)
-				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, ScenarioUI::Gutter, 0.0f)
 				[
 					SAssignNew(Prompt, SEditableTextBox)
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 					.HintText_Lambda([M]()
 					{
 						const FScenarioLane* Lane = M->GetLane();
@@ -222,29 +245,41 @@ void SScenarioComposer::Construct(const FArguments& InArgs)
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
+				.VAlign(VAlign_Center)
 				[
-					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
-					.IsEnabled_Lambda([M]() { return M->CanClickGenerate(); })
-					.ToolTipText_Lambda([M]() { return M->GetButtonTooltip(); })
-					.OnClicked_Lambda([M]() { M->Generate(); return FReply::Handled(); })
+					SNew(SBox)
+					.HeightOverride(28.0f)
 					[
-						SNew(STextBlock).Text_Lambda([M]() { return M->GetButtonText(); })
+						SNew(SButton)
+						.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
+						.VAlign(VAlign_Center)
+						.IsEnabled_Lambda([M]() { return M->CanClickGenerate(); })
+						.ToolTipText_Lambda([M]() { return M->GetButtonTooltip(); })
+						.OnClicked_Lambda([M]() { M->Generate(); return FReply::Handled(); })
+						[
+							SNew(STextBlock)
+							.Text_Lambda([M]() { return M->GetButtonText(); })
+							.Font(ScenarioUI::Font(ScenarioUI::EText::Title))
+							.ColorAndOpacity_Lambda([M]() { return M->IsPriceStale() ? FLinearColor(1.0f, 1.0f, 1.0f, 0.55f) : FLinearColor::White; })
+						]
 					]
 				]
 			]
+			// Why Generate is disabled, or how the last request is going.
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::RowGap, 0.0f, 0.0f)
 			[
 				SNew(STextBlock)
-				.Text_Lambda([M]() { return FText::FromString(M->GetLastError()); })
-				.ColorAndOpacity(FScenarioStyle::Error())
-				.Visibility_Lambda([M]() { return M->GetLastError().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+				.Text_Lambda([M]() { return M->GetHint().Text; })
+				.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
+				.ColorAndOpacity_Lambda([M]() { return HintColor(M->GetHint().Tone); })
+				.AutoWrapText(true)
+				.Visibility_Lambda([M]() { return M->GetHint().Text.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+			.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 			[
 				SAssignNew(Latest, SBox)
 			]

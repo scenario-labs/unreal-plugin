@@ -172,22 +172,22 @@ namespace
 		const TWeakPtr<SWindow> WeakWindow = Window;
 		Window->SetContent(
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-			.Padding(12.0f)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+			.Padding(ScenarioUI::SectionGap)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot()
 				.FillHeight(1.0f)
 				[
-					SNew(SMultiLineEditableTextBox).Text(FText::FromString(Text)).IsReadOnly(true).AutoWrapText(true)
+					SNew(SMultiLineEditableTextBox).Text(FText::FromString(Text)).IsReadOnly(true).AutoWrapText(true).Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.HAlign(HAlign_Right)
-				.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+				.Padding(0.0f, ScenarioUI::Gutter, 0.0f, 0.0f)
 				[
 					SNew(SButton)
-					.Text(LOCTEXT("UseSettings", "Use settings"))
+					.Text(LOCTEXT("UseSettings", "Reuse settings"))
 					.ToolTipText(LOCTEXT("UseSettingsTip", "Fills the Create form with this model and these settings. Sends nothing."))
 					.IsEnabled(!Model.IsEmpty())
 					.OnClicked_Lambda([LaneId, Model, Params, WeakWindow]()

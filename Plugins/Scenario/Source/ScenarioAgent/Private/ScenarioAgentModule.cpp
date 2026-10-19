@@ -12,6 +12,7 @@
 #include "ScenarioEditorModule.h"
 #include "ScenarioJson.h"
 #include "ScenarioMcpServer.h"
+#include "ScenarioWidgets.h"
 #include "ScenarioSettings.h"
 #include "ScenarioTypes.h"
 #include "SScenarioAgentsSection.h"
@@ -142,7 +143,7 @@ void FScenarioAgentModule::StartupModule()
 				[
 					SNew(STextBlock)
 					.Text(LOCTEXT("Agents", "Agents"))
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 				]
 			];
 	});
