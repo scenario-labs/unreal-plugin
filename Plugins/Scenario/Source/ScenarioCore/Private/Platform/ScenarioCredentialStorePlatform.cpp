@@ -78,7 +78,8 @@ namespace
 			CFRelease(Query);
 			if (Status != errSecSuccess || Result == nullptr)
 			{
-				if (Status == errSecInteractionNotAllowed)
+				// With the dialog turned off, the login keychain answers errSecAuthFailed or errSecInteractionNotAllowed.
+				if (FApp::IsUnattended() && (Status == errSecInteractionNotAllowed || Status == errSecAuthFailed))
 				{
 					UE_LOG(LogScenario, Display, TEXT("The saved %s needs keychain approval, which an unattended run cannot ask for. Set SCENARIO_API_KEY and SCENARIO_API_SECRET instead."), *Account);
 				}
