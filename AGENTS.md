@@ -79,18 +79,19 @@ use. Nothing else from the plugin is compiled into a packaged game.
     plus the async node "Run Scenario Action").
   - `ScenarioCommandlet`: `-run=Scenario` for scripted generations.
   - `UI/`: Slate views: Studio, Create page, model picker, forms, job cards,
-    Jobs, Library, Workflows, Connection, sign-in, viewport composer, style and
-    thumbnails.
+    Jobs, Library, Workflows, Agent and Settings pages, sign-in, viewport
+    composer, style and thumbnails.
   - `Private/Tests/`: automation tests `Scenario.Editor.*` (action registry,
     imports, placement undo, provenance, Studio registration).
 - `ScenarioAgent/` (loading phase PostEngineInit):
   - `ScenarioMcpServer`: the local MCP server (Streamable HTTP on
     `127.0.0.1:9877` or the next free port, bearer token, Host and Origin
     checks, sessions, tool annotations).
-  - `ScenarioAgentClients`: Connect buttons for Claude Code, Codex, Cursor and
+  - `ScenarioAgentClients`: Set up buttons for Claude Code, Codex, Cursor and
     Claude Desktop, with a timestamped backup of every config file they edit.
   - `ScenarioAgentModule`, `SScenarioAgentsSection`: server lifecycle, token,
-    activity log, Connection > Agents.
+    activity log, the header's agent dot and the Agents section of the Studio's
+    Agent page.
   - `Private/Tests/`: automation tests `Scenario.Agent.*`.
 - `ScenarioGameplay/` (Runtime, loading phase Default): `AScenarioPickup`,
   `AScenarioGoal` and `AScenarioGameRules` (timer, music, a Slate HUD) for the
@@ -100,7 +101,7 @@ Also in `Plugins/Scenario/`: `Content/Python/scenario_unreal/` (the kit: worlds,
 games and films from Scenario results; `recipes.py` is the entry point),
 `Resources/Kit.json` (the kit tools' names, descriptions and schemas),
 `Resources/Lanes.json` (lanes, picks, presets),
-`Resources/AgentSkill/SKILL.md` (the agent skill the Connect section installs),
+`Resources/AgentSkill/SKILL.md` (the agent skill the Agent page installs),
 `Tests/Fixtures/` (recorded Scenario replies), `Config/FilterPlugin.ini`.
 
 ## Spending rules

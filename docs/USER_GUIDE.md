@@ -8,7 +8,7 @@ New here? The [quick start](QUICK_START.md) takes two minutes.
 
 ## 1. Sign in
 
-Open the Studio with the **Scenario** button in the level editor toolbar (Alt+Shift+S), or **Window > Scenario**.
+Open the Studio with the **Scenario** button in the level editor toolbar (Alt+Shift+S), or **Window > Scenario Studio**.
 
 | Option | When to use it |
 |---|---|
@@ -16,22 +16,26 @@ Open the Studio with the **Scenario** button in the level editor toolbar (Alt+Sh
 | **Sign in with a code** | When the browser cannot reach this editor (remote desktop, locked-down machines). Enter the code shown in Unreal on the page that opens. |
 | **Use an API key instead** | Build machines and shared accounts. **Check and save** tests the key with a free call. An API key belongs to one Scenario project. |
 
-Credentials are kept in the macOS Keychain or the Windows Credential Manager. On Linux, version 0.1 keeps them in a file in your user config folder that only you can read. They are never written to project files. **Connection > Account** shows where they are stored and has **Sign out**.
+Credentials are kept in the macOS Keychain or the Windows Credential Manager. On Linux, version 0.1 keeps them in a file in your user config folder that only you can read. They are never written to project files. **Settings** shows where they are stored and has **Sign out**.
 
-After signing in, choose the **Team** and **Project** to generate in. Unreal remembers the choice per project. The Studio header shows the project and **Used this month**: the Creative Units the project used this month, across all members and tools.
+After signing in, choose the **Team** and **Project** to generate in, then **Use this project**. Unreal remembers the choice per project. **Settings** and the footer of **Jobs** show the Creative Units the project used this month, across all members and tools.
 
 ## 2. The Studio
 
+The pages, in the order of the left rail:
+
 | Page | What it does |
 |---|---|
-| **Create** | Pick a lane and a model, fill the form, check the price, generate. Results of the lane appear below the form. |
-| **Workflows** | Run your team's ready workflows and Scenario's featured ones. |
-| **Library** | Browse and import your Scenario project's assets, and see what this Unreal project generated. |
+| **Create** | Pick a lane and a model, fill the form, check the price, generate. The newest results appear below the form. |
+| **Library** | **On Scenario**: your Scenario project's assets, to import. **In this project**: the assets this Unreal project imported from Scenario. |
 | **Jobs** | Every request, its state and its cost. Survives restarts. |
-| **Results** | Finished generations, and recent jobs on Scenario that are not in this project yet. |
-| **Connection** | Account, team and project, usage, agents and diagnostics. |
+| **Workflows** | Run your team's ready workflows and Scenario's featured ones. |
+| **Agent** | The local Scenario MCP server: setup for each agent, permissions and the activity log. |
+| **Settings** | Account, team and project, usage this month, output, import and spending preferences, diagnostics. |
 
-The toolbar button's menu also lists quick actions per lane and your recent jobs.
+The header shows the project (click it to switch), a pill such as **12 CU today** with the Creative Units spent today from this editor (charged, or quoted until Scenario reports the charge; hidden while nothing was spent), a dot for the agent server that opens **Agent**, and the account menu.
+
+The toolbar button's arrow menu has your account (it opens Settings), one entry per lane, your recent jobs, and **More**: **Quick Composer**, **Agent** and **Settings** (Editor Preferences).
 
 ### Keyboard shortcuts
 
@@ -47,22 +51,22 @@ On macOS, Ctrl is Cmd.
 
 ## 3. Create
 
-1. **Lane.** Image, Video, 3D, Material, Audio, Environment or Render. Each lane has picks: recommended models that work well in Unreal.
-2. **Model.** **Change** opens the model picker (Ctrl+M) with every Scenario model and your team's trained models. Filter by kind, search, star favorites, and show **legacy** models when you need an older one. **Suggest** asks Scenario which models fit your prompt best; it is free.
-3. **Prompt and settings.** The form is built from the model's own settings. Required fields carry a `*`. Fields marked **CU** change the price. **More settings** shows the rest. Starter prompts help when the field is empty.
-4. **References.** Models that take images, meshes, audio or video show a **References** row:
-   - **+ Viewport** renders the active level viewport, without gizmos.
-   - **+ Selected actors** exports the selected actors to one GLB.
-   - **+ Content Browser** uses the selected assets. Assets that came from Scenario are reused without an upload.
-   - **+ File** uploads a file from disk to your Scenario project.
+1. **Lane.** Image, 3D, Material, Sky, Audio, Video or Restyle, and **Workflow** for workflows (see Workflows). Each lane has picks: recommended models that work well in Unreal.
+2. **Model.** **Change** lists the lane's recommended models, **Suggest for my prompt** and **Browse all models...**, which opens the model picker (Ctrl+M) with every Scenario model and your team's trained models. In the picker, filter by type and category, search, pin favorites to the top of the list, and turn on **Show older models** when you need one that Scenario has replaced. **Suggest for my prompt** asks Scenario which models fit your prompt best; it is free.
+3. **Prompt and settings.** The form is built from the model's own settings. Optional inputs are marked **Optional**. Settings that change the price say **Changes the price**. **N more settings** shows the rest. **Examples** fills the prompt with a starter prompt for the lane.
+4. **References.** Models that take images, meshes, audio or video show an **Inputs** section. Drop assets or files on an input, or click it:
+   - **Capture the viewport** renders the active level viewport, without gizmos.
+   - **Selected actors** exports the selected actors to one GLB.
+   - **Use the Content Browser selection** uses the selected assets. Assets that came from Scenario are reused without an upload.
+   - **Choose a file...** uploads a file from disk to your Scenario project.
 5. **Price.** The **Generate** button shows the price of the current settings. The plugin checks it for free while you edit. If the price is older than two minutes, the next click checks it again and sends only if it has not changed.
 6. **Generate.** The request goes to Scenario once. The job card follows it to the end.
 
-**Prompt Spark** (the **Spark** button next to the prompt) writes three better prompts for the chosen model. The first click checks its price; the second runs it. Click a proposal to use it.
+**Improve prompt** (Prompt Spark, next to the prompt) writes three better prompts for the chosen model. Once the prompt has three words, the plugin checks its price for free and the button shows it; a click runs it. **Use** on a proposal replaces your prompt.
 
 **Unreal-ready** (3D lane) adds constraints to the prompt: real-world scale, pivot at the base, clean topology, a single object.
 
-**Folder** chooses the Content Browser folder for the lane's results. **Use the default folder** goes back to the project setting.
+The folder button above **Generate** shows where results go; click it to choose another Content Browser folder. **Use the default folder** goes back to the project setting.
 
 ## 4. Lanes
 
@@ -70,49 +74,52 @@ On macOS, Ctrl is Cmd.
 |---|---|---|---|
 | Image | | Texture, plus a material for display | On the selected actor's material, or a plane in front of the camera |
 | Video | | MP4 with a File Media Source | A Media Plate in front of the camera (needs the Media Plate plugin) |
-| 3D | Text, Image, Edit | Static or skeletal mesh with PBR materials, imported through Interchange | At the viewport pivot, or at the original actor's pivot for an edit |
+| 3D | Text, Image, Mesh | Static or skeletal mesh with PBR materials, imported through Interchange | At the viewport pivot, or at the original actor's pivot for an edit |
 | Material | | Tileable PBR maps wired into a material instance | On the selected actor's material slot |
 | Audio | | Sound Wave | An Ambient Sound in front of the camera |
-| Environment | Generate, HDRI | 360 sky (2:1 panorama) | A sky sphere, or an HDRI Backdrop for `.hdr` results (needs the HDRI Backdrop plugin) |
-| Render | | Restyled image of the active viewport | Like Image |
+| Sky | 360 sky, HDRI lighting | 360 sky (2:1 panorama) | A sky sphere, or an HDRI Backdrop for `.hdr` results (needs the HDRI Backdrop plugin) |
+| Restyle | | Restyled image of the active viewport | Like Image |
 
 Notes:
 
 - Texture roles are set on import: sRGB is off for normal, roughness, metallic and height maps.
 - Some material models return a smoothness map. Version 0.1 imports it as it is; Unreal expects roughness, so invert it (roughness = 1 - smoothness) if the surface looks too shiny.
-- When an optional engine plugin is missing, the asset is still imported and the card says which plugin to enable in **Edit > Plugins**.
+- When an optional engine plugin is missing, the asset is still imported but not placed. In version 0.1 the message naming the plugin to enable in **Edit > Plugins** reaches agents and scripts only, in the result's warnings.
 
 ### Next steps on a result
 
-A finished card's **Next** menu starts a new request from its result. Nothing is sent until you press **Generate**.
+**Send to**, in a finished job's **...** menu or in the Library, starts a new request from its result. Nothing is sent until you press **Generate**.
 
-- Images: **Edit**, **Make 3D**, **Make material**, **Animate**, **Upscale**, **Remove background**.
-- 3D: **Edit**, **Rig**, **Retexture**, **Remesh**.
+- Images: **Edit the image**, **Make 3D**, **Make a material**, **Animate**, **Upscale**, **Remove background**.
+- 3D: **Edit the mesh**, **Rig**, **Retexture**, **Remesh**.
 - Video: **Upscale**.
 
 ## 5. Quick composer
 
-A bar at the bottom of the level viewport for fast requests without the Studio: lane (Image, 3D, Material, Audio, Sky, Render), model, prompt, and the priced **Generate** button. **Settings** opens the full form in the Studio. Show or hide it with Alt+Shift+Space or the toolbar menu.
+A bar at the bottom of the level viewport for fast requests without the Studio: lane (Image, 3D, Material, Sky, Audio, Video, Restyle), model, prompt, and the priced **Generate** button. **Open in Studio** opens the full form in the Studio. Show or hide it with Alt+Shift+Space or the toolbar menu.
 
 ## 6. Jobs and recovery
 
 Every request is written to the project's job list (`Saved/Scenario/`) before it is sent, so nothing is lost when the editor closes. On the next start, running jobs resume and partial downloads continue where they stopped.
 
+**Jobs** lists every request, newest first under day headers. The chips **All**, **Running**, **Ready** and **Needs attention** filter the list (**Needs attention** shows while a job failed, was blocked, is not confirmed or stopped downloading), and the type menu keeps one kind of result. The footer shows the Creative Units the project used this month, across all members and tools. Each job has its main action on the row and the others in its **...** menu.
+
 | State | Meaning | What you can do |
 |---|---|---|
 | Sending, Queued, Generating | On its way or running on Scenario | **Cancel** (Scenario decides whether Creative Units are refunded) |
 | Downloading | Files are being fetched | Wait; a stopped download resumes |
-| Ready | Downloaded, not imported | **Import and place**, or **Import** (Content Browser only) |
-| Imported | In the project | **Next**, **Delete imported assets** |
+| Download stopped | The download stopped before the end | **Resume download** |
+| Ready | Downloaded, not imported | **Import and place**, or **Import only** (Content Browser only) |
+| Imported | In the project | **Show**, **Place again**, **Send to**, **Delete imported assets** |
 | Failed | Scenario or the plugin reported an error | Read the message; **Details** shows ids and errors, **Copy** copies them for support |
-| Blocked by content rules | Scenario's moderation refused it | Change the prompt or the reference |
-| Unknown | The connection dropped while sending: Scenario may or may not have received it | **Check Scenario**, then **Mark as not sent** only if it is not there |
+| Blocked | Scenario's moderation refused it | Change the prompt or the reference |
+| Not confirmed | The connection dropped while sending: Scenario may or may not have received it | **Check**, then **Mark as not sent** only if it is not there |
 
-The plugin never sends a paid request twice by itself. While a request is Unknown, an identical request is blocked: this prevents paying twice for one result. **Check Scenario** looks for it in Scenario's recent jobs and links it when there is exactly one match. **Mark as not sent** is your call, after you have checked.
+The plugin never sends a paid request twice by itself. While a request is not confirmed, an identical request is blocked: this prevents paying twice for one result. **Check** (or **Check now** at the top of Jobs) looks for it in Scenario's recent jobs and links it when there is exactly one match. **Mark as not sent** is your call, after you have checked.
 
-**Download again** (or **Resume**) fetches a fresh link and resumes partial files. **Use settings** fills the Create form with the job's model and settings.
+**Resume download** on a stopped download, or **Download again** in the menu, fetches a fresh link and resumes partial files. **Reuse settings** fills the Create form with the job's model and settings.
 
-**Results > Load from Scenario** lists the project's 50 most recent jobs on Scenario that are not in this Unreal project, for results made elsewhere or lost locally. **Save for recovery** adds one to the list and downloads it, free.
+Results made elsewhere, or lost locally, come back through **Library > On Scenario**: find the asset and click **Import**. It becomes a recovered job in Jobs, downloads and imports with its provenance, free.
 
 ## 7. Imported assets
 
@@ -121,44 +128,44 @@ The plugin never sends a paid request twice by itself. While a request is Unknow
 - **Saving.** Imported asset packages are saved right after import (a project setting). The level is not saved for you.
 - **Provenance.** Each imported asset keeps its Scenario asset id, job id, model, prompt, settings, price, date and workspace in editor-only metadata. It is committed with the asset and stripped when the game is cooked. Right-click the asset, **Scenario > Show generation** to read it. A project setting leaves the prompt out.
 - **Find them.** The Content Browser filter **Scenario > Generated by Scenario** shows every asset the plugin imported. Actors the plugin placed carry the tag `Scenario`.
-- **Remove them.** **Delete imported assets** on a job card deletes what that job imported, after Unreal checks that nothing references it.
+- **Remove them.** **Delete imported assets** in a job's menu deletes what that job imported, after Unreal checks that nothing references it.
 
 ### Import checks
 
-After a 3D import, the card lists checks: size in centimeters, triangle count, bones and morph targets, materials. A line starting with `Check:` needs a look, for example a mesh far larger than expected.
+After a 3D import, the plugin checks the mesh: size in centimeters, triangle count, bones and morph targets, material slots. In version 0.1 the checks reach agents only: the `apply_result_application` result carries them, and `asset_detail` returns them for any mesh. A line starting with `Check:` needs a look, for example a mesh far larger than expected.
 
 ## 8. Context menus
 
 | Where | Entry | Does |
 |---|---|---|
 | Content Browser folder | **Generate into this folder** | Opens Create with the folder as the destination |
-| Asset | **Scenario > Next** | The same next steps as on a job card |
+| Asset | **Scenario > Next** | The same next steps as **Send to** on a job |
 | Asset | **Scenario > Use as reference** | Adds the asset to the current Create form |
 | Asset | **Scenario > Show generation** | Model, prompt, cost and date of an asset made with Scenario |
 | Actor | **Scenario > Generate material for this** | Opens the Material lane; **Import and place** applies the result to the actor |
-| Actor | **Scenario > Retexture or edit (3D)** | Exports the selection to GLB and opens the 3D lane in Edit mode with it |
-| Actor | **Scenario > Restyle this view** | Captures the viewport and opens the Render lane with it |
+| Actor | **Scenario > Retexture or edit (3D)** | Exports the selection to GLB and opens the 3D lane on **Mesh** with it |
+| Actor | **Scenario > Restyle this view** | Captures the viewport and opens the Restyle lane with it |
 
 None of them sends anything to Scenario until you press **Generate**.
 
 ## 9. Workflows
 
-**Workflows** lists your team's ready workflows (**Team**) and Scenario's featured ones (**Featured**). Pick one, fill its inputs, check the price on the button, run it. Every step runs on Scenario; the outputs appear in Jobs and Results like any generation. Build workflows on [scenario.com](https://app.scenario.com).
+**Workflows** lists your team's ready workflows (**Your team**) and Scenario's featured ones (**Featured**). Pick one to open it in Create, fill its inputs, check the price on the button, run it. Every step runs on Scenario; the outputs appear in Jobs like any generation. Build workflows on [scenario.com](https://app.scenario.com).
 
 ## 10. Library
 
-- **Scenario project**: search your Scenario project's assets. **Import** downloads an asset into Unreal with its provenance, free. **Use as reference** adds it to the Create form without uploading it again.
-- **In this project**: every asset in this Unreal project that was generated with Scenario, with **Browse** and **Use settings**.
+- **On Scenario**: search your Scenario project's assets, made in Unreal or anywhere else, and filter them by type or **Not imported yet**. **Import** downloads an asset into Unreal with its provenance, free; the **...** menu also has **Import and place** and **Copy asset id**. **Send to > Use as reference in Create** adds it to the Create form without uploading it again.
+- **In this project**: every asset in this Unreal project that was generated with Scenario, with **Show**, **Reuse settings** and **Send to**.
 
 ## 11. Agents
 
-The plugin runs a local Scenario MCP server inside the editor, on `http://127.0.0.1:9877/mcp`. Agents use it to read the level, price and run Scenario models, and land results. **Connection > Agents** has a **Connect** button for Claude Code, Codex, Cursor and Claude Desktop, the permission switches and an activity log.
+The plugin runs a local Scenario MCP server inside the editor, on `http://127.0.0.1:9877/mcp`. Agents use it to read the level, price and run Scenario models, and land results. The **Agent** page has the server's on and off switch, a **Set up** button for Claude Code, Codex, Cursor and Claude Desktop, the permission switches and an activity log.
 
-By default an agent can read your level and spend Creative Units with a price quote it requested first, and every agent spend shows a notification. It cannot change your project or run Python until you allow it; until then its changes become proposals you apply or decline.
+By default an agent can read your level and spend Creative Units with a price quote it requested first, and every agent spend shows a notification. It cannot change your project or run Python until you allow it; until then its changes become proposals you approve or decline.
 
 ### One prompt to a world, a game or a film
 
-With **Allow agents to change this project** on, an agent can lay its Scenario results out for you. Ask it, for example, "make me a walkable misty mountain shrine at golden hour", "turn it into a game where I collect lanterns before sunset", or "make a 20-second film of it with music". The agent generates the assets (you see each price first in its notifications), then uses the kit tools:
+With **Change this project** on (Agent page, **Permissions**), an agent can lay its Scenario results out for you. Ask it, for example, "make me a walkable misty mountain shrine at golden hour", "turn it into a game where I collect lanterns before sunset", or "make a 20-second film of it with music". The agent generates the assets (you see each price first in its notifications), then uses the kit tools:
 
 - **Walkable world**: a new level under `/Game/Scenario/Worlds` with light for the time of day, the Scenario sky and ground, a landmark, props laid out with a clear path, ambient sound and the project's third-person game mode. Press **Play** to walk it.
 - **Game**: pickups to collect, a goal, a timer, music and a HUD, on a kit world or on a copy of an Epic template level dressed with Scenario materials, meshes, sky and music. The game actors (Scenario Pickup, Goal and Game Rules) also work in a packaged build.
@@ -201,6 +208,8 @@ UnrealEditor-Cmd MyProject.uproject -run=Scenario -Generate \
 
 ## 13. Settings
 
+The Studio's **Settings** page edits the most used ones under **Output**, **Import**, **Spending** and **Viewport and privacy**; **All settings** there opens Project Settings.
+
 **Project Settings > Plugins > Scenario** (shared with the team, saved in `Config/DefaultEditor.ini`):
 
 | Setting | Default | Effect |
@@ -229,7 +238,7 @@ UnrealEditor-Cmd MyProject.uproject -run=Scenario -Generate \
 | Approve agent spend | Off | Each paid agent call waits for your approval in the editor |
 | Telemetry | Off | Anonymous usage statistics; version 0.1 sends nothing |
 
-Set `SCENARIO_NO_SPEND=1` in the editor's environment to check prices without ever sending a paid request: the button reads **Spending off**.
+Set `SCENARIO_NO_SPEND=1` in the editor's environment to check prices without ever sending a paid request: the line under **Generate** reads "SCENARIO_NO_SPEND is set: prices only, nothing is sent."
 
 ## 14. Privacy
 
@@ -238,11 +247,10 @@ Prompts and the files you choose as inputs go to Scenario. Only the three gamepl
 ## 15. Limits in version 0.1
 
 - macOS is the only tested platform. Windows and Linux builds are compiled but not tested yet.
-- The Render lane captures the active level viewport only. Films made by the kit use cameras and Movie Render Queue.
+- The Restyle lane captures the active level viewport only. Films made by the kit use cameras and Movie Render Queue.
 - Audio from the Studio is placed as an Ambient Sound; the kit's films put it in a Level Sequence.
 - Kit worlds are flat ground with props; there is no landscape sculpting.
 - Smoothness maps are imported as they are (see Lanes).
 - Prompt Spark proposals and uploaded references are kept for the editor session only.
-- **Results > Load from Scenario** lists the 50 most recent jobs.
 
 Problems: [Troubleshooting](TROUBLESHOOTING.md).

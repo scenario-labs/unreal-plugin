@@ -9,8 +9,8 @@ The Scenario plugin runs a local MCP server inside the Unreal Editor. Its tools 
 
 ## Setup
 
-- Server: `http://127.0.0.1:9877/mcp` (if 9877 is taken, the plugin uses the next free port up to 9886; Scenario > Connection > Agents shows the real one).
-- A bearer token is required by default. The Connect buttons in Scenario > Connection > Agents write it into Claude Code, Codex, Cursor or Claude Desktop. Never ask the user to paste the token into chat.
+- Server: `http://127.0.0.1:9877/mcp` (if 9877 is taken, the plugin uses the next free port up to 9886; the Agent page of the Scenario Studio shows the real one).
+- A bearer token is required by default. The Set up buttons on the Scenario Studio's Agent page write it into Claude Code, Codex, Cursor or Claude Desktop. Never ask the user to paste the token into chat.
 - Port 8000 is Epic's own Unreal MCP server, not this one. Epic's tools edit actors and Blueprints; they do not run Scenario jobs.
 - If a call answers `Auth: Not signed in`, ask the user to sign in from the Scenario button in the level editor toolbar.
 
@@ -40,7 +40,7 @@ Workflows follow the same shape: `list_workflows`, `workflow_schema`, `estimate_
 ## Landing results
 
 - `prepare_result_application` purposes: `import` (Content Browser only), `place` (in front of the camera by default, or `at_location`, `at_pivot`), `material` (on `actor_ids` or the selection, `slot`), `environment` (sky), `media_plate` (video), `mesh_edit` (at the original actor's pivot).
-- When "Allow agents to change this project" is off, `apply_result_application` returns `pending_approval`: the user sees Apply and Decline in the editor. Check `job_status` (`imported`) later; do not call apply again.
+- When the "Change this project" permission is off, `apply_result_application` returns `pending_approval`: the user sees Approve and Decline in the editor. Check `job_status` (`imported`) later; do not call apply again.
 - Level changes are one Ctrl+Z each. Imported assets are new files; `remove_scenario_items` removes what the plugin placed or imported, after Unreal's reference check.
 - Read the `checks` in the apply result (scale, triangles, bones, materials) and tell the user about any line starting with `Check:`.
 
@@ -50,7 +50,7 @@ Workflows follow the same shape: `list_workflows`, `workflow_schema`, `estimate_
 - Materials: the material lane returns PBR maps imported with texture settings per role (sRGB off for normal, roughness, metallic, height) and wired into a material instance. Unreal expects roughness: if a model returns a smoothness map instead, version 0.1 imports it as it is, so tell the user it needs inverting (roughness = 1 - smoothness).
 - Skies: environment results are 2:1 equirectangular panoramas. `.hdr` files become cubemaps for an HDRI backdrop; PNG or JPG go on an unlit sky sphere.
 - Audio: ask for WAV when the model offers a format. Unreal imports it as a Sound Wave; `place` adds an ambient sound.
-- Render lane (restyle a view): `capture_reference` with `source: "viewport"`, `upload_reference`, wait for `reference_upload_status` to be `imported`, then pass its `asset_id` in the model's image field.
+- Restyle lane (`render`): `capture_reference` with `source: "viewport"`, `upload_reference`, wait for `reference_upload_status` to be `imported`, then pass its `asset_id` in the model's image field.
 - Unreal-ready prompts: when `model_schema` returns `unreal_ready_prompt`, add it to 3D prompts (single object, neutral pose, clean topology, no ground plane).
 
 ## Example
@@ -67,7 +67,7 @@ User: "Put a mossy stone well next to the selected house."
 
 ## One prompt to a world, a game or a film
 
-The kit tools lay Scenario results out for you: `build_world`, `dress_world`, `make_game`, `dress_template`, `make_film`, `render_film`, `film_status`, `kit_status`, `play_level`. They need "Allow agents to change this project". Distances are in meters.
+The kit tools lay Scenario results out for you: `build_world`, `dress_world`, `make_game`, `dress_template`, `make_film`, `render_film`, `film_status`, `kit_status`, `play_level`. They need the "Change this project" permission. Distances are in meters.
 
 Work in this order so generation time overlaps with building:
 

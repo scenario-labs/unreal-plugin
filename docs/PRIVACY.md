@@ -38,11 +38,11 @@ Only the Scenario Gameplay module (pickup, goal and game rules actors) is compil
 
 ## Agents
 
-The local agent server listens only on your machine (`127.0.0.1`). It refuses requests from web pages and other hosts, and requires a token that the Connect buttons write into your agent's configuration.
+The local agent server listens only on your machine (`127.0.0.1`). It refuses requests from web pages and other hosts, and requires a token that the Set up buttons on the Agent page write into your agent's configuration.
 
 What an agent reads through it (level summaries, screenshots, asset details, job results) goes to that agent's own model provider, under your agreement with that provider. The plugin does not control what the provider does with it.
 
-An agent can spend Creative Units only with a price quote it asked for first: the plugin checks that the paid call carries that exact quote, and shows each agent spend in the editor and in the Agents activity log. An optional setting asks for your approval in the editor before each agent spend. By default, an agent cannot change your project and cannot run Python. You can change each of these in Editor Preferences > Plugins > Scenario.
+An agent can spend Creative Units only with a price quote it asked for first: the plugin checks that the paid call carries that exact quote, and shows each agent spend in the editor and in the activity log on the Agent page. An optional setting asks for your approval in the editor before each agent spend. By default, an agent cannot change your project and cannot run Python. You can change each of these on the Agent page or in Editor Preferences > Plugins > Scenario.
 
 ## Telemetry
 
