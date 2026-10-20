@@ -47,7 +47,7 @@ Workflows follow the same shape: `list_workflows`, `workflow_schema`, `estimate_
 ## Lane facts
 
 - 3D: request GLB. Interchange imports GLB with PBR materials, skeletons and morph targets. Expect centimeters in Unreal; check the reported bounds.
-- Materials: the material lane returns PBR maps imported with texture settings per role (sRGB off for normal, roughness, metallic, height) and wired into a material instance. Unreal expects roughness: if a model returns a smoothness map instead, version 0.1 imports it as it is, so tell the user it needs inverting (roughness = 1 - smoothness).
+- Materials: the material lane returns PBR maps imported with texture settings per role (sRGB off for normal, roughness, metallic, height) and wired into a material instance. A smoothness map is kept and an inverted roughness copy is wired instead; the result's checks say so, and name the parent material (legacy or Substrate).
 - Skies: environment results are 2:1 equirectangular panoramas. `.hdr` files become cubemaps for an HDRI backdrop; PNG or JPG go on an unlit sky sphere.
 - Audio: ask for WAV when the model offers a format. Unreal imports it as a Sound Wave; `place` adds an ambient sound.
 - Restyle lane (`render`): `capture_reference` with `source: "viewport"`, `upload_reference`, wait for `reference_upload_status` to be `imported`, then pass its `asset_id` in the model's image field.

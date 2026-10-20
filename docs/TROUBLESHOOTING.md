@@ -55,7 +55,8 @@ A job shows **Not confirmed** when the connection dropped while the request was 
 | "Could not write the download to disk." | Check free space and write permissions on `<Project>/Saved/Scenario/`. |
 | **Import failed** | The notification and the job's **Details** show the importer's message; the Output Log (filter `LogInterchange`) has more. The downloaded file stays in `Saved/Scenario/Downloads/`. The notification has **Try again**. The job then shows **Download stopped**; **Resume download** fetches the files again before the next import. |
 | A mesh is huge or tiny | The model ignored real-world scale. Turn on **Unreal-ready**, or scale the actor; the import checks that agents read (`asset_detail`) give the size in centimeters. |
-| A material looks too shiny | The model returned a smoothness map; invert it into roughness (version 0.1 does not). |
+| A material looks too shiny, or too rough | The model's map holds the opposite of what its name says. The import inverts maps named smoothness into roughness; turn **Invert smoothness** off in Project Settings > Plugins > Scenario and import again if that makes it wrong for a model. |
+| Scenario materials render black after turning Substrate on or off | The PBR parent follows the renderer the editor started with. Restart the editor after changing **Substrate materials** in Project Settings > Rendering; new imports then use the matching parent (`M_Scenario_PBR` or `M_Scenario_PBR_Substrate`). |
 | A video or HDR sky is imported but not placed; agents get "Enable the Media Plate plugin..." / "Enable the HDRI Backdrop plugin..." | The asset was imported but cannot be placed without that engine plugin. Enable it in **Edit > Plugins**, restart, then **Place again** in the job's **...** menu. |
 
 ## Agents

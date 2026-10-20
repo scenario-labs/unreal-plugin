@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Imports use the plugin's own Interchange pipelines: 1 unit = 1 cm, simple collision, Nanite from Project Settings (now on by default, skipped for meshes with translucent slots), no generated lightmap UVs. The result's checks report each rule per mesh.
+- Smoothness maps get an inverted roughness copy wired into the material instance; the original is kept. New setting: Invert smoothness.
+- The PBR parent material follows Substrate: a Substrate slab graph when `r.Substrate` is on, the legacy graph otherwise. The import notice names it.
+- `scene_summary` and placements report World Partition, one file per actor and data layers; only loaded actors are listed.
+- `screenshot_viewport` returns a frame check (black, white, uniform, clipped or crushed frames) and says when the viewport has a fixed exposure.
+
 ## 0.1.0 (unreleased)
 
 First version.

@@ -10,6 +10,7 @@
 #include "Editor.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/RendererSettings.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureCube.h"
@@ -19,13 +20,16 @@
 #include "FileMediaSource.h"
 #include "HAL/FileManager.h"
 #include "IAssetTools.h"
+#include "ImageCore.h"
 #include "InterchangeManager.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionObjectPositionWS.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSubstrate.h"
 #include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
@@ -37,12 +41,15 @@
 #include "Misc/Paths.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "ReferenceSkeleton.h"
+#include "RenderUtils.h"
 #include "ScenarioCoreModule.h"
 #include "ScenarioFiles.h"
 #include "ScenarioSettings.h"
 #include "ScenarioSubsystem.h"
 #include "StaticMeshCompiler.h"
 #include "UObject/Package.h"
+#include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
 
 namespace
 {
@@ -104,7 +111,14 @@ namespace
 		return Cast<UMaterial>(Tools().CreateAsset(Name, SharedPath(), UMaterial::StaticClass(), Factory));
 	}
 
-	void BuildPbr(UMaterial* Material, FScenarioChangeReport& Report)
+	/**
+	 * Lit PBR master. The parameters are the same in both graphs (BaseColor,
+	 * Normal, Roughness, Metallic, AmbientOcclusion, Tiling), so instances and
+	 * scripts do not care which one the project has. Legacy: the classic
+	 * material inputs. Substrate: a Slab BSDF fed by the metalness helper, on
+	 * the Front Material input.
+	 */
+	void BuildPbr(UMaterial* Material, bool bSubstrate, FScenarioChangeReport& Report)
 	{
 		UTexture* DefaultColor = LoadObject<UTexture>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
 		UTexture* DefaultNormal = LoadObject<UTexture>(nullptr, TEXT("/Engine/EngineMaterials/DefaultNormal.DefaultNormal"));
@@ -128,14 +142,44 @@ namespace
 			{ TEXT("Metallic"), SAMPLERTYPE_Masks, Black, TEXT("R"), MP_Metallic },
 			{ TEXT("AmbientOcclusion"), SAMPLERTYPE_Masks, White, TEXT("R"), MP_AmbientOcclusion },
 		};
+		TMap<EMaterialProperty, UMaterialExpressionTextureSampleParameter2D*> Params;
 		int32 Y = -300;
 		for (const FMap& Map : Maps)
 		{
 			UMaterialExpressionTextureSampleParameter2D* Param = TextureParam(Material, Map.Name, Map.Sampler, Map.Default, -500, Y);
 			UMaterialEditingLibrary::ConnectMaterialExpressions(Uv, FString(), Param, TEXT("UVs"));
-			UMaterialEditingLibrary::ConnectMaterialProperty(Param, Map.Output, Map.Property);
+			Params.Add(Map.Property, Param);
+			if (!bSubstrate || Map.Property == MP_AmbientOcclusion)
+			{
+				// Ambient occlusion stays on the root node with Substrate too.
+				UMaterialEditingLibrary::ConnectMaterialProperty(Param, Map.Output, Map.Property);
+			}
 			Y += 260;
 		}
+		if (!bSubstrate)
+		{
+			return;
+		}
+
+		// Texture sample outputs: 0 RGB, 1 R.
+		constexpr int32 Rgb = 0;
+		constexpr int32 Red = 1;
+		UMaterialExpressionSubstrateMetalnessToDiffuseAlbedoF0* Metalness = Cast<UMaterialExpressionSubstrateMetalnessToDiffuseAlbedoF0>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionSubstrateMetalnessToDiffuseAlbedoF0::StaticClass(), -200, -300));
+		UMaterialExpressionConstant* Specular = Cast<UMaterialExpressionConstant>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionConstant::StaticClass(), -400, -500));
+		Specular->R = 0.5f;
+		Metalness->BaseColor.Connect(Rgb, Params[MP_BaseColor]);
+		Metalness->Metallic.Connect(Red, Params[MP_Metallic]);
+		Metalness->Specular.Connect(0, Specular);
+
+		UMaterialExpressionSubstrateSlabBSDF* Slab = Cast<UMaterialExpressionSubstrateSlabBSDF>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionSubstrateSlabBSDF::StaticClass(), 100, -200));
+		Slab->DiffuseAlbedo.Connect(0, Metalness);
+		Slab->F0.Connect(1, Metalness);
+		Slab->Roughness.Connect(Red, Params[MP_Roughness]);
+		Slab->Normal.Connect(Rgb, Params[MP_Normal]);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Slab, FString(), MP_FrontMaterial);
 	}
 
 	void BuildUnlit(UMaterial* Material)
@@ -204,6 +248,102 @@ bool ScenarioAssets::StageFile(const FString& Source, const FString& LocalId, co
 	return true;
 }
 
+bool ScenarioAssets::SetPropertyByPath(UObject* Root, const FString& Path, const FString& Value)
+{
+	TArray<FString> Parts;
+	Path.ParseIntoArray(Parts, TEXT("."));
+	UObject* Owner = Root;
+	for (int32 Index = 0; Owner && Index < Parts.Num(); ++Index)
+	{
+		FProperty* Property = FindFProperty<FProperty>(Owner->GetClass(), *Parts[Index]);
+		if (!Property)
+		{
+			return false;
+		}
+		void* Address = Property->ContainerPtrToValuePtr<void>(Owner);
+		if (Index + 1 < Parts.Num())
+		{
+			const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property);
+			Owner = ObjectProperty ? ObjectProperty->GetObjectPropertyValue(Address) : nullptr;
+			continue;
+		}
+		return Property->ImportText_Direct(*Value, Address, Owner, PPF_None) != nullptr;
+	}
+	return false;
+}
+
+TArray<UObject*> ScenarioAssets::ImportPipelines(const FString& File, TArray<FString>& OutNotes)
+{
+	const FString Extension = FPaths::GetExtension(File).ToLower();
+	const bool bGltf = Extension == TEXT("glb") || Extension == TEXT("gltf");
+	const bool bMesh = bGltf || Extension == TEXT("fbx") || Extension == TEXT("obj");
+	const bool bImage = Extension == TEXT("png") || Extension == TEXT("jpg") || Extension == TEXT("jpeg") || Extension == TEXT("tga") || Extension == TEXT("exr")
+		|| Extension == TEXT("hdr") || Extension == TEXT("webp") || Extension == TEXT("bmp") || Extension == TEXT("tif") || Extension == TEXT("tiff");
+	TArray<UObject*> Pipelines;
+	if (!bMesh && !bImage)
+	{
+		return Pipelines;
+	}
+	// The engine's own defaults for the format, copied: the project's import stack and the last dialog never reach them.
+	const TCHAR* Base = bGltf ? TEXT("/Interchange/Pipelines/DefaultGLTFAssetsPipeline.DefaultGLTFAssetsPipeline")
+		: bMesh ? TEXT("/Interchange/Pipelines/DefaultFBXOBJAssetsPipeline.DefaultFBXOBJAssetsPipeline")
+		: TEXT("/Interchange/Pipelines/DefaultTexturePipeline.DefaultTexturePipeline");
+	UObject* Default = LoadObject<UObject>(nullptr, Base, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!Default)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Interchange has no %s in this engine: the project's import settings applied."), *FPackageName::ObjectPathToObjectName(FString(Base))));
+		return Pipelines;
+	}
+	UObject* Pipeline = DuplicateObject<UObject>(Default, GetTransientPackage());
+	Pipeline->ClearFlags(RF_Public | RF_Standalone);
+	Pipeline->SetFlags(RF_Transient);
+	Pipelines.Add(Pipeline);
+
+	TArray<TPair<FString, FString>> Policy;
+	if (bMesh)
+	{
+		const UScenarioProjectSettings& Settings = UScenarioProjectSettings::Get();
+		const bool bCollision = Settings.MeshCollision != EScenarioMeshCollision::None;
+		Policy = {
+			// glTF is in meters: the translator converts to centimeters, and no extra scale is applied.
+			{ TEXT("ImportOffsetUniformScale"), TEXT("1.0") },
+			{ TEXT("MeshPipeline.bBuildNanite"), Settings.bNanite ? TEXT("True") : TEXT("False") },
+			// Lumen lights the scene: no lightmap UV channel is generated.
+			{ TEXT("MeshPipeline.bGenerateLightmapUVs"), TEXT("False") },
+			// A simple box always; complex-as-simple is set after the build when the settings ask for it.
+			{ TEXT("MeshPipeline.bCollision"), bCollision ? TEXT("True") : TEXT("False") },
+			{ TEXT("MeshPipeline.Collision"), TEXT("Box") },
+			{ TEXT("MeshPipeline.bImportCollisionAccordingToMeshName"), TEXT("True") },
+			{ TEXT("MaterialPipeline.bImportMaterials"), TEXT("True") },
+			{ TEXT("MaterialPipeline.TexturePipeline.bImportTextures"), TEXT("True") },
+			{ TEXT("MaterialPipeline.TexturePipeline.bDetectNormalMapTexture"), TEXT("True") },
+		};
+	}
+	else
+	{
+		Policy = {
+			{ TEXT("bImportTextures"), TEXT("True") },
+			{ TEXT("bDetectNormalMapTexture"), TEXT("True") },
+		};
+	}
+	for (const TPair<FString, FString>& Entry : Policy)
+	{
+		if (!SetPropertyByPath(Pipeline, Entry.Key, Entry.Value))
+		{
+			OutNotes.Add(FString::Printf(TEXT("This engine's Interchange has no %s: that part of the import follows the engine default."), *Entry.Key));
+		}
+	}
+	if (bGltf)
+	{
+		// glTF materials: Epic's glTF pipeline maps them onto its glTF material library, as in a default import.
+		if (UObject* Gltf = LoadObject<UObject>(nullptr, TEXT("/Interchange/Pipelines/DefaultGLTFPipeline.DefaultGLTFPipeline"), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			Pipelines.Add(Gltf);
+		}
+	}
+	return Pipelines;
+}
+
 void ScenarioAssets::ImportFile(const FString& File, const FString& PackagePath, FImportDone OnDone)
 {
 	UInterchangeManager& Manager = UInterchangeManager::GetInterchangeManager();
@@ -212,8 +352,19 @@ void ScenarioAssets::ImportFile(const FString& File, const FString& PackagePath,
 	{
 		FImportAssetParameters Parameters;
 		Parameters.bIsAutomated = true;
+		TArray<FString> Notes;
+		TArray<TStrongObjectPtr<UObject>> Keep;
+		for (UObject* Pipeline : ImportPipelines(File, Notes))
+		{
+			Parameters.OverridePipelines.Add(FSoftObjectPath(Pipeline));
+			Keep.Emplace(Pipeline);
+		}
+		for (const FString& Note : Notes)
+		{
+			UE_LOG(LogScenario, Warning, TEXT("%s"), *Note);
+		}
 		UE::Interchange::FAssetImportResultRef Result = Manager.ImportAssetAsync(PackagePath, Source, Parameters);
-		Result->OnDone([OnDone, File](UE::Interchange::FImportResult& Done)
+		Result->OnDone([OnDone, File, Keep = MoveTemp(Keep)](UE::Interchange::FImportResult& Done)
 		{
 			TArray<TWeakObjectPtr<UObject>> Weak;
 			for (UObject* Object : Done.GetImportedObjects())
@@ -272,7 +423,7 @@ void ScenarioAssets::ConfigureTexture(UTexture* Texture, const FString& Role, in
 		Texture->SRGB = false;
 		Texture->LODGroup = TEXTUREGROUP_WorldNormalMap;
 	}
-	else if (Role == TEXT("roughness") || Role == TEXT("metallic") || Role == TEXT("height") || Role == TEXT("ao"))
+	else if (Role == TEXT("roughness") || Role == TEXT("smoothness") || Role == TEXT("metallic") || Role == TEXT("height") || Role == TEXT("ao"))
 	{
 		Texture->CompressionSettings = TC_Masks;
 		Texture->SRGB = false;
@@ -359,7 +510,23 @@ int32 ScenarioAssets::FixMeshTextures(const TArray<UObject*>& Objects)
 		for (const FTextureParameterValue& Value : Instance->TextureParameterValues)
 		{
 			UTexture* Texture = Value.ParameterValue;
-			if (!Texture || Changed.Contains(Texture) || !Texture->SRGB || !IsMaskParameter(Value.ParameterInfo.Name.ToString()))
+			if (!Texture || Changed.Contains(Texture))
+			{
+				continue;
+			}
+			const FString Parameter = Value.ParameterInfo.Name.ToString();
+			if (Parameter.Contains(TEXT("normal"), ESearchCase::IgnoreCase) && (Texture->SRGB || Texture->CompressionSettings != TC_Normalmap))
+			{
+				// A normal map the importer did not detect: linear, normal compression (the material samples it as a normal).
+				Texture->Modify();
+				Texture->SRGB = false;
+				Texture->CompressionSettings = TC_Normalmap;
+				Texture->PostEditChange();
+				Texture->MarkPackageDirty();
+				Changed.Add(Texture);
+				continue;
+			}
+			if (!Texture->SRGB || !IsMaskParameter(Parameter))
 			{
 				continue;
 			}
@@ -374,9 +541,31 @@ int32 ScenarioAssets::FixMeshTextures(const TArray<UObject*>& Objects)
 	return Changed.Num();
 }
 
-UMaterialInterface* ScenarioAssets::Master(EScenarioMaster Which, FScenarioChangeReport& Report)
+FString ScenarioAssets::FMaterialVariant::Describe() const
 {
-	const TCHAR* Name = Which == EScenarioMaster::Pbr ? TEXT("M_Scenario_PBR") : Which == EScenarioMaster::Unlit ? TEXT("M_Scenario_Unlit") : TEXT("M_Scenario_SkySphere");
+	if (bSubstrate)
+	{
+		return FString::Printf(TEXT("Material: %s, a Substrate slab graph (Substrate is on in this project)."), *MasterName);
+	}
+	return bProjectSetting
+		? FString::Printf(TEXT("Material: %s, a legacy PBR graph. Substrate is set in Project Settings but not running yet: restart the editor, then import again for a Substrate master."), *MasterName)
+		: FString::Printf(TEXT("Material: %s, a legacy PBR graph (Substrate is off in this project)."), *MasterName);
+}
+
+ScenarioAssets::FMaterialVariant ScenarioAssets::MaterialVariant()
+{
+	FMaterialVariant Variant;
+	// The running renderer decides: r.Substrate is read only at startup, so a changed setting waits for a restart.
+	Variant.bSubstrate = Substrate::IsSubstrateEnabled();
+	const URendererSettings* Renderer = GetDefault<URendererSettings>();
+	Variant.bProjectSetting = Renderer && Renderer->bEnableSubstrate;
+	Variant.MasterName = Variant.bSubstrate ? TEXT("M_Scenario_PBR_Substrate") : TEXT("M_Scenario_PBR");
+	return Variant;
+}
+
+UMaterialInterface* ScenarioAssets::PbrMaster(bool bSubstrate, FScenarioChangeReport& Report)
+{
+	const TCHAR* Name = bSubstrate ? TEXT("M_Scenario_PBR_Substrate") : TEXT("M_Scenario_PBR");
 	if (UMaterial* Existing = LoadAsset<UMaterial>(SharedPath(), Name))
 	{
 		return Existing;
@@ -387,16 +576,184 @@ UMaterialInterface* ScenarioAssets::Master(EScenarioMaster Which, FScenarioChang
 		Report.Warnings.Add(FString::Printf(TEXT("Could not create %s in %s."), Name, *SharedPath()));
 		return nullptr;
 	}
-	switch (Which)
+	BuildPbr(Material, bSubstrate, Report);
+	UMaterialEditingLibrary::RecompileMaterial(Material);
+	Material->MarkPackageDirty();
+	Report.CreatedAssets.Add(PathOf(Material));
+	return Material;
+}
+
+UMaterialInterface* ScenarioAssets::Master(EScenarioMaster Which, FScenarioChangeReport& Report)
+{
+	if (Which == EScenarioMaster::Pbr)
 	{
-	case EScenarioMaster::Pbr: BuildPbr(Material, Report); break;
-	case EScenarioMaster::Unlit: BuildUnlit(Material); break;
-	default: BuildSky(Material); break;
+		return PbrMaster(MaterialVariant().bSubstrate, Report);
+	}
+	// Unlit graphs: the engine converts them to Substrate's unlit BSDF when Substrate is on, so one graph serves both.
+	const TCHAR* Name = Which == EScenarioMaster::Unlit ? TEXT("M_Scenario_Unlit") : TEXT("M_Scenario_SkySphere");
+	if (UMaterial* Existing = LoadAsset<UMaterial>(SharedPath(), Name))
+	{
+		return Existing;
+	}
+	UMaterial* Material = NewMaterial(Name);
+	if (!Material)
+	{
+		Report.Warnings.Add(FString::Printf(TEXT("Could not create %s in %s."), Name, *SharedPath()));
+		return nullptr;
+	}
+	if (Which == EScenarioMaster::Unlit)
+	{
+		BuildUnlit(Material);
+	}
+	else
+	{
+		BuildSky(Material);
 	}
 	UMaterialEditingLibrary::RecompileMaterial(Material);
 	Material->MarkPackageDirty();
 	Report.CreatedAssets.Add(PathOf(Material));
 	return Material;
+}
+
+FName ScenarioAssets::PbrParameterForRole(const FString& Role)
+{
+	if (Role == TEXT("normal")) return TEXT("Normal");
+	if (Role == TEXT("roughness")) return TEXT("Roughness");
+	if (Role == TEXT("metallic")) return TEXT("Metallic");
+	if (Role == TEXT("ao")) return TEXT("AmbientOcclusion");
+	if (Role == TEXT("height") || Role == TEXT("smoothness")) return NAME_None;
+	return TEXT("BaseColor");
+}
+
+bool ScenarioAssets::InvertImage(FImage& Image)
+{
+	const int64 Count = Image.GetNumPixels();
+	switch (Image.Format)
+	{
+	case ERawImageFormat::G8:
+		for (uint8& Value : Image.AsG8())
+		{
+			Value = 255 - Value;
+		}
+		return true;
+	case ERawImageFormat::BGRA8:
+		for (FColor& Pixel : Image.AsBGRA8())
+		{
+			Pixel.R = 255 - Pixel.R;
+			Pixel.G = 255 - Pixel.G;
+			Pixel.B = 255 - Pixel.B;
+		}
+		return true;
+	case ERawImageFormat::G16:
+		for (uint16& Value : Image.AsG16())
+		{
+			Value = 65535 - Value;
+		}
+		return true;
+	case ERawImageFormat::RGBA16:
+	{
+		uint16* Values = reinterpret_cast<uint16*>(Image.RawData.GetData());
+		for (int64 Index = 0; Index < Count; ++Index)
+		{
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Values[Index * 4 + Channel] = 65535 - Values[Index * 4 + Channel];
+			}
+		}
+		return true;
+	}
+	default:
+	{
+		// Float and other layouts: through linear RGBA32F, inverted, then back to the source format.
+		const ERawImageFormat::Type Format = Image.Format;
+		const EGammaSpace Gamma = Image.GammaSpace;
+		FImage Linear;
+		Image.CopyTo(Linear, ERawImageFormat::RGBA32F, EGammaSpace::Linear);
+		for (FLinearColor& Pixel : Linear.AsRGBA32F())
+		{
+			Pixel.R = 1.0f - Pixel.R;
+			Pixel.G = 1.0f - Pixel.G;
+			Pixel.B = 1.0f - Pixel.B;
+		}
+		Linear.CopyTo(Image, Format, Gamma);
+		return true;
+	}
+	}
+}
+
+UTexture2D* ScenarioAssets::CreateRoughnessFromSmoothness(UTexture2D* Smoothness, const FString& Name, int32 MaxSize, FScenarioChangeReport& Report)
+{
+	FImage Image;
+	if (!Smoothness || !Smoothness->Source.IsValid() || !Smoothness->Source.GetMipImage(Image, 0, 0, 0))
+	{
+		Report.Warnings.Add(FString::Printf(TEXT("%s has no source pixels: the smoothness map was not inverted."), Smoothness ? *Smoothness->GetName() : TEXT("The smoothness map")));
+		return nullptr;
+	}
+	// The pixels are data: invert the stored values, never through a gamma curve.
+	Image.GammaSpace = EGammaSpace::Linear;
+	if (!InvertImage(Image))
+	{
+		Report.Warnings.Add(FString::Printf(TEXT("%s has a pixel format that cannot be inverted."), *Smoothness->GetName()));
+		return nullptr;
+	}
+	const FString PackagePath = FPackageName::GetLongPackagePath(Smoothness->GetOutermost()->GetName());
+	const FString AssetName = UniqueName(PackagePath, Name);
+	UPackage* Package = CreatePackage(*(PackagePath / AssetName));
+	UTexture2D* Roughness = NewObject<UTexture2D>(Package, *AssetName, RF_Public | RF_Standalone | RF_Transactional);
+	Roughness->Source.Init(Image);
+	Roughness->SRGB = false;
+	ConfigureTexture(Roughness, TEXT("roughness"), MaxSize);
+	FAssetRegistryModule::AssetCreated(Roughness);
+	Package->MarkPackageDirty();
+	Report.CreatedAssets.Add(PathOf(Roughness));
+	return Roughness;
+}
+
+TMap<FName, UTexture*> ScenarioAssets::PbrMaps(const TArray<FRoleTexture>& Textures, bool bInvertSmoothness, int32 MaxSize, FScenarioChangeReport& Report, TMap<UTexture*, UTexture*>& OutDerived)
+{
+	TMap<FName, UTexture*> Maps;
+	UTexture* Smoothness = nullptr;
+	for (const FRoleTexture& Entry : Textures)
+	{
+		if (!Entry.Texture)
+		{
+			continue;
+		}
+		if (Entry.Role == TEXT("smoothness"))
+		{
+			Smoothness = Smoothness ? Smoothness : Entry.Texture;
+			continue;
+		}
+		const FName Parameter = PbrParameterForRole(Entry.Role);
+		if (!Parameter.IsNone() && !Maps.Contains(Parameter))
+		{
+			Maps.Add(Parameter, Entry.Texture);
+		}
+	}
+	if (Smoothness && !Maps.Contains(TEXT("Roughness")))
+	{
+		UTexture2D* Source = Cast<UTexture2D>(Smoothness);
+		if (!bInvertSmoothness)
+		{
+			Maps.Add(TEXT("Roughness"), Smoothness);
+			Report.Checks.Add(FString::Printf(TEXT("%s used as roughness without inversion (Project Settings: Invert Smoothness is off)."), *Smoothness->GetName()));
+		}
+		else if (Source)
+		{
+			FString Name = Source->GetName();
+			if (Name.EndsWith(TEXT("_S")))
+			{
+				Name.LeftChopInline(2);
+			}
+			if (UTexture2D* Roughness = CreateRoughnessFromSmoothness(Source, Name + TEXT("_R"), MaxSize, Report))
+			{
+				Maps.Add(TEXT("Roughness"), Roughness);
+				OutDerived.Add(Roughness, Smoothness);
+				Report.Checks.Add(FString::Printf(TEXT("Smoothness map inverted into %s (roughness = 1 - smoothness); %s kept."), *Roughness->GetName(), *Smoothness->GetName()));
+			}
+		}
+	}
+	return Maps;
 }
 
 UMaterialInstanceConstant* ScenarioAssets::CreateMaterialInstance(UMaterialInterface* Parent, const FString& PackagePath, const FString& Name,
@@ -454,7 +811,7 @@ UObject* ScenarioAssets::CreateMediaSource(const FString& VideoFile, const FStri
 	return Source;
 }
 
-void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh)
+void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh, TArray<FString>* OutChecks)
 {
 	UStaticMesh* StaticMesh = Cast<UStaticMesh>(Mesh);
 	if (!StaticMesh)
@@ -471,6 +828,14 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh)
 		if (UBodySetup* Body = StaticMesh->GetBodySetup())
 		{
 			Body->Modify();
+			// A simple shape in every case: physics, overlaps and navigation read simple collision.
+			if (Body->AggGeom.GetElementCount() == 0)
+			{
+				const FBox Box = StaticMesh->GetBoundingBox();
+				FKBoxElem Element(Box.GetSize().X, Box.GetSize().Y, Box.GetSize().Z);
+				Element.Center = Box.GetCenter();
+				Body->AggGeom.BoxElems.Add(Element);
+			}
 			if (Settings.MeshCollision == EScenarioMeshCollision::ComplexAsSimple)
 			{
 				// Queries and the player use the triangles, so openings (gates, arches, doors) stay open.
@@ -480,13 +845,6 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh)
 			else
 			{
 				Body->CollisionTraceFlag = CTF_UseDefault;
-				if (Body->AggGeom.GetElementCount() == 0)
-				{
-					const FBox Box = StaticMesh->GetBoundingBox();
-					FKBoxElem Element(Box.GetSize().X, Box.GetSize().Y, Box.GetSize().Z);
-					Element.Center = Box.GetCenter();
-					Body->AggGeom.BoxElems.Add(Element);
-				}
 			}
 			Body->InvalidatePhysicsData();
 			Body->CreatePhysicsMeshes();
@@ -498,14 +856,64 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh)
 		StaticMesh->SetCustomizedCollision(true);
 #endif
 	}
-	if (Settings.bNanite)
+
+	// Nanite does not draw translucent materials: a mesh with one stays a regular mesh.
+	FString Translucent;
+	const TArray<FStaticMaterial>& Slots = StaticMesh->GetStaticMaterials();
+	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 	{
-		FMeshNaniteSettings Nanite = StaticMesh->GetNaniteSettings();
-		Nanite.bEnabled = true;
+		const UMaterialInterface* Material = Slots[Slot].MaterialInterface;
+		const EBlendMode Blend = Material ? Material->GetBlendMode() : BLEND_Opaque;
+		if (Blend != BLEND_Opaque && Blend != BLEND_Masked)
+		{
+			Translucent = FString::Printf(TEXT("slot %d (%s) is not opaque or masked"), Slot, Material ? *Material->GetName() : TEXT("none"));
+			break;
+		}
+	}
+	const bool bWantNanite = Settings.bNanite && Translucent.IsEmpty();
+	FMeshNaniteSettings Nanite = StaticMesh->GetNaniteSettings();
+	if (Nanite.bEnabled != bWantNanite)
+	{
+		Nanite.bEnabled = bWantNanite;
 		StaticMesh->SetNaniteSettings(Nanite);
+	}
+	bool bLightmapUvs = false;
+	if (StaticMesh->GetNumSourceModels() > 0)
+	{
+		FStaticMeshSourceModel& Source = StaticMesh->GetSourceModel(0);
+		bLightmapUvs = Source.BuildSettings.bGenerateLightmapUVs;
+		if (bLightmapUvs)
+		{
+			Source.BuildSettings.bGenerateLightmapUVs = false;
+			bLightmapUvs = false;
+		}
 	}
 	StaticMesh->PostEditChange();
 	StaticMesh->MarkPackageDirty();
+
+	if (OutChecks)
+	{
+		FStaticMeshCompilingManager::Get().FinishCompilation({ StaticMesh });
+		const UBodySetup* Body = StaticMesh->GetBodySetup();
+		const int32 Shapes = Body ? Body->AggGeom.GetElementCount() : 0;
+		if (Settings.MeshCollision == EScenarioMeshCollision::None)
+		{
+			OutChecks->Add(TEXT("Collision: none (Project Settings)."));
+		}
+		else if (Shapes == 0)
+		{
+			OutChecks->Add(TEXT("Check: no simple collision shape; physics and overlaps will not see this mesh."));
+		}
+		else
+		{
+			OutChecks->Add(FString::Printf(TEXT("Collision: %d simple shape%s%s."), Shapes, Shapes == 1 ? TEXT("") : TEXT("s"),
+				Body && Body->CollisionTraceFlag == CTF_UseComplexAsSimple ? TEXT(", the mesh shape for queries and the player") : TEXT("")));
+		}
+		OutChecks->Add(StaticMesh->IsNaniteEnabled() ? FString(TEXT("Nanite: on (every material slot is opaque or masked)."))
+			: !Settings.bNanite ? FString(TEXT("Nanite: off (Project Settings)."))
+			: FString::Printf(TEXT("Nanite: off, %s."), *Translucent));
+		OutChecks->Add(bLightmapUvs ? TEXT("Check: lightmap UVs are generated.") : TEXT("Lightmap UVs: not generated (Lumen lighting)."));
+	}
 }
 
 UObject* ScenarioAssets::RenameAsset(UObject* Asset, const FString& NewName)
@@ -526,7 +934,7 @@ UObject* ScenarioAssets::RenameAsset(UObject* Asset, const FString& NewName)
 	return Renamed ? Renamed : Asset;
 }
 
-void ScenarioAssets::CheckMesh(UObject* Mesh, TArray<FString>& OutChecks)
+void ScenarioAssets::CheckMesh(UObject* Mesh, TArray<FString>& OutChecks, double ExpectedSizeCm)
 {
 	FBox Box(ForceInit);
 	if (const UStaticMesh* StaticMesh = Cast<UStaticMesh>(Mesh))
@@ -563,7 +971,14 @@ void ScenarioAssets::CheckMesh(UObject* Mesh, TArray<FString>& OutChecks)
 	}
 	const FVector Size = Box.GetSize();
 	OutChecks.Add(FString::Printf(TEXT("Size: %.0f x %.0f x %.0f cm"), Size.X, Size.Y, Size.Z));
-	if (Size.GetMax() < 5.0)
+	if (ExpectedSizeCm > 0.0)
+	{
+		const double Ratio = Size.GetMax() / ExpectedSizeCm;
+		OutChecks.Add(Ratio >= 0.5 && Ratio <= 2.0
+			? FString::Printf(TEXT("Size matches the requested %.0f cm."), ExpectedSizeCm)
+			: FString::Printf(TEXT("Check: the largest side is %.0f cm for a requested %.0f cm; the unit may be wrong."), Size.GetMax(), ExpectedSizeCm));
+	}
+	else if (Size.GetMax() < 5.0)
 	{
 		OutChecks.Add(TEXT("Check: under 5 cm. The model is probably unit-normalized; scale it to real size."));
 	}

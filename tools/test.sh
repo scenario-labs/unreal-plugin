@@ -12,6 +12,12 @@
 # SCENARIO_TEST_PROJECT=<path to a .uproject> runs the tests in another project
 # that loads this plugin, so they never share a job list with an editor that
 # has the host project open.
+# SCENARIO_TEST_ARGS="<editor arguments>" adds arguments to the editor, for
+# example a renderer setting for one run:
+#   SCENARIO_TEST_ARGS='-ini:Engine:[/Script/Engine.RendererSettings]:r.Substrate=True'
+# SCENARIO_TEST_RENDER=1 renders offscreen (-RenderOffscreen) instead of
+# -nullrhi, so tests that compile shaders or capture the viewport run fully.
+# No window opens either way.
 #
 # The tests use fake Scenario replies (0 CU). SCENARIO_NO_SPEND=1 is set unless
 # the caller sets it, so a call that reaches the real service by mistake cannot
@@ -24,7 +30,7 @@ PROJECT="${SCENARIO_TEST_PROJECT:-$ROOT/ScenarioHost.uproject}"
 filter="${1:-Scenario}"
 
 case "$filter" in
-  -h|--help) sed -n '4,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '4,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
 editor="$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd"
@@ -43,10 +49,19 @@ export SCENARIO_NO_SPEND="${SCENARIO_NO_SPEND:-1}"
 args=(
   "$PROJECT"
   "-ExecCmds=Automation RunTests $filter;Quit"
-  -unattended -nullrhi -nosplash -nopause -stdout -log
+  -unattended -nosound -nosplash -nopause -stdout -log
   "-ReportExportPath=$report"
   "-abslog=$report/editor.log"
 )
+if [ "${SCENARIO_TEST_RENDER:-0}" = 1 ]; then
+  args+=(-RenderOffscreen)
+else
+  args+=(-nullrhi)
+fi
+if [ -n "${SCENARIO_TEST_ARGS:-}" ]; then
+  read -r -a extra <<< "$SCENARIO_TEST_ARGS"
+  args+=("${extra[@]}")
+fi
 printf '+ %q' "$editor"
 printf ' %q' "${args[@]}"
 printf '\n'

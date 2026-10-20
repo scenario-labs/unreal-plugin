@@ -20,6 +20,7 @@
 #include "ScenarioAssets.h"
 #include "ScenarioEditorModule.h"
 #include "ScenarioLanes.h"
+#include "ScenarioOpenWorld.h"
 #include "ScenarioOutputLog.h"
 #include "ScenarioProvenance.h"
 #include "ScopedTransaction.h"
@@ -245,7 +246,7 @@ void FScenarioActions::RegisterLevelActions()
 {
 	// scene_summary
 	Register(Make(TEXT("scene_summary"), EScenarioActionKind::Read,
-		TEXT("The open level: World Partition state, selection, viewport camera, actor counts by class, and a page of actors with labels, ids, classes, locations and tags."),
+		TEXT("The open level: World Partition state (only loaded actors are listed there), one file per actor, data layers, selection, viewport camera, actor counts by class, and a page of actors with labels, ids, classes, locations and tags."),
 		Object({
 			{ TEXT("class"), TEXT("string"), TEXT("Only actors whose class name contains this.") },
 			{ TEXT("page"), TEXT("integer") },
@@ -305,10 +306,14 @@ void FScenarioActions::RegisterLevelActions()
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetStringField(TEXT("level"), World->GetOutermost()->GetName());
 			Json->SetBoolField(TEXT("unsaved_changes"), World->GetOutermost()->IsDirty());
-			Json->SetBoolField(TEXT("world_partition"), World->GetWorldPartition() != nullptr);
-			if (World->GetWorldPartition())
+			const ScenarioOpenWorld::FState OpenWorld = ScenarioOpenWorld::Read(World);
+			Json->SetBoolField(TEXT("world_partition"), OpenWorld.bWorldPartition);
+			if (OpenWorld.bWorldPartition || OpenWorld.bExternalActors)
 			{
-				Json->SetStringField(TEXT("note"), TEXT("World Partition: only loaded actors are listed."));
+				Json->SetObjectField(TEXT("open_world"), ScenarioOpenWorld::ToJson(OpenWorld));
+				const TArray<FString> Notes = ScenarioOpenWorld::SummaryNotes(OpenWorld);
+				Json->SetStringField(TEXT("note"), Notes.Num() > 0 ? Notes[0] : FString());
+				Json->SetField(TEXT("notes"), ScenarioJson::StringArrayValue(Notes));
 			}
 			TArray<FString> Selected;
 			for (AActor* Actor : ScenarioPlacement::ResolveTargets({}))
@@ -429,7 +434,8 @@ void FScenarioActions::RegisterLevelActions()
 	// screenshot_viewport
 	Register(Make(TEXT("screenshot_viewport"), EScenarioActionKind::Read,
 		TEXT("Image of the active level viewport's camera (no gizmos), returned to you, with the world, camera, FOV and size it shows. ")
-		TEXT("Pass camera to render another view without moving the person's viewport (also works with no viewport open)."),
+		TEXT("Pass camera to render another view without moving the person's viewport (also works with no viewport open). ")
+		TEXT("frame_check flags all-black, all-white, uniform, clipped or crushed frames; exposure_override says when the viewport's fixed exposure differs from the game's."),
 		Object({
 			{ TEXT("width"), TEXT("integer"), TEXT("Default 1024, max 1920.") },
 			{ TEXT("height"), TEXT("integer"), TEXT("Default 576, max 1080.") },
@@ -453,8 +459,9 @@ void FScenarioActions::RegisterLevelActions()
 				Done(FScenarioActionResult::Fail(TEXT("Invalid"), Error));
 				return;
 			}
+			FScenarioFrameCheck Check;
 			const FString Path = S->CaptureViewport(Int(Args, TEXT("width"), 1024, 128, 1920), Int(Args, TEXT("height"), 576, 128, 1080), Error, &Description,
-				CameraArgs.IsValid() ? &Camera : nullptr);
+				CameraArgs.IsValid() ? &Camera : nullptr, &Check);
 			TArray<uint8> Png;
 			if (Path.IsEmpty() || !FFileHelper::LoadFileToArray(Png, *Path))
 			{
@@ -464,6 +471,12 @@ void FScenarioActions::RegisterLevelActions()
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetStringField(TEXT("captured"), Description);
 			Json->SetStringField(TEXT("file"), ProjectRelative(Path));
+			Json->SetObjectField(TEXT("frame_check"), Check.ToJson());
+			const FString Exposure = ScenarioPlacement::ExposureOverrideNote();
+			if (!Exposure.IsEmpty())
+			{
+				Json->SetStringField(TEXT("exposure_override"), Exposure);
+			}
 			FScenarioActionResult Result = FScenarioActionResult::Ok(Json);
 			Result.Png = MoveTemp(Png);
 			Done(Result);
@@ -737,6 +750,11 @@ void FScenarioActions::RegisterLevelActions()
 				? FString::Printf(TEXT("Uses the %d asset(s) already imported from job %s."), FileCount, *Row->LocalId)
 				: FString::Printf(TEXT("Imports %d file(s) of job %s (%s) into %s."), FileCount, *Row->LocalId, *(Row->ModelName.IsEmpty() ? Row->ModelId : Row->ModelName), *S->DestinationFor(*Row));
 			App.Review = What + TEXT(" ") + DescribePlacement(App);
+			if (App.Options.Placement != EScenarioPlacement::None)
+			{
+				const FString OpenWorld = ScenarioOpenWorld::PlacementNote(ScenarioOpenWorld::Read(ScenarioPlacement::EditorWorld(), false));
+				App.Review += OpenWorld.IsEmpty() ? FString() : TEXT(" ") + OpenWorld;
+			}
 			Applications().Add(App.Id, App);
 
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();

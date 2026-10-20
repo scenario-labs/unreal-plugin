@@ -82,9 +82,9 @@ All network and file IO is asynchronous. HTTP runs on Unreal's HTTP module; call
 
 ## Imports
 
-- Meshes go through Interchange (GLB). Static or skeletal is decided from the file; morph targets and animations come with it. Collision and Nanite follow project settings.
-- Textures get settings per role from Scenario's asset metadata and the file name: sRGB off for normal, roughness, metallic and height maps; normal maps use the normal compression.
-- Material results are wired into a material instance. Its parent materials (PBR, unlit, sky) are built by code on first use in `<Output root>/_Shared/`, so the plugin ships no content.
+- Meshes go through Interchange (GLB) with explicit pipelines: copies of the engine's default glTF, FBX and OBJ, or texture pipelines with the plugin's policy set by reflection (scale 1, so glTF meters become centimeters; simple collision; Nanite from Project Settings; no generated lightmap UVs; materials and textures imported). Properties an engine version lacks are logged and skipped. After the build, Nanite stays on only when every material slot is opaque or masked. Static or skeletal is decided from the file; morph targets and animations come with it.
+- Textures get settings per role from Scenario's asset metadata and the file name: sRGB off for normal, roughness, metallic, smoothness and height maps; normal maps use the normal compression. A smoothness map gets an inverted copy, made from its source pixels as linear data, used as roughness.
+- Material results are wired into a material instance. Its parent materials (PBR, unlit, sky) are built by code on first use in `<Output root>/_Shared/`, so the plugin ships no content. The PBR parent reads `r.Substrate`: a Substrate slab graph when it is on, a legacy graph otherwise.
 - Video becomes a File Media Source on a Media Plate; skies become a sky sphere, or a cubemap on an HDRI Backdrop for `.hdr` files. Optional engine plugins (Media Plate, HDRI Backdrop, Python) are reached at runtime by class path, so the plugin does not force them on every project.
 - Provenance is editor-only package metadata (`Scenario.*` keys) plus an index for the Content Browser filter. It is stripped at cook.
 
@@ -118,7 +118,6 @@ These are deliberate, listed so reviewers can judge them:
 - **Session-only state.** Prompt Spark proposals, uploaded references and pending agent proposals are kept for the editor session only.
 - **Restyle lane.** Captures the active level viewport only; cameras and Movie Render Queue are not wired yet.
 - **Audio.** Placed as an Ambient Sound; Level Sequence placement is not supported.
-- **Smoothness maps** are imported as they are, not inverted into roughness.
 - **Recent jobs on Scenario.** `list_generations` returns at most the 50 most recent; the Library's **On Scenario** tab loads assets 50 at a time.
 - **Linux credentials** use the owner-only file store; libsecret is not linked.
 - **Telemetry** is opt-in and asked once; the client sends nothing while no collection endpoint exists.

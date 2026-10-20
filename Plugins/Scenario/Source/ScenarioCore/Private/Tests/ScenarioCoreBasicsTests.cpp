@@ -77,7 +77,10 @@ bool FScenarioFilesNamingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("asset name"), Name, FString(TEXT("T_WeatheredPirateChest_def456_BC")));
 	const FString Long = ScenarioFiles::AssetName(TEXT("SM"), TEXT("supercalifragilisticexpialidocious antidisestablishmentarianism floccinaucinihilipilification pneumonoultramicroscopic"), TEXT("asset_zzzzzz"));
 	TestTrue(TEXT("names stay under 64 characters"), Long.Len() <= 63);
-	TestEqual(TEXT("smoothness is roughness"), ScenarioFiles::RoleFor(TEXT("texture-smoothness")), FString(TEXT("roughness")));
+	TestEqual(TEXT("smoothness keeps its role"), ScenarioFiles::RoleFor(TEXT("texture-smoothness")), FString(TEXT("smoothness")));
+	TestEqual(TEXT("roughness role"), ScenarioFiles::RoleFor(TEXT("texture-roughness")), FString(TEXT("roughness")));
+	TestEqual(TEXT("smoothness suffix"), ScenarioFiles::RoleSuffix(TEXT("smoothness")), FString(TEXT("S")));
+	TestEqual(TEXT("roughness suffix"), ScenarioFiles::RoleSuffix(TEXT("roughness")), FString(TEXT("R")));
 	TestEqual(TEXT("unknown role is main"), ScenarioFiles::RoleFor(TEXT("inference-txt2img")), FString(TEXT("main")));
 	TestEqual(TEXT("normal suffix"), ScenarioFiles::RoleSuffix(TEXT("normal")), FString(TEXT("N")));
 	TestEqual(TEXT("safe object name"), ScenarioFiles::SafeObjectName(TEXT("T_A-b c")), FString(TEXT("T_A_b_c")));

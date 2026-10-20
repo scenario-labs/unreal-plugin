@@ -53,9 +53,21 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Import|Meshes")
 	EScenarioMeshCollision MeshCollision = EScenarioMeshCollision::ComplexAsSimple;
 
-	/** Builds imported static meshes as Nanite. */
+	/**
+	 * Builds imported static meshes as Nanite. A mesh with a translucent
+	 * material slot is left without Nanite, which does not draw translucency.
+	 */
 	UPROPERTY(config, EditAnywhere, Category = "Import|Meshes")
-	bool bNanite = false;
+	bool bNanite = true;
+
+	/**
+	 * Smoothness maps (glossiness) become a roughness map at import:
+	 * roughness = 1 - smoothness, read as linear data. The smoothness map is
+	 * kept next to it. Turn off when a model's smoothness map already holds
+	 * roughness values.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Import|Textures")
+	bool bInvertSmoothness = true;
 
 	/** Largest size for imported textures (0 keeps the source size). Panoramas always keep their size. */
 	UPROPERTY(config, EditAnywhere, Category = "Import|Textures", meta = (ClampMin = "0", ClampMax = "16384"))

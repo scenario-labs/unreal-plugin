@@ -49,6 +49,7 @@ public class ScenarioEditor : ModuleRules
 			"Projects",
 			"PropertyEditor",
 			"RenderCore",
+			"RHI",
 			"Slate",
 			"SlateCore",
 			"ToolMenus",
