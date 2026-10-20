@@ -9,13 +9,13 @@ namespace ScenarioFiles
 {
 	/**
 	 * Scenario asset metadata.type to the role the importer uses: albedo, normal,
-	 * roughness, metallic, height, ao, base, panorama, or main.
-	 * PATINA labels its roughness map "texture-smoothness": the pixels are
-	 * roughness, so it goes to the roughness slot without inversion.
+	 * roughness, smoothness, metallic, height, ao, base, panorama, or main.
+	 * A "texture-smoothness" map keeps its own role: the editor inverts it into
+	 * a roughness map at import (Project Settings decide), keeping the original.
 	 */
 	SCENARIOCORE_API FString RoleFor(const FString& MetadataType);
 
-	/** Role to the name suffix: BC, N, R, M, H, AO; empty for main. */
+	/** Role to the name suffix: BC, N, R, S (smoothness), M, H, AO; empty for main. */
 	SCENARIOCORE_API FString RoleSuffix(const FString& Role);
 
 	/** Lowercase words joined by dashes, at most MaxLength characters ("scenario" when empty). */
