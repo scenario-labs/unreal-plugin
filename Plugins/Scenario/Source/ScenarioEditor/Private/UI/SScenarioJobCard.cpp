@@ -432,7 +432,7 @@ namespace ScenarioJobActions
 	FString PreviewFile(const FScenarioJobRow& Row)
 	{
 		// Data maps never stand for the result: a normal map reads as a purple square.
-		static const TArray<FString> DataRoles = { TEXT("normal"), TEXT("roughness"), TEXT("metallic"), TEXT("metalness"), TEXT("height"),
+		static const TArray<FString> DataRoles = { TEXT("normal"), TEXT("roughness"), TEXT("smoothness"), TEXT("metallic"), TEXT("metalness"), TEXT("height"),
 			TEXT("displacement"), TEXT("ao"), TEXT("occlusion"), TEXT("ambient_occlusion"), TEXT("orm"), TEXT("mask"), TEXT("opacity"), TEXT("specular") };
 		static const TArray<FString> Preferred = { TEXT("preview"), TEXT("thumbnail"), TEXT("basecolor"), TEXT("base_color"), TEXT("albedo"), TEXT("diffuse"), TEXT("color") };
 		FString Fallback;

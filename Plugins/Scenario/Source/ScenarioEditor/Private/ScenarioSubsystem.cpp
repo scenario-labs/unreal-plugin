@@ -76,7 +76,7 @@ namespace
 			{
 				return TEXT("sky");
 			}
-			Roles += File.Role == TEXT("normal") || File.Role == TEXT("roughness") ? 1 : 0;
+			Roles += File.Role == TEXT("normal") || File.Role == TEXT("roughness") || File.Role == TEXT("smoothness") ? 1 : 0;
 		}
 		return Roles > 0 ? TEXT("material") : TEXT("texture");
 	}
@@ -106,16 +106,6 @@ namespace
 			return TEXT("panorama");
 		}
 		return File.Role.IsEmpty() ? TEXT("main") : File.Role;
-	}
-
-	FName ParameterForRole(const FString& Role)
-	{
-		if (Role == TEXT("normal")) return TEXT("Normal");
-		if (Role == TEXT("roughness")) return TEXT("Roughness");
-		if (Role == TEXT("metallic")) return TEXT("Metallic");
-		if (Role == TEXT("ao")) return TEXT("AmbientOcclusion");
-		if (Role == TEXT("height")) return NAME_None;
-		return TEXT("BaseColor");
 	}
 
 	/** What a job's import produced, sorted by use. */
@@ -167,7 +157,7 @@ namespace
 					{
 						SkyMaterial = Instance;
 					}
-					else if (Parent == TEXT("M_Scenario_PBR") && !Material)
+					else if (Parent.StartsWith(TEXT("M_Scenario_PBR")) && !Material)
 					{
 						Material = Instance;
 					}
@@ -560,6 +550,12 @@ void UScenarioSubsystem::ImportJobWithNotice(const FString& LocalId, const FScen
 			// A placement that needs a plugin, or a material with nothing selected, still imports: say what is left to do.
 			FScenarioEditorModule::Toast(LOCTEXT("ImportedNote", "Imported, with a note"), FText::FromString(Report.Warnings[0]), true);
 		}
+		else if (Report.CreatedAssets.ContainsByPredicate([](const FString& Path) { return Path.Contains(TEXT("/M_Scenario_PBR")); }))
+		{
+			// The project's first lit material: say which master it got (Substrate or legacy), once.
+			const FString* Line = Report.Checks.FindByPredicate([](const FString& Check) { return Check.StartsWith(TEXT("Material: ")); });
+			FScenarioEditorModule::Toast(LOCTEXT("ImportedMaster", "Imported"), FText::FromString(Line ? *Line : FString()), true);
+		}
 	});
 }
 
@@ -683,7 +679,7 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 				}
 				if (Asset->IsA<UStaticMesh>() || Asset->IsA<USkeletalMesh>())
 				{
-					ScenarioAssets::ConfigureStaticMesh(Asset);
+					ScenarioAssets::ConfigureStaticMesh(Asset, &Report.Checks);
 					const FString Wanted = ScenarioFiles::AssetName(Asset->IsA<USkeletalMesh>() ? TEXT("SK") : TEXT("SM"), Row.Prompt, File.AssetId);
 					if (!Asset->GetName().StartsWith(TEXT("SM_")) && !Asset->GetName().StartsWith(TEXT("SK_")))
 					{
@@ -710,18 +706,23 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 		const FScenarioJobFile& FirstFile = Row.Files[Indices[0]];
 		if (Importer == TEXT("material"))
 		{
-			TMap<FName, UTexture*> Maps;
+			TArray<ScenarioAssets::FRoleTexture> Textures;
 			for (UObject* Object : Created)
 			{
 				if (UTexture* Texture = Cast<UTexture>(Object))
 				{
-					const FName Parameter = ParameterForRole(RoleIn(Importer, Row.Files[FileOf[Object]]));
-					if (!Parameter.IsNone() && !Maps.Contains(Parameter))
-					{
-						Maps.Add(Parameter, Texture);
-					}
+					Textures.Add({ RoleIn(Importer, Row.Files[FileOf[Object]]), Texture });
 				}
 			}
+			// A smoothness map becomes a roughness map next to it; the new texture belongs to the same Scenario file.
+			TMap<UTexture*, UTexture*> Derived;
+			const TMap<FName, UTexture*> Maps = ScenarioAssets::PbrMaps(Textures, Settings.bInvertSmoothness, Settings.MaxTextureSize, Report, Derived);
+			for (const TPair<UTexture*, UTexture*>& Pair : Derived)
+			{
+				Created.Add(Pair.Key);
+				FileOf.Add(Pair.Key, FileOf.FindRef(Pair.Value));
+			}
+			Report.Checks.Add(ScenarioAssets::MaterialVariant().Describe());
 			if (UMaterialInstanceConstant* Instance = ScenarioAssets::CreateMaterialInstance(ScenarioAssets::Master(EScenarioMaster::Pbr, Report), Destination,
 				ScenarioFiles::AssetName(TEXT("MI"), Row.Prompt, FirstFile.AssetId), Maps, { { TEXT("Tiling"), 1.0f } }, Report))
 			{
@@ -975,6 +976,7 @@ FScenarioChangeReport UScenarioSubsystem::PlaceJob(const FString& LocalId, const
 			if (Targets.Num() > 0)
 			{
 				// On the selected actors: a lit material with the image as base color.
+				Report.Checks.Add(ScenarioAssets::MaterialVariant().Describe());
 				UMaterialInstanceConstant* Instance = ScenarioAssets::CreateMaterialInstance(ScenarioAssets::Master(EScenarioMaster::Pbr, Report), Destination,
 					ScenarioFiles::AssetName(TEXT("MI"), Row.Prompt, FirstAsset), { { TEXT("BaseColor"), Set.Texture } }, {}, Report);
 				for (AActor* Target : Targets)
@@ -1173,7 +1175,7 @@ FScenarioChangeReport UScenarioSubsystem::SaveChanges(bool bIncludeLevels)
 	return Report;
 }
 
-FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription, const FScenarioCaptureCamera* Camera)
+FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription, const FScenarioCaptureCamera* Camera, FScenarioFrameCheck* OutCheck)
 {
 	UWorld* World = ScenarioPlacement::EditorWorld();
 	ScenarioPlacement::FView View;
@@ -1232,6 +1234,10 @@ FString UScenarioSubsystem::CaptureViewport(int32 Width, int32 Height, FString& 
 	for (FColor& Pixel : Pixels)
 	{
 		Pixel.A = 255;
+	}
+	if (OutCheck)
+	{
+		*OutCheck = ScenarioImageChecks::CheckFrame(Pixels);
 	}
 	TArray64<uint8> Png;
 	FImageUtils::PNGCompressImageArray(Width, Height, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
