@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (unreleased)
 
+- Unreal 5.8: Scenario toolset and agent skill in Epic's Toolset Registry, so agents on Epic's Unreal MCP can price, run and land Scenario jobs. Every paid call from there answers `pending_approval` and waits for Approve in the editor.
+- `job_status` and `wait_for_job` take the `approval_id` of a spend waiting for the person.
+- Agent tool search (Editor Preferences, off by default): `tools/list` returns four tools that find, describe and call the others.
+- The Agent page shows whether Epic's Unreal MCP server is running, and on which port.
 - Imports use the plugin's own Interchange pipelines: 1 unit = 1 cm, simple collision, Nanite from Project Settings (now on by default, skipped for meshes with translucent slots), no generated lightmap UVs. The result's checks report each rule per mesh.
-- Smoothness maps get an inverted roughness copy wired into the material instance; the original is kept. New setting: Invert smoothness.
+- Maps named smoothness keep their own role. New setting **Invert smoothness** (off by default, because PATINA labels a roughness map "texture-smoothness"): when on, the import adds an inverted roughness copy wired into the material instance and keeps the original.
 - The PBR parent material follows Substrate: a Substrate slab graph when `r.Substrate` is on, the legacy graph otherwise. The import notice names it.
 - `scene_summary` and placements report World Partition, one file per actor and data layers; only loaded actors are listed.
 - `screenshot_viewport` returns a frame check (black, white, uniform, clipped or crushed frames) and says when the viewport has a fixed exposure.

@@ -180,6 +180,151 @@ TSharedRef<FJsonObject> FScenarioMcpServer::ToolsList()
 	return Json;
 }
 
+namespace
+{
+	const TCHAR* FindTools = TEXT("find_tools");
+	const TCHAR* DescribeTools = TEXT("describe_tools");
+	const TCHAR* CallTool = TEXT("call_tool");
+
+	TSharedRef<FJsonObject> MetaTool(const TCHAR* Name, const TCHAR* Description, const TSharedRef<FJsonObject>& Properties, const TArray<FString>& Required, bool bReadOnly)
+	{
+		TSharedRef<FJsonObject> Schema = MakeShared<FJsonObject>();
+		Schema->SetStringField(TEXT("type"), TEXT("object"));
+		Schema->SetObjectField(TEXT("properties"), Properties);
+		if (Required.Num() > 0)
+		{
+			Schema->SetField(TEXT("required"), ScenarioJson::StringArrayValue(Required));
+		}
+		TSharedRef<FJsonObject> Tool = MakeShared<FJsonObject>();
+		Tool->SetStringField(TEXT("name"), Name);
+		Tool->SetStringField(TEXT("description"), Description);
+		Tool->SetObjectField(TEXT("inputSchema"), Schema);
+		TSharedRef<FJsonObject> Annotations = MakeShared<FJsonObject>();
+		Annotations->SetBoolField(TEXT("readOnlyHint"), bReadOnly);
+		if (!bReadOnly)
+		{
+			// call_tool reaches every tool, paid and destructive ones included.
+			Annotations->SetBoolField(TEXT("destructiveHint"), true);
+			Annotations->SetBoolField(TEXT("openWorldHint"), true);
+		}
+		Tool->SetObjectField(TEXT("annotations"), Annotations);
+		return Tool;
+	}
+
+	TSharedRef<FJsonObject> Prop(const TCHAR* Type, const TCHAR* Description)
+	{
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetStringField(TEXT("type"), Type);
+		Json->SetStringField(TEXT("description"), Description);
+		return Json;
+	}
+
+	const TCHAR* KindName(EScenarioActionKind Kind)
+	{
+		switch (Kind)
+		{
+		case EScenarioActionKind::Read: return TEXT("read");
+		case EScenarioActionKind::Editor: return TEXT("editor");
+		case EScenarioActionKind::Spend: return TEXT("spend");
+		case EScenarioActionKind::Change: return TEXT("change");
+		default: return TEXT("python");
+		}
+	}
+
+	/** find_tools: names and descriptions, matched on every word of the query. */
+	TSharedRef<FJsonObject> FoundTools(const TSharedPtr<FJsonObject>& Args)
+	{
+		TArray<FString> Words;
+		ScenarioJson::GetString(Args, TEXT("query")).ToLower().ParseIntoArrayWS(Words);
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const FScenarioAction& Action : FScenarioActions::Get().All())
+		{
+			const FString Haystack = (Action.Name + TEXT(" ") + Action.Description).ToLower();
+			bool bMatch = true;
+			for (const FString& Word : Words)
+			{
+				bMatch &= Haystack.Contains(Word);
+			}
+			if (!bMatch)
+			{
+				continue;
+			}
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("name"), Action.Name);
+			Row->SetStringField(TEXT("kind"), KindName(Action.Kind));
+			Row->SetStringField(TEXT("description"), Action.Description);
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetArrayField(TEXT("tools"), Rows);
+		Json->SetStringField(TEXT("next"), TEXT("describe_tools for the input schemas, then call_tool (or the tool by its own name)."));
+		return Json;
+	}
+
+	/** describe_tools: the full tools/list entries for the names asked. */
+	FScenarioActionResult DescribedTools(const TSharedPtr<FJsonObject>& Args)
+	{
+		TArray<TSharedPtr<FJsonValue>> Tools;
+		TArray<FString> Unknown;
+		for (const FString& Name : ScenarioJson::GetStringArray(Args, TEXT("names")))
+		{
+			if (const FScenarioAction* Action = FScenarioActions::Get().Find(Name))
+			{
+				Tools.Add(MakeShared<FJsonValueObject>(FScenarioMcpServer::ToolJson(*Action)));
+			}
+			else
+			{
+				Unknown.Add(Name.Left(64));
+			}
+		}
+		if (Tools.Num() == 0)
+		{
+			return FScenarioActionResult::Fail(TEXT("NotFound"), TEXT("No tool with these names: find_tools lists them."));
+		}
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetArrayField(TEXT("tools"), Tools);
+		if (Unknown.Num() > 0)
+		{
+			Json->SetField(TEXT("unknown"), ScenarioJson::StringArrayValue(Unknown));
+		}
+		return FScenarioActionResult::Ok(Json);
+	}
+}
+
+TSharedRef<FJsonObject> FScenarioMcpServer::ToolSearchList()
+{
+	TArray<TSharedPtr<FJsonValue>> Tools;
+	if (const FScenarioAction* Status = FScenarioActions::Get().Find(TEXT("scenario_status")))
+	{
+		Tools.Add(MakeShared<FJsonValueObject>(ToolJson(*Status)));
+	}
+
+	TSharedRef<FJsonObject> FindProps = MakeShared<FJsonObject>();
+	FindProps->SetObjectField(TEXT("query"), Prop(TEXT("string"), TEXT("Words matched against tool names and descriptions, for example material or job. Empty lists every tool.")));
+	Tools.Add(MakeShared<FJsonValueObject>(MetaTool(FindTools,
+		TEXT("Finds Scenario tools: name, kind (read, editor, spend, change, python) and description. Free."), FindProps, {}, true)));
+
+	TSharedRef<FJsonObject> NamesProp = Prop(TEXT("array"), TEXT("Tool names from find_tools."));
+	TSharedRef<FJsonObject> Items = MakeShared<FJsonObject>();
+	Items->SetStringField(TEXT("type"), TEXT("string"));
+	NamesProp->SetObjectField(TEXT("items"), Items);
+	TSharedRef<FJsonObject> DescribeProps = MakeShared<FJsonObject>();
+	DescribeProps->SetObjectField(TEXT("names"), NamesProp);
+	Tools.Add(MakeShared<FJsonValueObject>(MetaTool(DescribeTools,
+		TEXT("Input schemas and annotations of Scenario tools, as tools/list gives them. Free."), DescribeProps, { TEXT("names") }, true)));
+
+	TSharedRef<FJsonObject> CallProps = MakeShared<FJsonObject>();
+	CallProps->SetObjectField(TEXT("name"), Prop(TEXT("string"), TEXT("Tool name.")));
+	CallProps->SetObjectField(TEXT("arguments"), Prop(TEXT("object"), TEXT("The tool's arguments.")));
+	Tools.Add(MakeShared<FJsonValueObject>(MetaTool(CallTool,
+		TEXT("Runs one Scenario tool with the same permissions and money rules as calling it by name. Tools of kind spend SPEND Creative Units: price first, pass quote_id and approved_cost."),
+		CallProps, { TEXT("name") }, false)));
+
+	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetArrayField(TEXT("tools"), Tools);
+	return Json;
+}
+
 FScenarioLocalResponse FScenarioMcpServer::RpcResult(const TSharedPtr<FJsonValue>& Id, const TSharedRef<FJsonObject>& Result, const FString& SessionHeader)
 {
 	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
@@ -341,7 +486,7 @@ void FScenarioMcpServer::HandleRpc(const TSharedPtr<FJsonObject>& Message, const
 	}
 	if (Method == TEXT("tools/list"))
 	{
-		Respond(RpcResult(Id, ToolsList()));
+		Respond(RpcResult(Id, bToolSearch ? ToolSearchList() : ToolsList()));
 		return;
 	}
 	if (Method != TEXT("tools/call"))
@@ -350,7 +495,29 @@ void FScenarioMcpServer::HandleRpc(const TSharedPtr<FJsonObject>& Message, const
 		return;
 	}
 
-	const FString Name = ScenarioJson::GetString(Params, TEXT("name"));
+	FString Name = ScenarioJson::GetString(Params, TEXT("name"));
+	TSharedPtr<FJsonObject> Arguments = ScenarioJson::GetObject(Params, TEXT("arguments"));
+	// The search tools answer in every mode, so a client keeps working when the setting changes.
+	if (Name == FindTools)
+	{
+		Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Ok(FoundTools(Arguments)))));
+		return;
+	}
+	if (Name == DescribeTools)
+	{
+		Respond(RpcResult(Id, ToolResult(DescribedTools(Arguments))));
+		return;
+	}
+	if (Name == CallTool)
+	{
+		Name = ScenarioJson::GetString(Arguments, TEXT("name"));
+		Arguments = ScenarioJson::GetObject(Arguments, TEXT("arguments"));
+		if (!FScenarioActions::Get().Find(Name))
+		{
+			Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Fail(TEXT("NotFound"), FString::Printf(TEXT("No tool named %s: find_tools lists them."), *Name.Left(64))))));
+			return;
+		}
+	}
 	const FScenarioAction* Action = FScenarioActions::Get().Find(Name);
 	if (!Action)
 	{
@@ -375,7 +542,7 @@ void FScenarioMcpServer::HandleRpc(const TSharedPtr<FJsonObject>& Message, const
 		return false;
 	}), static_cast<float>(Limit));
 
-	FScenarioActions::Get().Call(Name, ScenarioJson::GetObject(Params, TEXT("arguments")), Caller, [bReplied, Timer, Id, Respond](const FScenarioActionResult& Result)
+	FScenarioActions::Get().Call(Name, Arguments, Caller, [bReplied, Timer, Id, Respond](const FScenarioActionResult& Result)
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(*Timer);
 		if (*bReplied)

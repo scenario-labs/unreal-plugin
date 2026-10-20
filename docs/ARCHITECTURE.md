@@ -7,10 +7,10 @@ How Scenario for Unreal Engine is built, for contributors and reviewers. The cod
 ```
  People                          Agents (Claude Code, Codex, Cursor, ...)
    |  Studio tab, composer,        |  HTTP, JSON-RPC (Streamable HTTP)
-   |  context menus                v
-   |                       ScenarioAgent: local Scenario MCP server (127.0.0.1:9877)
-   |                               |
-   v                               v
+   |  context menus                v                                v
+   |                       ScenarioAgent: local Scenario      Epic's Unreal MCP (5.8) -> Toolset Registry
+   |                       MCP server (127.0.0.1:9877)          -> ScenarioToolsets: Scenario toolset, agent skill
+   v                               v                                v
  ScenarioEditor: action registry  <-  Python, Blueprints, -run=ScenarioEditor.Scenario commandlet
    |  import (Interchange), placement (one transaction), provenance, Slate UI
    v
@@ -20,13 +20,14 @@ How Scenario for Unreal Engine is built, for contributors and reviewers. The cod
  Hosted Scenario MCP (mcp.scenario.com)
 ```
 
-Three editor modules and one small runtime module. Only `ScenarioGameplay` is compiled into a packaged game.
+Four editor modules and one small runtime module. Only `ScenarioGameplay` is compiled into a packaged game.
 
 | Module | Loading phase | Depends on the editor | Role |
 |---|---|---|---|
 | `ScenarioCore` | Default | No | Talks to Scenario. Owns every money rule. Unit-tested against a fake transport and a fake Scenario. |
 | `ScenarioEditor` | PostEngineInit | Yes | Studio and composer, imports, placement, provenance, settings, the action registry, scripting entry points and the commandlet. |
 | `ScenarioAgent` | PostEngineInit | Yes | The local Scenario MCP server, client setup, permissions UI and activity log. Can be removed without touching the others. |
+| `ScenarioToolsets` | PostEngineInit | Yes | Registers a Scenario toolset and agent skill with Epic's Toolset Registry (Unreal 5.8). Builds empty on 5.6 and 5.7; no other module depends on it. |
 | `ScenarioGameplay` | Default (runtime) | No | Pickup, goal and game rules actors (timer, music, Slate HUD) used by games the kit builds. No network code. |
 
 ## Kit
@@ -83,7 +84,7 @@ All network and file IO is asynchronous. HTTP runs on Unreal's HTTP module; call
 ## Imports
 
 - Meshes go through Interchange (GLB) with explicit pipelines: copies of the engine's default glTF, FBX and OBJ, or texture pipelines with the plugin's policy set by reflection (scale 1, so glTF meters become centimeters; simple collision; Nanite from Project Settings; no generated lightmap UVs; materials and textures imported). Properties an engine version lacks are logged and skipped. After the build, Nanite stays on only when every material slot is opaque or masked. Static or skeletal is decided from the file; morph targets and animations come with it.
-- Textures get settings per role from Scenario's asset metadata and the file name: sRGB off for normal, roughness, metallic, smoothness and height maps; normal maps use the normal compression. A smoothness map gets an inverted copy, made from its source pixels as linear data, used as roughness.
+- Textures get settings per role from Scenario's asset metadata and the file name: sRGB off for normal, roughness, metallic, smoothness and height maps; normal maps use the normal compression. A smoothness map is used as roughness; with Invert smoothness on it gets an inverted copy, made from its source pixels as linear data, used as roughness instead.
 - Material results are wired into a material instance. Its parent materials (PBR, unlit, sky) are built by code on first use in `<Output root>/_Shared/`, so the plugin ships no content. The PBR parent reads `r.Substrate`: a Substrate slab graph when it is on, a legacy graph otherwise.
 - Video becomes a File Media Source on a Media Plate; skies become a sky sphere, or a cubemap on an HDRI Backdrop for `.hdr` files. Optional engine plugins (Media Plate, HDRI Backdrop, Python) are reached at runtime by class path, so the plugin does not force them on every project.
 - Provenance is editor-only package metadata (`Scenario.*` keys) plus an index for the Content Browser filter. It is stripped at cook.
@@ -95,6 +96,7 @@ People, agents and scripts share one registry of 39 actions (`FScenarioActions`)
 | Caller | Change the project | Run Python |
 |---|---|---|
 | Agent (over MCP) | Only with **Change this project**; otherwise `apply_result_application` becomes a proposal the person approves | Only with **Run Unreal Python** |
+| Epic's Toolset Registry (no token) | Same switch as agents; every paid call answers `pending_approval` and waits for the person | No |
 | Script (Python, Blueprint, commandlet) | Yes | No |
 
 The MCP server exposes each action as a tool with annotations derived from its kind. An automation test keeps the whole tool list under 40,000 characters and each description under 2,500, so connecting the server does not flood an agent's context.
@@ -108,6 +110,29 @@ Streamable HTTP on `127.0.0.1`, port 9877 or the next free one of ten. Requests 
 - `initialize` returns an `Mcp-Session-Id`; unknown sessions get 404; `DELETE` ends a session. Notifications get 202. Batches are refused.
 - Protocol versions 2025-06-18, 2025-03-26 and 2024-11-05.
 - Results are JSON text content, plus PNG image content for screenshots; failures set `isError`.
+
+## Epic's Toolset Registry
+
+Unreal 5.8 adds Epic's Toolset Registry (Experimental): classes derived from `UToolsetDefinition` whose static `UFUNCTION(meta=(AICallable))` functions become tools, with schemas and descriptions taken from the reflection data and doc comments. Epic's Model Context Protocol plugin serves the registry through three tools: `list_toolsets`, `describe_toolset` and `call_tool`.
+
+- `ScenarioToolsets` holds `UScenarioToolset` (19 tools) and `UScenarioAgentSkill`. Each tool adapts one action of the registry above; no logic is duplicated. Results are `UToolCallAsyncResult` objects completed when the action answers, so long actions (`WaitForJob`) do not block the game thread.
+- Optional: `Scenario.uplugin` lists `ToolsetRegistry` as an optional plugin. `ScenarioToolsets.Build.cs` adds the dependency and `WITH_SCENARIO_TOOLSETS=1` only when the engine has the registry folder; the reflected headers are guarded by an engine version check that the header tool understands. On 5.6 and 5.7 the module compiles to nothing.
+- Spending: the registry has no caller identity and Epic's server no token, so the toolset calls with `FScenarioCaller::bSpendWaitsForApproval`. `FScenarioActions::Call` then checks the quote and `approved_cost`, keeps an approval keyed by quote, answers `pending_approval` with an `approval_id` at once and asks the person with a toast. Approve runs the action once; Decline, a timeout or the quote's expiry sends nothing. `job_status` and `wait_for_job` accept the `approval_id`. The session's money rules still apply underneath.
+- Optional string parameters default to a word (`all`, `auto`, `default`, `*`, `selection`, `none`): the registry fills a left-out parameter only from its default, and treats an empty default as none.
+
+## Tool list size
+
+Measured on Unreal 5.8.3 with the Scenario plugin and Epic's Model Context Protocol and AllToolsets plugins (53 toolsets). Tokens are bytes divided by four.
+
+| What | Bytes | About tokens |
+|---|---|---|
+| Scenario MCP server, `tools/list` (48 tools) | 29,425 | 7,350 |
+| Scenario MCP server, `tools/list` with **Agent tool search** (4 tools) | 1,456 | 360 |
+| Epic's server, `tools/list` (3 meta tools) | 1,719 | 430 |
+| Epic's server, `list_toolsets` | 13,366 | 3,340 |
+| Epic's server, `describe_toolset` for the Scenario toolset (19 tools) | about 11,600 | 2,900 |
+
+The full list is above 6,000 tokens, so the server has an opt-in tool search mode (`bAgentToolSearch`, off by default): `tools/list` returns `scenario_status`, `find_tools`, `describe_tools` and `call_tool`, and every tool stays callable by name. It is off by default because clients that already defer tool definitions gain nothing from it and lose the per-tool annotations in the list.
 
 ## Simplifications in version 0.1
 
@@ -125,6 +150,7 @@ These are deliberate, listed so reviewers can judge them:
 ## Tests
 
 - `Scenario.Core.*` automation tests: JSON-RPC and SSE parsing, error kinds, retry policy, quotes and fingerprints, the job list state machine, schema forms, naming, OAuth helpers, the local HTTP listener, the session against a fake Scenario, recorded schema fixtures in `Plugins/Scenario/Tests/Fixtures/`.
-- `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), tool list budget, permissions, client config writers.
+- `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), tool list budget, tool search mode, permissions, client config writers.
+- `Scenario.Toolsets.*` automation tests (5.8): registration, each tool's schema against its action, the spend gate (a paid call through the registry answers `pending_approval`, consumes no quote and writes no job), reads without sign-in, the agent skill's size.
 - `tools/contract_check.py`: a free check against the live service (reads and dry runs only).
 - Live paid runs are manual, with cheap models and low settings, recorded in `tests/live/LEDGER.md`.

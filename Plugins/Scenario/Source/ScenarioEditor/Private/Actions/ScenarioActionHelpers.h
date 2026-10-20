@@ -69,8 +69,33 @@ namespace ScenarioActionHelpers
 	/** Files captured or exported for agents, by reference id. */
 	TMap<FString, FString>& References();
 
-	/** Asks the person in the editor (toast with two buttons). Answers false after Timeout seconds. */
-	void AskPerson(const FText& Title, const FText& Detail, double Timeout, TFunction<void(bool bApproved)> OnAnswer);
+	/** A paid call waiting for the person (FScenarioCaller::bSpendWaitsForApproval), by approval id. */
+	struct FSpendApproval
+	{
+		FString Id;
+		FString Action;
+		FString QuoteId;
+		FString CostExact;
+		FString Target;
+		/** pending, declined, expired, sending, sent or failed. */
+		FString State = TEXT("pending");
+		/** Local job id once sent. */
+		FString JobId;
+		FString Error;
+		double CreatedAt = 0.0;
+		double Deadline = 0.0;
+		/** Closes the editor's question as declined. */
+		TFunction<void()> Decline;
+	};
+	TMap<FString, FSpendApproval>& SpendApprovals();
+	/** The approval's state for job_status: the job once sent, else the approval itself. */
+	TSharedRef<FJsonObject> ApprovalJson(const FSpendApproval& Approval);
+
+	/**
+	 * Asks the person in the editor (toast with two buttons). Answers false after Timeout seconds.
+	 * Returns a function that answers false now (for shutdown and tests); it does nothing once answered.
+	 */
+	TFunction<void()> AskPerson(const FText& Title, const FText& Detail, double Timeout, TFunction<void(bool bApproved)> OnAnswer);
 
 	FString NewId(const TCHAR* Prefix);
 }

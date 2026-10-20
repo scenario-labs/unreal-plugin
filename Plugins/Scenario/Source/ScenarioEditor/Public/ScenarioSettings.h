@@ -63,11 +63,12 @@ public:
 	/**
 	 * Smoothness maps (glossiness) become a roughness map at import:
 	 * roughness = 1 - smoothness, read as linear data. The smoothness map is
-	 * kept next to it. Turn off when a model's smoothness map already holds
-	 * roughness values.
+	 * kept next to it. Off by default: PATINA labels a roughness map
+	 * "texture-smoothness", so its pixels already are roughness. Turn on for a
+	 * model whose smoothness map holds real smoothness.
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Import|Textures")
-	bool bInvertSmoothness = true;
+	bool bInvertSmoothness = false;
 
 	/** Largest size for imported textures (0 keeps the source size). Panoramas always keep their size. */
 	UPROPERTY(config, EditAnywhere, Category = "Import|Textures", meta = (ClampMin = "0", ClampMax = "16384"))
@@ -141,6 +142,14 @@ public:
 	/** Each paid agent call waits for your approval in the editor. */
 	UPROPERTY(config, EditAnywhere, Category = "Agents")
 	bool bApproveAgentSpend = false;
+
+	/**
+	 * tools/list answers with scenario_status and three tools that find, describe and call the
+	 * others, instead of every tool. For clients that load all tools into the model's context.
+	 * Takes effect when the server restarts.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Agents")
+	bool bAgentToolSearch = false;
 
 	/** Anonymous usage statistics (asked once). Version 0.1 sends nothing. */
 	UPROPERTY(config, EditAnywhere, Category = "Privacy")

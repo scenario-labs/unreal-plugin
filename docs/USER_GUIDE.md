@@ -87,7 +87,7 @@ The folder button above **Generate** shows where results go; click it to choose 
 Notes:
 
 - Texture roles are set on import: sRGB is off for normal, roughness, metallic and height maps.
-- Some material models return a smoothness map. Unreal expects roughness, so the import keeps the smoothness texture and adds an inverted copy (roughness = 1 - smoothness, name ending in `_R`) that the material instance uses. **Invert smoothness** in Project Settings turns this off.
+- Some material models return a map named smoothness. PATINA's holds roughness values, so the import uses it as roughness. For a model whose map is real smoothness, turn **Invert smoothness** on in Project Settings: the import then keeps the smoothness texture and adds an inverted copy (roughness = 1 - smoothness, name ending in `_R`) that the material instance uses.
 - The PBR parent material matches the project's renderer: `M_Scenario_PBR` (legacy graph) when Substrate is off, `M_Scenario_PBR_Substrate` (a Substrate slab) when it is on. The import notice and the result's checks name the one used.
 - Meshes are imported with the plugin's own settings, whatever the last import dialog said: 1 unit = 1 cm, simple collision, Nanite per Project Settings, no generated lightmap UVs (Lumen does not use them), materials and textures imported. A mesh with a translucent material slot is left without Nanite. The result's checks give one line per rule.
 - When an optional engine plugin is missing, the asset is still imported but not placed. In version 0.1 the message naming the plugin to enable in **Edit > Plugins** reaches agents and scripts only, in the result's warnings.
@@ -233,7 +233,7 @@ The Studio's **Settings** page edits the most used ones under **Output**, **Impo
 | Omit prompt from assets | Off | Keeps the prompt out of the provenance stored in imported assets |
 | Mesh collision | Mesh shape | Collision for imported static meshes. Mesh shape lets the player walk through gates, arches and doors; Simple box is cheaper but closes them |
 | Nanite | On | Builds imported static meshes as Nanite when every material slot is opaque or masked |
-| Invert smoothness | On | Material results with a smoothness map get an inverted roughness copy |
+| Invert smoothness | Off | When on, material results with a smoothness map get an inverted roughness copy; off uses the map as roughness (PATINA labels roughness maps as smoothness) |
 | Max texture size | 0 (source size) | Largest size for imported textures; panoramas keep their size |
 | Save imported assets | On | Saves new asset packages right after import |
 | Allowed models, Blocked models | Empty | Limit the models this project can use |
