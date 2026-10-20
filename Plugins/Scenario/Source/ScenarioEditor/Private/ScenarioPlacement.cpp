@@ -11,6 +11,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextureCube.h"
 #include "Engine/World.h"
+#include "ScenarioOpenWorld.h"
 #include "ScenarioSettings.h"
 #include "EngineUtils.h"
 #include "Animation/SkeletalMeshActor.h"
@@ -46,6 +47,8 @@ namespace
 		// Lets remove_scenario_items find what the plugin placed. A plain name tag: no plugin type is referenced.
 		Actor->Tags.AddUnique(ScenarioPlacement::ActorTag);
 		Report.SpawnedActors.Add(ScenarioPlacement::Describe(Actor));
+		// World Partition: the editor put the actor in the current data layers and, with one file per actor, its own package.
+		ScenarioOpenWorld::DescribePlacedActor(Actor, Report.Checks, Report.Warnings);
 		return Actor;
 	}
 
@@ -60,22 +63,45 @@ UWorld* ScenarioPlacement::EditorWorld()
 	return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 }
 
+namespace
+{
+	FLevelEditorViewportClient* PerspectiveClient()
+	{
+		FLevelEditorViewportClient* Client = GCurrentLevelEditingViewportClient;
+		if ((!Client || !Client->IsPerspective()) && GEditor)
+		{
+			for (FLevelEditorViewportClient* Candidate : GEditor->GetLevelViewportClients())
+			{
+				if (Candidate && Candidate->IsPerspective())
+				{
+					return Candidate;
+				}
+			}
+		}
+		return Client;
+	}
+}
+
+FString ScenarioPlacement::ExposureNote(bool bFixed, float FixedEV100)
+{
+	if (!bFixed)
+	{
+		return FString();
+	}
+	return FString::Printf(TEXT("The level viewport has a fixed exposure (EV100 %.1f, set in its Exposure menu). It bypasses the post process volume's exposure in that viewport only: ")
+		TEXT("this capture and the game use the level's post process exposure, so they can look brighter or darker than the viewport. Judge lighting from the capture."), FixedEV100);
+}
+
+FString ScenarioPlacement::ExposureOverrideNote()
+{
+	const FLevelEditorViewportClient* Client = PerspectiveClient();
+	return Client ? ExposureNote(Client->ExposureSettings.bFixed, Client->ExposureSettings.FixedEV100) : FString();
+}
+
 ScenarioPlacement::FView ScenarioPlacement::ActiveView()
 {
 	FView View;
-	FLevelEditorViewportClient* Client = GCurrentLevelEditingViewportClient;
-	if ((!Client || !Client->IsPerspective()) && GEditor)
-	{
-		for (FLevelEditorViewportClient* Candidate : GEditor->GetLevelViewportClients())
-		{
-			if (Candidate && Candidate->IsPerspective())
-			{
-				Client = Candidate;
-				break;
-			}
-		}
-	}
-	if (Client)
+	if (const FLevelEditorViewportClient* Client = PerspectiveClient())
 	{
 		View.bValid = true;
 		View.Location = Client->GetViewLocation();
