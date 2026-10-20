@@ -18,6 +18,12 @@ struct SCENARIOEDITOR_API FScenarioCaller
 	bool bCanChangeProject = false;
 	/** Agents: "Allow agents to run Python". */
 	bool bCanRunPython = false;
+	/**
+	 * Paid calls answer pending_approval at once and are sent only after the person
+	 * approves in the editor, whatever "Approve each spend here" says. For callers
+	 * that reach the editor without a token, such as Epic's Toolset Registry.
+	 */
+	bool bSpendWaitsForApproval = false;
 
 	static FScenarioCaller Agent(const FString& Client);
 	static FScenarioCaller Script(const FString& Client);
@@ -106,8 +112,21 @@ public:
 	/** Drops pending uploads, applications and approvals (module shutdown). */
 	void Reset();
 
+	/**
+	 * Declines a spend that waits for the person's approval (bSpendWaitsForApproval).
+	 * There is no way to approve from code: only the editor's Approve button sends it.
+	 */
+	bool DeclineSpendApproval(const FString& ApprovalId);
+
+	/**
+	 * Tests only: the approval gate asks even with SCENARIO_NO_SPEND=1. The session
+	 * still refuses every paid call under the switch, so nothing can be sent.
+	 */
+	bool bTestAskEvenWhenSpendingIsOff = false;
+
 private:
 	FScenarioActions();
+	void ProposeSpend(const FString& Name, const FScenarioAction& Action, const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Finish);
 	void RegisterScenarioActions();
 	void RegisterLevelActions();
 	void RegisterKitActions();

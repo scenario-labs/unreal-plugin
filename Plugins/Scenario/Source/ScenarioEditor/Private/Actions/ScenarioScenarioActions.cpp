@@ -443,7 +443,7 @@ void FScenarioActions::RegisterScenarioActions()
 			TSharedRef<FJsonObject> Permissions = MakeShared<FJsonObject>();
 			Permissions->SetBoolField(TEXT("change_project"), Caller.bCanChangeProject);
 			Permissions->SetBoolField(TEXT("run_python"), Caller.bCanRunPython);
-			Permissions->SetBoolField(TEXT("person_approves_each_spend"), Settings.bApproveAgentSpend);
+			Permissions->SetBoolField(TEXT("person_approves_each_spend"), Settings.bApproveAgentSpend || Caller.bSpendWaitsForApproval);
 			Permissions->SetStringField(TEXT("spending"), TEXT("Every paid call needs a quote_id from an estimate tool and approved_cost equal to its cu_cost_exact. No CU cap is set by the plugin."));
 			Json->SetObjectField(TEXT("permissions"), Permissions);
 			if (StatusExtension)
@@ -661,7 +661,7 @@ void FScenarioActions::RegisterScenarioActions()
 
 	// job_status
 	Register(Make(TEXT("job_status"), EScenarioActionKind::Read,
-		TEXT("State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids."),
+		TEXT("State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too."),
 		Object({ { TEXT("job_id"), TEXT("string") }, { TEXT("job_ids"), TEXT("array") } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -682,6 +682,11 @@ void FScenarioActions::RegisterScenarioActions()
 			TArray<TSharedPtr<FJsonValue>> Rows;
 			for (const FString& Id : Ids)
 			{
+				if (const FSpendApproval* Approval = SpendApprovals().Find(Id))
+				{
+					Rows.Add(MakeShared<FJsonValueObject>(ApprovalJson(*Approval)));
+					continue;
+				}
 				const FScenarioJobRow* Row = FindRow(S->Session(), Id);
 				if (!Row)
 				{
@@ -714,7 +719,18 @@ void FScenarioActions::RegisterScenarioActions()
 					Done(Fail);
 					return;
 				}
-				const FScenarioJobRow* First = FindRow(S->Session(), Str(Args, TEXT("job_id")));
+				FString Id = Str(Args, TEXT("job_id"));
+				if (const FSpendApproval* Approval = SpendApprovals().Find(Id))
+				{
+					if (Approval->JobId.IsEmpty())
+					{
+						// Waiting for the person, declined or failed: nothing to wait for on Scenario yet.
+						Done(FScenarioActionResult::Ok(ApprovalJson(*Approval)));
+						return;
+					}
+					Id = Approval->JobId;
+				}
+				const FScenarioJobRow* First = FindRow(S->Session(), Id);
 				if (!First)
 				{
 					Done(FScenarioActionResult::Fail(TEXT("NotFound"), TEXT("No such job in this project.")));
