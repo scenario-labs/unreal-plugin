@@ -30,6 +30,8 @@ public:
 
 	FString Token;
 	bool bRequireToken = true;
+	/** tools/list returns ToolSearchList() instead of every tool (opt-in, "bAgentToolSearch"). */
+	bool bToolSearch = false;
 
 	/** Request handling, callable without sockets (tests). Port is the one the Host header must name. */
 	void Handle(const FScenarioLocalRequest& Request, FScenarioLocalRespond Respond);
@@ -38,6 +40,8 @@ public:
 	/** tools/list result, also used by the size budget test. */
 	static TSharedRef<FJsonObject> ToolsList();
 	static TSharedRef<FJsonObject> ToolJson(const FScenarioAction& Action);
+	/** Tool search mode: scenario_status, find_tools, describe_tools and call_tool. Every tool stays callable by name. */
+	static TSharedRef<FJsonObject> ToolSearchList();
 
 	struct FClient
 	{

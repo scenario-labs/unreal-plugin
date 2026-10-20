@@ -130,6 +130,14 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Agents")
 	bool bApproveAgentSpend = false;
 
+	/**
+	 * tools/list answers with scenario_status and three tools that find, describe and call the
+	 * others, instead of every tool. For clients that load all tools into the model's context.
+	 * Takes effect when the server restarts.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Agents")
+	bool bAgentToolSearch = false;
+
 	/** Anonymous usage statistics (asked once). Version 0.1 sends nothing. */
 	UPROPERTY(config, EditAnywhere, Category = "Privacy")
 	bool bTelemetry = false;
