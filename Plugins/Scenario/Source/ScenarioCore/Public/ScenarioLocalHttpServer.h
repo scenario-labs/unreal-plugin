@@ -67,6 +67,9 @@ public:
 	int32 MaxBodyBytes = DefaultMaxBodyBytes;
 	double IdleSeconds = DefaultIdleSeconds;
 
+	/** True when a program accepts connections on 127.0.0.1:Port. Waits up to 200 ms: call it off the game thread. */
+	static bool IsLoopbackPortAnswering(int32 Port);
+
 	/** Host header check: exactly one Host naming 127.0.0.1, localhost or [::1] with this port (or no port). */
 	static bool IsLoopbackHostHeader(const FString& Host, int32 Port);
 	/** Origin check: absent, "null" refused, otherwise must be a loopback origin. */

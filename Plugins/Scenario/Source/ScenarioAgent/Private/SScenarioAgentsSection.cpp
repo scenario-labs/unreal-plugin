@@ -4,9 +4,14 @@
 
 #include "Async/Async.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "Modules/ModuleManager.h"
 #include "Misc/MessageDialog.h"
 #include "ScenarioAgentClients.h"
 #include "ScenarioAgentModule.h"
+#include "ScenarioLocalHttpServer.h"
 #include "ScenarioMcpServer.h"
 #include "ScenarioSettings.h"
 #include "ScenarioTypes.h"
@@ -180,6 +185,16 @@ void SScenarioAgentsSection::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
+			SectionHeader(LOCTEXT("EpicMcp", "Epic's Unreal MCP"))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			Card(BuildEpicMcp(), FMargin(12.0f))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
 			SectionHeader(LOCTEXT("Activity", "Activity"))
 		]
 		+ SVerticalBox::Slot()
@@ -194,6 +209,7 @@ void SScenarioAgentsSection::Construct(const FArguments& InArgs)
 	}
 	RefreshActivity();
 	RefreshConfigured();
+	RefreshEpicMcp();
 }
 
 void SScenarioAgentsSection::RefreshConfigured()
@@ -390,6 +406,134 @@ TSharedRef<SWidget> SScenarioAgentsSection::BuildPermissions()
 		];
 	}
 	return Box;
+}
+
+TSharedRef<SWidget> SScenarioAgentsSection::BuildEpicMcp()
+{
+	using namespace ScenarioUI;
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.VAlign(VAlign_Center)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				Line(MakeAttributeLambda([this]() { return EpicMcpTitle(); }), EText::Body)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 3.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.AutoWrapText(true)
+				.Font(Font(EText::Meta))
+				.ColorAndOpacity(Palette::Dim())
+				.Text_Lambda([this]() { return EpicMcpDetail(); })
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(Gutter, 0.0f)
+		[
+			Pill(MakeAttributeLambda([this]()
+				{
+					switch (EpicMcp)
+					{
+					case EEpicMcp::Running: return LOCTEXT("EpicRunning", "Running");
+					case EEpicMcp::Checking: return LOCTEXT("EpicChecking", "Checking");
+					case EEpicMcp::Stopped: return LOCTEXT("EpicStopped", "Not running");
+					default: return LOCTEXT("EpicOff", "Off");
+					}
+				}),
+				MakeAttributeLambda([this]() { return EpicMcp == EEpicMcp::Running ? ETone::Success : ETone::Neutral; }))
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			Button(LOCTEXT("EpicCheck", "Check again"), EButton::Ghost, [this]() { RefreshEpicMcp(); }, NAME_None,
+				LOCTEXT("EpicCheckTip", "Reads Epic's Model Context Protocol settings and checks whether its port answers on this computer."), true)
+		];
+}
+
+void SScenarioAgentsSection::RefreshEpicMcp()
+{
+	// Epic's plugin is optional and Experimental: read it by name and reflection, never link to it.
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("ModelContextProtocol"));
+	if (!Plugin.IsValid())
+	{
+		EpicMcp = EEpicMcp::NotInEngine;
+		return;
+	}
+	if (!Plugin->IsEnabled() || !FModuleManager::Get().IsModuleLoaded(TEXT("ModelContextProtocol")))
+	{
+		EpicMcp = EEpicMcp::Off;
+		return;
+	}
+	int32 Port = 8000;
+	FString Path = TEXT("/mcp");
+	if (const UClass* Settings = FindObject<UClass>(nullptr, TEXT("/Script/ModelContextProtocolEngine.ModelContextProtocolSettings")))
+	{
+		const UObject* Defaults = Settings->GetDefaultObject();
+		if (const FUInt32Property* PortProperty = FindFProperty<FUInt32Property>(Settings, TEXT("ServerPortNumber")))
+		{
+			Port = static_cast<int32>(PortProperty->GetPropertyValue_InContainer(Defaults));
+		}
+		if (const FStrProperty* PathProperty = FindFProperty<FStrProperty>(Settings, TEXT("ServerUrlPath")))
+		{
+			Path = PathProperty->GetPropertyValue_InContainer(Defaults);
+		}
+	}
+	FParse::Value(FCommandLine::Get(), TEXT("ModelContextProtocolPort="), Port);
+	EpicMcpPort = Port;
+	EpicMcpPath = Path.StartsWith(TEXT("/")) ? Path : TEXT("/") + Path;
+	EpicMcp = EEpicMcp::Checking;
+	TWeakPtr<SScenarioAgentsSection> Weak = StaticCastSharedRef<SScenarioAgentsSection>(AsShared());
+	Async(EAsyncExecution::ThreadPool, [Weak, Port]()
+	{
+		const bool bAnswering = FScenarioLocalHttpServer::IsLoopbackPortAnswering(Port);
+		AsyncTask(ENamedThreads::GameThread, [Weak, Port, bAnswering]()
+		{
+			if (const TSharedPtr<SScenarioAgentsSection> This = Weak.Pin())
+			{
+				if (This->EpicMcpPort == Port)
+				{
+					This->EpicMcp = bAnswering ? EEpicMcp::Running : EEpicMcp::Stopped;
+				}
+			}
+		});
+	});
+}
+
+FText SScenarioAgentsSection::EpicMcpTitle() const
+{
+	switch (EpicMcp)
+	{
+	case EEpicMcp::NotInEngine:
+		return LOCTEXT("EpicNotInEngine", "Not part of this engine (Unreal 5.8 and later)");
+	case EEpicMcp::Off:
+		return LOCTEXT("EpicPluginOff", "The Model Context Protocol plugin is off");
+	case EEpicMcp::Running:
+		return FText::Format(LOCTEXT("EpicRunningOn", "Running on http://127.0.0.1:{0}{1}"), FText::AsNumber(EpicMcpPort, &FNumberFormattingOptions::DefaultNoGrouping()), FText::FromString(EpicMcpPath));
+	default:
+		return FText::Format(LOCTEXT("EpicStoppedOn", "Enabled, not answering on port {0}"), FText::AsNumber(EpicMcpPort, &FNumberFormattingOptions::DefaultNoGrouping()));
+	}
+}
+
+FText SScenarioAgentsSection::EpicMcpDetail() const
+{
+	if (EpicMcp == EEpicMcp::NotInEngine || EpicMcp == EEpicMcp::Off)
+	{
+		return LOCTEXT("EpicNotNeeded", "Scenario MCP above works without it.");
+	}
+	if (!FModuleManager::Get().IsModuleLoaded(TEXT("ScenarioToolsets")) || !FModuleManager::Get().IsModuleLoaded(TEXT("ToolsetRegistry")))
+	{
+		return LOCTEXT("EpicNoToolset", "Scenario's toolset there needs Epic's Toolset Registry plugin. Epic's server has no token: keep it on this computer.");
+	}
+	return LOCTEXT("EpicToolset", "Agents connected to it find Scenario as the toolset ScenarioToolsets.ScenarioToolset. Every paid call from there waits for your approval in this editor. Epic's server has no token: keep it on this computer.");
 }
 
 void SScenarioAgentsSection::RefreshActivity()

@@ -32,4 +32,14 @@ private:
 	TMap<FString, bool> Configured;
 	void RefreshConfigured();
 	FDelegateHandle ActivityHandle;
+
+	/** Epic's Unreal MCP (ModelContextProtocol plugin), read from its settings and a port probe off the game thread. */
+	TSharedRef<SWidget> BuildEpicMcp();
+	void RefreshEpicMcp();
+	FText EpicMcpTitle() const;
+	FText EpicMcpDetail() const;
+	enum class EEpicMcp : uint8 { NotInEngine, Off, Checking, Stopped, Running };
+	EEpicMcp EpicMcp = EEpicMcp::Checking;
+	int32 EpicMcpPort = 0;
+	FString EpicMcpPath;
 };
