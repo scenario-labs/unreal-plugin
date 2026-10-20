@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+- Unreal 5.8: Scenario toolset and agent skill in Epic's Toolset Registry, so agents on Epic's Unreal MCP can price, run and land Scenario jobs. Every paid call from there answers `pending_approval` and waits for Approve in the editor.
+- `job_status` and `wait_for_job` take the `approval_id` of a spend waiting for the person.
+- Agent tool search (Editor Preferences, off by default): `tools/list` returns four tools that find, describe and call the others.
+- The Agent page shows whether Epic's Unreal MCP server is running, and on which port.
+
 ## 0.1.0 (unreleased)
 
 First version.
