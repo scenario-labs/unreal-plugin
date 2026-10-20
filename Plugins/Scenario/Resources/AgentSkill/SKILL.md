@@ -11,8 +11,20 @@ The Scenario plugin runs a local MCP server inside the Unreal Editor. Its tools 
 
 - Server: `http://127.0.0.1:9877/mcp` (if 9877 is taken, the plugin uses the next free port up to 9886; the Agent page of the Scenario Studio shows the real one).
 - A bearer token is required by default. The Set up buttons on the Scenario Studio's Agent page write it into Claude Code, Codex, Cursor or Claude Desktop. Never ask the user to paste the token into chat.
-- Port 8000 is Epic's own Unreal MCP server, not this one. Epic's tools edit actors and Blueprints; they do not run Scenario jobs.
+- Port 8000 is Epic's own Unreal MCP server (Unreal 5.8), not this one. Epic's toolsets edit actors, materials, Blueprints and the rest of the editor. On 5.8 the plugin also registers a Scenario toolset there (`ScenarioToolsets.ScenarioToolset`, reached with `call_tool`): same price, quote and landing rules, and every paid call waits for the person's Approve in the editor (see Money rules). Use this server when you have it; use Epic's registry when it is the only one connected.
+- With Agent tool search on (Editor Preferences, off by default), `tools/list` shows only `scenario_status`, `find_tools`, `describe_tools` and `call_tool`: find a tool, describe it, then call it by name.
 - If a call answers `Auth: Not signed in`, ask the user to sign in from the Scenario button in the level editor toolbar.
+
+## Which tool for which job
+
+| Job | Use |
+| --- | --- |
+| Make an asset (image, video, 3D, material, audio, sky), price it, import it, place it | these Scenario tools |
+| Edit actors, Blueprints, materials beyond the imported instance, Niagara, Sequencer, PCG, lighting, level layout | Epic's toolsets on Epic's Unreal MCP (`list_toolsets`, `describe_toolset`, `call_tool`) |
+| Know how to do it well in the engine (budgets, numbers, traps, review loops) | the Unreal Engine expert skills (`scenario-unreal-expert` and its domain skills) |
+| Something no tool covers | `execute_python` (needs the "Run Python" permission), then the engine's Python |
+
+Scenario tools never edit what they did not create. The result of a Scenario job is a normal asset: after it lands, hand it to Epic's toolsets or the expert skills.
 
 ## Tool order
 
@@ -46,10 +58,12 @@ Workflows follow the same shape: `list_workflows`, `workflow_schema`, `estimate_
 
 ## Lane facts
 
-- 3D: request GLB. Interchange imports GLB with PBR materials, skeletons and morph targets. Expect centimeters in Unreal; check the reported bounds.
+- 3D: request GLB. Interchange imports GLB with PBR materials, skeletons and morph targets. The plugin's own import pipeline sets 1 unit = 1 cm, simple collision and no generated lightmap UVs, and builds Nanite when every material slot is opaque or masked (Project Settings: Nanite, Mesh collision). The apply result's `checks` report each rule per mesh; check the reported bounds.
 - Materials: the material lane returns PBR maps imported with texture settings per role (sRGB off for normal, roughness, metallic, height) and wired into a material instance. A map named smoothness is used as roughness (PATINA labels its roughness map that way); with the Invert smoothness setting on, an inverted roughness copy is wired instead. The result's checks say which, and name the parent material (legacy or Substrate).
 - Skies: environment results are 2:1 equirectangular panoramas. `.hdr` files become cubemaps for an HDRI backdrop; PNG or JPG go on an unlit sky sphere.
 - Audio: ask for WAV when the model offers a format. Unreal imports it as a Sound Wave; `place` adds an ambient sound.
+- Open worlds: `scene_summary` and placements report World Partition, one file per actor and data layers, and list only loaded actors. Load the cells you need before judging what is in the level.
+- Frames: `screenshot_viewport` returns a frame check (black, white, uniform, clipped or crushed). Treat a flagged frame as a problem to fix, not a result to show; a fixed exposure is named when the viewport has one.
 - Restyle lane (`render`): `capture_reference` with `source: "viewport"`, `upload_reference`, wait for `reference_upload_status` to be `imported`, then pass its `asset_id` in the model's image field.
 - Unreal-ready prompts: when `model_schema` returns `unreal_ready_prompt`, add it to 3D prompts (single object, neutral pose, clean topology, no ground plane).
 
@@ -106,7 +120,7 @@ Layout tips:
 
 ## Common mistakes
 
-- Calling Epic's Unreal MCP tools (port 8000) for Scenario jobs.
+- Calling Epic's own toolsets (port 8000) for Scenario jobs, or this server for editing what Scenario did not make. On 5.8, the Scenario toolset inside Epic's registry is the exception: it is ours.
 - Putting a `reference_id` or a local path in a file field: file fields take Scenario `asset_id` values (from `upload_reference` once `imported`, `search_assets`, or a finished job's files).
 - Assuming the level is saved after placing: it is not until `save_changes` with `include_levels: true`.
 - Re-running `generate` after a timeout instead of checking `job_status` or `recover_local_job`.
@@ -114,4 +128,4 @@ Layout tips:
 - In `execute_python`, building `unreal.Rotator(pitch, yaw, roll)` positionally: the order is roll, pitch, yaw. Use keywords: `unreal.Rotator(roll=0.0, pitch=-10.0, yaw=90.0)`.
 - Moving the person's viewport to look at something: pass `camera` to `screenshot_viewport` instead.
 
-For general Unreal editing (Blueprints, Sequencer, lighting), use Epic's Unreal MCP or your Unreal skills, and come back to these tools for Scenario generation and landing.
+For general Unreal editing (Blueprints, Sequencer, lighting), use Epic's Unreal MCP or the Unreal Engine expert skills, and come back to these tools for Scenario generation and landing.
