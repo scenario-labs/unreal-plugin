@@ -35,6 +35,12 @@
 			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
 		},
 		{
+			"Name": "ScenarioToolsets",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
+		},
+		{
 			"Name": "ScenarioGameplay",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
@@ -42,6 +48,7 @@
 	],
 	"Plugins": [
 		{ "Name": "Interchange", "Enabled": true },
-		{ "Name": "GLTFExporter", "Enabled": true }
+		{ "Name": "GLTFExporter", "Enabled": true },
+		{ "Name": "ToolsetRegistry", "Enabled": true, "Optional": true }
 	]
 }
