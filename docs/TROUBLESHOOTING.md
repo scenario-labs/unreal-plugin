@@ -6,7 +6,7 @@ Start with **Settings > Diagnostics** in the Scenario Studio. **Copy diagnostics
 
 | Symptom | Cause and fix |
 |---|---|
-| macOS: "the plugin's libraries cannot be opened" or "is damaged" | The zip downloaded from GitHub is quarantined by Gatekeeper; version 0.1 zips are not signed. Close the editor, run `xattr -dr com.apple.quarantine "<Project>/Plugins/Scenario"`, reopen. |
+| macOS: "the plugin's libraries cannot be opened" or "is damaged" | The zip downloaded from GitHub is quarantined by Gatekeeper; version 0.2 zips are not signed. Close the editor, run `xattr -dr com.apple.quarantine "<Project>/Plugins/Scenario"`, reopen. |
 | "The following modules are missing or built with a different engine version" | A source copy, or a zip built for another engine version. Answer **Yes** to rebuild (needs a C++ toolchain: Xcode on macOS, Visual Studio on Windows), or download the zip for your engine version. |
 | No **Scenario** button in the toolbar | Check **Edit > Plugins > Scenario** is enabled, then restart. The Studio is also in **Window > Scenario Studio**. |
 | The plugin is enabled but nothing loads | The Output Log lists the failing module. The plugin needs the Interchange and glTF Exporter plugins, which ship with Unreal and are enabled with it. |
@@ -21,7 +21,7 @@ Start with **Settings > Diagnostics** in the Scenario Studio. **Copy diagnostics
 | "Your Scenario session ended. Sign in again." (HTTP 401) | The session expired or the key was revoked. Sign in again; jobs and imported assets stay. |
 | The Studio opens on another project than the one you chose | `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` are set in the editor's environment: they take precedence over your sign-in and select the key's project. On macOS, an editor started from the Dock or Finder sees variables set with `launchctl setenv`; check with `launchctl getenv SCENARIO_API_KEY`, and clear them with `launchctl unsetenv` before restarting the editor. |
 | macOS: a dialog asks for the "login" keychain password when you run the commandlet | The keychain trusts the app that saved your sign-in, the editor; `UnrealEditor-Cmd` is another app. Click **Always Allow** once. With `-unattended` there is no dialog: the saved sign-in is skipped, so set `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` for that run. |
-| Credentials stored in a file, not the keychain | On Linux, version 0.1 uses a file only you can read. On macOS and Windows, it means the system store refused the write: check the Output Log. |
+| Credentials stored in a file, not the keychain | On Linux, version 0.2 uses a file only you can read. On macOS and Windows, it means the system store refused the write: check the Output Log. |
 
 ## Prices and generation
 

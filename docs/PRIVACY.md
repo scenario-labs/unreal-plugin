@@ -56,6 +56,6 @@ Version 0.1 sends nothing even when you agree: no collection endpoint exists yet
 | Lane and job kind | `3d`, `model` |
 | Job state | `success`, `failed` |
 | Who started it | `person`, `agent` or `script`, and the agent client's name such as `claude-code` |
-| Plugin version, engine version, OS family | `0.1.0`, `5.8.0`, `Mac` |
+| Plugin version, engine version, OS family | `0.2.0`, `5.8.0`, `Mac` |
 
 Events never include prompts, file contents, asset, level or model names, team, project, job or asset ids, or credentials. This page will be updated before any endpoint is turned on.

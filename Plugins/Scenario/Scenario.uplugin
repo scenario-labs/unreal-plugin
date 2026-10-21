@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "0.1.0",
+	"Version": 2,
+	"VersionName": "0.2.0",
 	"FriendlyName": "Scenario",
 	"Description": "Every Scenario model inside Unreal: images, video, 3D, materials, audio and skies, priced before you spend and imported as native assets. For people in the editor and for AI agents through the Scenario MCP.",
 	"Category": "Editor",

@@ -21,7 +21,7 @@ The Scenario plugin runs a local MCP server inside the Unreal Editor. Its tools 
 | --- | --- |
 | Make an asset (image, video, 3D, material, audio, sky), price it, import it, place it | these Scenario tools |
 | Edit actors, Blueprints, materials beyond the imported instance, Niagara, Sequencer, PCG, lighting, level layout | Epic's toolsets on Epic's Unreal MCP (`list_toolsets`, `describe_toolset`, `call_tool`) |
-| Know how to do it well in the engine (budgets, numbers, traps, review loops) | the Unreal Engine expert skills (`scenario-unreal-expert` and its domain skills) |
+| Know how to do it well in the engine (budgets, numbers, traps, review loops) | the Unreal Engine expert skills (`scenario-unreal-expert` when installed from scenario-labs/skills, `unreal-expert` when installed under their short names, and their domain skills) |
 | Something no tool covers | `execute_python` (needs the "Run Python" permission), then the engine's Python |
 
 Scenario tools never edit what they did not create. The result of a Scenario job is a normal asset: after it lands, hand it to Epic's toolsets or the expert skills.

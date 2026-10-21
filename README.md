@@ -45,7 +45,7 @@ The [Scenario MCP guide](docs/MCP_GUIDE.md) lists every tool and the permissions
 
 ## Requirements
 
-- Unreal Engine 5.6, 5.7 or 5.8 (Editor). macOS is the tested platform in version 0.1; Windows and Linux are compiled but not tested yet.
+- Unreal Engine 5.6, 5.7 or 5.8 (Editor). macOS is the tested platform in version 0.2; Windows and Linux are compiled but not tested yet.
 - A Scenario account: [app.scenario.com](https://app.scenario.com).
 
 ## Install

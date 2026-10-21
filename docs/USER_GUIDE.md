@@ -1,6 +1,6 @@
 # Scenario for Unreal Engine: user guide
 
-Version 0.1.0
+Version 0.2.0
 
 Scenario for Unreal Engine brings every Scenario model into the Unreal Editor: images, video, 3D, materials, audio and skies. Each request is priced before you send it, and each result lands as a native Unreal asset, placed in your level in one undo step. Agents such as Claude Code, Codex or Cursor drive the same features through the plugin's local Scenario MCP server.
 
@@ -16,7 +16,7 @@ Open the Studio with the **Scenario** button in the level editor toolbar (Alt+Sh
 | **Sign in with a code** | When the browser cannot reach this editor (remote desktop, locked-down machines). Enter the code shown in Unreal on the page that opens. |
 | **Use an API key instead** | Build machines and shared accounts. **Check and save** tests the key with a free call. An API key belongs to one Scenario project. |
 
-Credentials are kept in the macOS Keychain or the Windows Credential Manager. On Linux, version 0.1 keeps them in a file in your user config folder that only you can read. They are never written to project files. **Settings** shows where they are stored and has **Sign out**.
+Credentials are kept in the macOS Keychain or the Windows Credential Manager. On Linux, version 0.2 keeps them in a file in your user config folder that only you can read. They are never written to project files. **Settings** shows where they are stored and has **Sign out**.
 
 On build machines, `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` in the editor's environment take precedence over the saved sign-in, and the editor works in the key's project.
 
@@ -90,7 +90,7 @@ Notes:
 - Some material models return a map named smoothness. PATINA's holds roughness values, so the import uses it as roughness. For a model whose map is real smoothness, turn **Invert smoothness** on in Project Settings: the import then keeps the smoothness texture and adds an inverted copy (roughness = 1 - smoothness, name ending in `_R`) that the material instance uses.
 - The PBR parent material matches the project's renderer: `M_Scenario_PBR` (legacy graph) when Substrate is off, `M_Scenario_PBR_Substrate` (a Substrate slab) when it is on. The import notice and the result's checks name the one used.
 - Meshes are imported with the plugin's own settings, whatever the last import dialog said: 1 unit = 1 cm, simple collision, Nanite per Project Settings, no generated lightmap UVs (Lumen does not use them), materials and textures imported. A mesh with a translucent material slot is left without Nanite. The result's checks give one line per rule.
-- When an optional engine plugin is missing, the asset is still imported but not placed. In version 0.1 the message naming the plugin to enable in **Edit > Plugins** reaches agents and scripts only, in the result's warnings.
+- When an optional engine plugin is missing, the asset is still imported but not placed. In version 0.2 the message naming the plugin to enable in **Edit > Plugins** reaches agents and scripts only, in the result's warnings.
 
 ### Next steps on a result
 

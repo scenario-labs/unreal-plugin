@@ -82,7 +82,7 @@ body:
     attributes:
       label: Plugin version
       description: From Edit > Plugins (search "Scenario"), and whether it came from Fab, a GitHub release zip or a source copy.
-      placeholder: 0.1.0 GitHub release
+      placeholder: 0.2.0 GitHub release
     validations:
       required: true
   - type: textarea

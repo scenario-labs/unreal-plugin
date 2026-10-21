@@ -120,7 +120,7 @@ class Mcp:
         return found["result"]
 
     def initialize(self):
-        self.rpc("initialize", {"protocolVersion": PROTOCOL, "capabilities": {}, "clientInfo": {"name": "scenario-unreal-contract-check", "version": "0.1.0"}})
+        self.rpc("initialize", {"protocolVersion": PROTOCOL, "capabilities": {}, "clientInfo": {"name": "scenario-unreal-contract-check", "version": "0.2.0"}})
         self.rpc("notifications/initialized", notify=True)
 
     def call(self, tool, arguments):

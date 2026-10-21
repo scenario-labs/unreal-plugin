@@ -78,7 +78,7 @@ All network and file IO is asynchronous. HTTP runs on Unreal's HTTP module; call
 
 - OAuth: browser sign-in with PKCE and a loopback redirect on a random local port, with a device-code fallback. The refresh token is stored; the access token stays in memory.
 - API key and secret: checked with a free call, then stored.
-- Stores: macOS Keychain and Windows Credential Manager. On Linux, version 0.1 uses a file readable only by the user, and the Settings page says it is not encrypted.
+- Stores: macOS Keychain and Windows Credential Manager. On Linux, version 0.2 uses a file readable only by the user, and the Settings page says it is not encrypted.
 - Nothing secret is written to project config, `Saved/`, logs, provenance or diagnostics.
 
 ## Imports
@@ -134,7 +134,7 @@ Measured on Unreal 5.8.3 with the Scenario plugin and Epic's Model Context Proto
 
 The full list is above 6,000 tokens, so the server has an opt-in tool search mode (`bAgentToolSearch`, off by default): `tools/list` returns `scenario_status`, `find_tools`, `describe_tools` and `call_tool`, and every tool stays callable by name. It is off by default because clients that already defer tool definitions gain nothing from it and lose the per-tool annotations in the list.
 
-## Simplifications in version 0.1
+## Simplifications in version 0.2
 
 These are deliberate, listed so reviewers can judge them:
 
