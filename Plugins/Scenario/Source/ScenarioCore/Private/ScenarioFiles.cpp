@@ -33,7 +33,8 @@ FString ScenarioFiles::RoleFor(const FString& MetadataType)
 		{ TEXT("texture-basecolor"), TEXT("albedo") },
 		{ TEXT("texture-base-color"), TEXT("albedo") },
 		{ TEXT("texture-normal"), TEXT("normal") },
-		{ TEXT("texture-smoothness"), TEXT("roughness") },
+		{ TEXT("texture-smoothness"), TEXT("smoothness") },
+		{ TEXT("texture-glossiness"), TEXT("smoothness") },
 		{ TEXT("texture-roughness"), TEXT("roughness") },
 		{ TEXT("texture-metallic"), TEXT("metallic") },
 		{ TEXT("texture-metalness"), TEXT("metallic") },
@@ -60,6 +61,10 @@ FString ScenarioFiles::RoleSuffix(const FString& Role)
 	if (Role == TEXT("roughness"))
 	{
 		return TEXT("R");
+	}
+	if (Role == TEXT("smoothness"))
+	{
+		return TEXT("S");
 	}
 	if (Role == TEXT("metallic"))
 	{

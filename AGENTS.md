@@ -95,6 +95,13 @@ use. Nothing else from the plugin is compiled into a packaged game.
     activity log, the header's agent dot and the Agents section of the Studio's
     Agent page.
   - `Private/Tests/`: automation tests `Scenario.Agent.*`.
+- `ScenarioToolsets/` (loading phase PostEngineInit, Unreal 5.8 only; builds empty
+  on older engines through `WITH_SCENARIO_TOOLSETS`):
+  - `ScenarioToolset`: the Scenario toolset for Epic's Toolset Registry, one
+    `AICallable` function per registry action it exposes; paid calls always wait
+    for the person (`FScenarioCaller::bSpendWaitsForApproval`).
+  - `ScenarioAgentSkill`: the in-engine agent skill, with the live editor state.
+  - `Private/Tests/`: automation tests `Scenario.Toolsets.*`.
 - `ScenarioGameplay/` (Runtime, loading phase Default): `AScenarioPickup`,
   `AScenarioGoal` and `AScenarioGameRules` (timer, music, a Slate HUD) for the
   kit's games. No network code and no Scenario data.

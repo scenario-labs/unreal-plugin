@@ -98,6 +98,16 @@ FScenarioLocalResponse FScenarioLocalResponse::Json(int32 Status, const FString&
 	return Text(Status, Body, TEXT("application/json"));
 }
 
+bool FScenarioLocalHttpServer::IsLoopbackPortAnswering(int32 Port)
+{
+	ISocketSubsystem* Sockets = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!Sockets || Port <= 0 || Port > 65535)
+	{
+		return false;
+	}
+	return IsPortAnswering(*Sockets, FIPv4Endpoint(FIPv4Address(127, 0, 0, 1), static_cast<uint16>(Port)));
+}
+
 FScenarioLocalHttpServer::FScenarioLocalHttpServer(const FString& InName, FScenarioLocalHandler InHandler)
 	: Name(InName)
 	, Handler(MoveTemp(InHandler))

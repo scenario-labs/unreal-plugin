@@ -173,6 +173,63 @@ bool FScenarioAgentRpcTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioAgentToolSearchTest, "Scenario.Agent.Server.ToolSearch", SCENARIO_TEST_FLAGS)
+bool FScenarioAgentToolSearchTest::RunTest(const FString& Parameters)
+{
+	const FString Compact = ScenarioJson::Write(FScenarioMcpServer::ToolSearchList());
+	const int32 Bytes = FTCHARToUTF8(*Compact).Length();
+	TestTrue(FString::Printf(TEXT("Search list is small (%d bytes)"), Bytes), Bytes < 6000);
+	const int32 FullBytes = FTCHARToUTF8(*ScenarioJson::Write(FScenarioMcpServer::ToolsList())).Length();
+	TestTrue(TEXT("Search list is under a fifth of the full list"), Bytes * 5 < FullBytes);
+
+	TSharedRef<FScenarioMcpServer> Server = NewServer();
+	auto Call = [&Server](int32 Id, const FString& Name, const FString& Arguments)
+	{
+		const FString Body = FString::Printf(TEXT("{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":\"%s\",\"arguments\":%s}}"), Id, *Name, *Arguments);
+		return ScenarioJson::GetObject(Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), Body))), TEXT("result"));
+	};
+	auto Text = [](const TSharedPtr<FJsonObject>& Result)
+	{
+		const TArray<TSharedPtr<FJsonValue>> Content = ScenarioJson::GetArray(Result, TEXT("content"));
+		return Content.Num() > 0 ? ScenarioJson::GetString(Content[0]->AsObject(), TEXT("text")) : FString();
+	};
+
+	const FString ListBody = TEXT("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}");
+	TestEqual(TEXT("Off by default: every tool listed"), ScenarioJson::GetArray(ScenarioJson::GetObject(Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), ListBody))), TEXT("result")), TEXT("tools")).Num(), FScenarioActions::Get().All().Num());
+	Server->bToolSearch = true;
+	const TArray<TSharedPtr<FJsonValue>> Listed = ScenarioJson::GetArray(ScenarioJson::GetObject(Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), ListBody))), TEXT("result")), TEXT("tools"));
+	TArray<FString> Names;
+	for (const TSharedPtr<FJsonValue>& Value : Listed)
+	{
+		Names.Add(ScenarioJson::GetString(Value->AsObject(), TEXT("name")));
+	}
+	TestEqual(TEXT("Search mode lists four tools"), FString::Join(Names, TEXT(",")), FString(TEXT("scenario_status,find_tools,describe_tools,call_tool")));
+
+	const TSharedPtr<FJsonObject> Found = ScenarioJson::ParseObject(Text(Call(2, TEXT("find_tools"), TEXT("{\"query\":\"workflow\"}"))));
+	const TArray<TSharedPtr<FJsonValue>> FoundRows = ScenarioJson::GetArray(Found, TEXT("tools"));
+	TestTrue(TEXT("find_tools matches workflows"), FoundRows.Num() >= 3 && FoundRows.Num() < FScenarioActions::Get().All().Num());
+	TestEqual(TEXT("find_tools with no query lists every tool"), ScenarioJson::GetArray(ScenarioJson::ParseObject(Text(Call(3, TEXT("find_tools"), TEXT("{}")))), TEXT("tools")).Num(), FScenarioActions::Get().All().Num());
+
+	const TSharedPtr<FJsonObject> Described = ScenarioJson::ParseObject(Text(Call(4, TEXT("describe_tools"), TEXT("{\"names\":[\"generate\",\"nope\"]}"))));
+	const TArray<TSharedPtr<FJsonValue>> DescribedRows = ScenarioJson::GetArray(Described, TEXT("tools"));
+	TestTrue(TEXT("describe_tools returns the schema"), DescribedRows.Num() == 1 && ScenarioJson::GetObject(DescribedRows[0]->AsObject(), TEXT("inputSchema")).IsValid());
+	TestEqual(TEXT("describe_tools names the unknown ones"), ScenarioJson::GetStringArray(Described, TEXT("unknown")).Num(), 1);
+
+	const TSharedPtr<FJsonObject> Status = Call(5, TEXT("call_tool"), TEXT("{\"name\":\"scenario_status\",\"arguments\":{}}"));
+	TestFalse(TEXT("call_tool runs a tool"), ScenarioJson::GetBool(Status, TEXT("isError"), true));
+	TestTrue(TEXT("call_tool returns the tool's answer"), Text(Status).Contains(TEXT("plugin_version")));
+	const TSharedPtr<FJsonObject> Missing = Call(6, TEXT("call_tool"), TEXT("{\"name\":\"format_disk\"}"));
+	TestTrue(TEXT("call_tool refuses unknown tools"), ScenarioJson::GetBool(Missing, TEXT("isError")));
+
+	// Paid tools keep their rules through call_tool: no quote, nothing sent.
+	const TSharedPtr<FJsonObject> Paid = Call(7, TEXT("call_tool"), TEXT("{\"name\":\"generate\",\"arguments\":{\"quote_id\":\"q_none\",\"approved_cost\":\"1\"}}"));
+	TestTrue(TEXT("call_tool keeps the money rules"), ScenarioJson::GetBool(Paid, TEXT("isError")));
+
+	const TSharedPtr<FJsonObject> Direct = Call(8, TEXT("scenario_status"), TEXT("{}"));
+	TestFalse(TEXT("Tools stay callable by name in search mode"), ScenarioJson::GetBool(Direct, TEXT("isError"), true));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioAgentPermissionsTest, "Scenario.Agent.Actions.Permissions", SCENARIO_TEST_FLAGS)
 bool FScenarioAgentPermissionsTest::RunTest(const FString& Parameters)
 {

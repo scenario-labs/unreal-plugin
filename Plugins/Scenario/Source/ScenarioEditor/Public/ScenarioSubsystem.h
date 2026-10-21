@@ -6,6 +6,7 @@
 #include "EditorSubsystem.h"
 #include "ScenarioLedger.h"
 #include "ScenarioSchema.h"
+#include "ScenarioImageChecks.h"
 #include "ScenarioSession.h"
 #include "ScenarioSubsystem.generated.h"
 
@@ -141,7 +142,8 @@ public:
 	 * when given, to a PNG under Saved/Scenario/Captures. A camera leaves the
 	 * person's viewport where it is.
 	 */
-	FString CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription = nullptr, const FScenarioCaptureCamera* Camera = nullptr);
+	FString CaptureViewport(int32 Width, int32 Height, FString& OutError, FString* OutDescription = nullptr, const FScenarioCaptureCamera* Camera = nullptr,
+		FScenarioFrameCheck* OutCheck = nullptr);
 	/** Exports the selected actors (or one actor) to a GLB under Saved/Scenario/Captures, for 3D edits. */
 	FString ExportActorsToGlb(const TArray<AActor*>& Actors, FString& OutError);
 	/**

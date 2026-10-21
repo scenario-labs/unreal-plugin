@@ -160,6 +160,7 @@ bool FScenarioAgentModule::StartServer(FString& OutError)
 {
 	const UScenarioEditorSettings& Settings = UScenarioEditorSettings::Get();
 	ServerPtr->bRequireToken = Settings.bAgentToken;
+	ServerPtr->bToolSearch = Settings.bAgentToolSearch;
 	ServerPtr->Token = Settings.bAgentToken ? Token() : FString();
 	if (Settings.bAgentToken && ServerPtr->Token.IsEmpty())
 	{
