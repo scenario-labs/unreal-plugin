@@ -13,6 +13,7 @@
 #include "Interfaces/IHttpResponse.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "ScenarioCoreModule.h"
 
 namespace
 {
@@ -131,6 +132,8 @@ void FScenarioThumbnails::Pump()
 		Request->SetURL(Item.Value);
 		Request->SetVerb(TEXT("GET"));
 		Request->SetTimeout(30.0f);
+		// The plugin's User-Agent replaces Unreal's default, which names the project.
+		Request->SetHeader(TEXT("User-Agent"), ScenarioVersion::UserAgent());
 		const FString Key = Item.Key;
 		Request->OnProcessRequestComplete().BindLambda([Key](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 		{

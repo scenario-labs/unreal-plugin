@@ -415,7 +415,9 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 				return;
 			}
 			// The full presigned URL only: no checksum headers, or storage refuses the signature.
+			// The plugin's User-Agent replaces Unreal's default, which names the project.
 			TMap<FString, FString> Headers;
+			Headers.Add(TEXT("User-Agent"), ScenarioVersion::UserAgent());
 			const int64 PartBytes = Bytes.Num();
 			This->Transport->Send(TEXT("PUT"), State->Ticket.Parts[PartIndex].Value, Headers, Bytes, 300.0f,
 				[WeakThis, State, PartIndex, Attempt, PartBytes](const FScenarioHttpResponse& Response)
