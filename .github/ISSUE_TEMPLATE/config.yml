@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Report privately to Scenario support
+    url: https://github.com/scenario-labs/unreal-plugin/blob/main/SUPPORT.md#account-billing-credits-api-keys-and-security
+    about: The private route for a bug or request you would rather not publish, for example one that names your team or project.
   - name: Account, billing, credits or a security report
     url: https://app.scenario.com
     about: Anything tied to your account is private. Use in-app support or support@scenario.com, not a public issue.
@@ -9,3 +12,6 @@ contact_links:
   - name: Scenario Knowledge Base
     url: https://help.scenario.com
     about: How the platform, models and credits work.
+  - name: Scenario API documentation
+    url: https://docs.scenario.com
+    about: The models, parameters and API behind every generation the plugin runs.

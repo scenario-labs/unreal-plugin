@@ -163,6 +163,10 @@ authorization for the project and budget first.
 | `contract.yml` | weekly, PRs changing `ScenarioCore/` or the tool | `tools/contract_check.py` with `SCENARIO_NO_SPEND=1`, 0 CU (test key secrets; skipped with a warning without them) |
 | `links.yml` | weekly, docs PRs | links in Markdown (except the generated `CHANGELOG.md`) |
 | `pages.yml` | `main` when docs change | builds the docs site and deploys it to GitHub Pages |
+| `pr-name.yml` | pull requests | `pr-title`: the PR title against `commitlint.config.mjs` |
+| `commitlint.yml` | pull requests | `commits`: every commit the PR adds, same config |
+| `project.yml` | pull requests ready for review | adds them to the Plugins project (31) |
+| `scorecard.yml` | weekly, `main` | OpenSSF Scorecard |
 
 No engine build runs on GitHub. Before a release, `tools/build.sh` and
 `tools/test.sh` run on a Mac with each supported engine version.
@@ -193,7 +197,11 @@ No engine build runs on GitHub. Before a release, `tools/build.sh` and
   with a scope: `core`, `editor`, `ui`, `agent`, `lanes`, `docs`, `tools`,
   `tests`, `ci`, `deps`, `release`, `repo`. Example:
   `fix(editor): keep the selection after placing a material`.
+  `commitlint.config.mjs` holds these rules; the `pr-title` and `commits`
+  checks enforce them on titles and commits.
 - Fill `.github/pull_request_template.md`; tick only what you ran.
+- `.agents/skills/` holds the PR skills shared by every Scenario repository
+  (`skills-lock.json`); change them upstream. `.claude/skills/` links to them.
 - Screenshots of a visible change go in the PR description, never in a commit.
 - Name the contributing agent in the PR and keep its co-author trailer on
   commits and in the squash message. A human reviews the complete diff before

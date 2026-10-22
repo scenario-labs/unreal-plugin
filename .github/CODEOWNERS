@@ -1,15 +1,22 @@
-# Code owners: requested reviewers for release files, repository automation,
-# licence and security texts. Paths are root-anchored; the last match wins.
-# A team can be added once it has write access to this repository.
+# Code owners: requested reviewers, not permissions. The maintainer reviews
+# every path; the platform team joins on release files, repository automation,
+# licence and security texts. Paths are root-anchored and the last match wins,
+# so each line below names the maintainer again.
+
+# Default for every path
+*                                   @hervenivon
 
 # Release version and changelog files
-/CHANGELOG.md                       @hervenivon
-/Plugins/Scenario/Scenario.uplugin  @hervenivon
+/CHANGELOG.md                       @hervenivon @scenario-labs/platform
+/Plugins/Scenario/Scenario.uplugin  @hervenivon @scenario-labs/platform
 
 # Release machinery and repository automation
-/.github/                           @hervenivon
-/tools/build.sh                     @hervenivon
+/.github/                           @hervenivon @scenario-labs/platform
+/tools/build.sh                     @hervenivon @scenario-labs/platform
+/commitlint.config.mjs              @hervenivon @scenario-labs/platform
+/package.json                       @hervenivon @scenario-labs/platform
+/pnpm-lock.yaml                     @hervenivon @scenario-labs/platform
 
 # Licence and security texts
-/LICENSE                            @hervenivon
-/SECURITY.md                        @hervenivon
+/LICENSE                            @hervenivon @scenario-labs/platform
+/SECURITY.md                        @hervenivon @scenario-labs/platform
