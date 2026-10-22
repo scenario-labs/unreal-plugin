@@ -1,106 +1,83 @@
 <!doctype html>
+<!-- Page shell of the docs site. tools/build_site.py fills the slots in double braces and
+     inlines docs/site/site.css and docs/site/handbook.js. -->
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ page_title }}</title>
-<meta name="description" content="{{ description }}">
-<link rel="icon" href="images/favicon-16x16.png" sizes="16x16" type="image/png" media="(prefers-color-scheme: light)">
-<link rel="icon" href="images/favicon-dark-16x16.png" sizes="16x16" type="image/png" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="images/favicon-32x32.png" sizes="32x32" type="image/png" media="(prefers-color-scheme: light)">
-<link rel="icon" href="images/favicon-dark-32x32.png" sizes="32x32" type="image/png" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="images/favicon-196x196.png" sizes="196x196" type="image/png" media="(prefers-color-scheme: light)">
-<link rel="icon" href="images/favicon-dark-196x196.png" sizes="196x196" type="image/png" media="(prefers-color-scheme: dark)">
-<link rel="apple-touch-icon" href="images/apple-touch-icon.png" sizes="152x152">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
-<style>{{ style }}</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ description }}">
+  <title>{{ page_title }}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-dark-32x32.png" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>{{ style }}</style>
 </head>
 <body>
-<a class="skip" href="#guide">Skip to content</a>
-<header class="site-header">
-  <div class="bar">
-    <a class="brand" href="index.html">
-      <img src="images/scenario-wordmark.svg" alt="Scenario" width="112" height="28">
-      <span class="chip product">Unreal Engine</span>
-      <span class="chip version">{{ version }}</span>
-    </a>
-    <div class="search" role="search">
-      <label class="visually-hidden" for="search-input">Search this page</label>
-      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-controls="search-results" aria-expanded="false">
-      <kbd class="search-key" aria-hidden="true">/</kbd>
-      <div class="search-panel" id="search-panel" hidden>
-        <ul id="search-results" aria-label="Matching sections"></ul>
-        <p class="search-status" id="search-status" aria-live="polite"></p>
-      </div>
+  <a class="jump" href="#content">Go to the text</a>
+
+  <header class="topbar">
+    <div class="row">
+      <a class="home" href="index.html" aria-label="Scenario for Unreal Engine, handbook home">
+        <img src="images/scenario-wordmark.svg" alt="" width="112" height="28">
+        <span class="tag tag-engine">Unreal Engine</span>
+        <span class="tag tag-release">{{ version }}</span>
+      </a>
+      <form class="finder" role="search" action="#" autocomplete="off">
+        <input id="finder-q" class="finder-q" type="search" name="q" placeholder="Search this page"
+               aria-label="Search this page" role="combobox" aria-autocomplete="list"
+               aria-controls="finder-list" aria-expanded="false">
+        <span class="finder-hint" aria-hidden="true">/</span>
+        <div class="finder-drop" hidden>
+          <ol id="finder-list" class="finder-list" role="listbox" aria-label="Sections that match"></ol>
+          <p class="finder-empty" aria-live="polite"></p>
+        </div>
+      </form>
+      <nav class="outlinks" aria-label="Elsewhere">
+        <a class="wide-only" href="{{ releases }}">Releases</a>
+        <a class="wide-only" href="{{ repo }}">GitHub</a>
+        <a class="button" href="https://app.scenario.com/">App Login</a>
+      </nav>
     </div>
-    <nav class="site-links" aria-label="Site">
-      <a class="optional" href="{{ releases }}">Releases</a>
-      <a class="optional" href="{{ repo }}">GitHub</a>
-      <a class="button" href="https://app.scenario.com/">App Login</a>
-    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="side-nav">
+      <p class="eyebrow">Handbook</p>
+      <nav aria-label="Handbook pages"><ul>{{ nav }}</ul></nav>
+    </aside>
+
+    <main id="content">
+      <p class="eyebrow">Scenario for Unreal Engine · {{ label }}</p>
+      <article class="handbook">
+        <h1>{{ title }}</h1>
+        {{ lead }}
+        {{ content }}
+      </article>
+    </main>
+
+    <aside class="on-page">
+      <details class="on-page-box" open>
+        <summary class="eyebrow">On this page</summary>
+        <nav aria-label="On this page"><ul>{{ toc }}</ul></nav>
+      </details>
+    </aside>
   </div>
-</header>
-<div class="page">
-<nav class="pages" aria-label="Pages">
-  <p class="eyebrow">Handbook</p>
-  <ul>
-  {{ nav }}
-  </ul>
-</nav>
-<main id="guide">
-<p class="eyebrow">Scenario for Unreal Engine · {{ label }}</p>
-<article class="handbook">
-<h1>{{ title }}</h1>
-{{ lead }}
-{{ content }}
-</article>
-</main>
-<nav class="toc" aria-label="On this page">
-  <details class="contents" open>
-  <summary class="eyebrow">On this page</summary>
-  <ul>
-  {{ toc }}
-  </ul>
-  </details>
-</nav>
-</div>
-<footer class="site-footer">
-  <div class="bar">
-    <img src="images/scenario-wordmark.svg" alt="Scenario" width="92" height="23">
-    <span>Scenario for Unreal Engine {{ version }}</span>
-    <a href="{{ repo }}">Source on GitHub</a>
-    <a href="{{ repo }}/blob/main/CHANGELOG.md">Release notes</a>
-    <a href="{{ repo }}/issues/new/choose">Report an issue</a>
-    <a href="{{ source }}">This page in Markdown</a>
-    <span class="legal">MIT · Scenario is a trademark of Scenario Inc. Unreal and Unreal Engine are trademarks of Epic Games, Inc.</span>
-  </div>
-</footer>
-<script>
-(() => {
-  const contents = document.querySelector("details.contents");
-  const narrow = window.matchMedia("(max-width: 1100px)");
-  const resize = () => { contents.open = !narrow.matches; };
-  resize();
-  narrow.addEventListener("change", resize);
-  contents.addEventListener("click", event => {
-    if (!narrow.matches && event.target.closest("summary")) event.preventDefault();
-    if (narrow.matches && event.target.closest("a[href^='#']")) contents.open = false;
-  });
-})();
-document.addEventListener("click", async event => {
-  const button = event.target.closest("button[data-copy]");
-  if (!button) return;
-  try {
-    await navigator.clipboard.writeText(button.dataset.copy);
-    button.textContent = "Copied";
-  } catch {
-    button.textContent = "Select and copy";
-  }
-  setTimeout(() => { button.textContent = "Copy"; }, 2000);
-});
-</script>
-<script>{{ search }}</script>
+
+  <footer class="foot">
+    <div class="row">
+      <img src="images/scenario-wordmark.svg" alt="Scenario" width="92" height="23">
+      <span>Scenario for Unreal Engine {{ version }}</span>
+      <a href="{{ repo }}">Source on GitHub</a>
+      <a href="{{ repo }}/blob/main/CHANGELOG.md">Release notes</a>
+      <a href="{{ repo }}/issues/new/choose">Report an issue</a>
+      <a href="{{ source }}">This page in Markdown</a>
+      <small class="notice">MIT license. Scenario is a trademark of Scenario Inc. Unreal and Unreal Engine are trademarks of Epic Games, Inc.</small>
+    </div>
+  </footer>
+
+  <script>{{ script }}</script>
 </body>
 </html>

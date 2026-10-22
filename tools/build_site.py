@@ -11,7 +11,7 @@ Pages (Markdown in docs/, or in --docs for a trial build):
   TROUBLESHOOTING.md  -> troubleshooting.html
 
 Every page shares docs/site/template.html, with docs/site/site.css and the
-in-page search docs/site/search.js inlined. Links between these Markdown files
+page script docs/site/handbook.js (the in-page finder) inlined. Links between these Markdown files
 become links between the pages; links to other repository files point at
 GitHub; images stay local (docs/images/ is copied to images/). The version and
 description come from Plugins/Scenario/Scenario.uplugin. Download links point
@@ -125,7 +125,7 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
     version = str(info["VersionName"])
     description = info["Description"]
     template = (SITE / "template.html").read_text(encoding="utf-8")
-    style, search = inline("site.css", "style"), inline("search.js", "script")
+    style, script = inline("site.css", "style"), inline("handbook.js", "script")
     releases = f"{REPO}/releases"
     hero = (output / "images/studio.png").is_file()
 
@@ -172,7 +172,7 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
             "repo": REPO,
             "releases": releases,
             "style": style,
-            "search": search,
+            "script": script,
         }
         rendered = re.sub(r"{{\s*(\w+)\s*}}", lambda m: slots[m.group(1)], template)
         (output / page).write_text(rendered, encoding="utf-8")

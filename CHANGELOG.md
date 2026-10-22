@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 (2026-10-22)
+
+- Uploads and thumbnail downloads send the plugin's User-Agent. Before, Unreal's default User-Agent went with them, and it names the project.
+- `docs/PRIVACY.md` is checked against the code and no longer a draft: every host the plugin contacts, what each one receives, what is stored where (including `workspace.json`, the agent configuration files the Set up buttons write, and imported videos copied to `Content/Movies`), and the Toolset Registry route.
+- The docs site has a new page template and in-page search, written for this repository.
+
 ## 0.2.0 (2026-10-21)
 
 - Unreal 5.8: Scenario toolset and agent skill in Epic's Toolset Registry, so agents on Epic's Unreal MCP can price, run and land Scenario jobs. Every paid call from there answers `pending_approval` and waits for Approve in the editor.

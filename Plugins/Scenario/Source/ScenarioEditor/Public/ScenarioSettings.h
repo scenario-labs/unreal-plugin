@@ -151,7 +151,7 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Agents")
 	bool bAgentToolSearch = false;
 
-	/** Anonymous usage statistics (asked once). Version 0.1 sends nothing. */
+	/** Anonymous usage statistics (asked once). Version 0.2 sends nothing. */
 	UPROPERTY(config, EditAnywhere, Category = "Privacy")
 	bool bTelemetry = false;
 

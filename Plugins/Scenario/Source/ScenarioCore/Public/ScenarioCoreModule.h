@@ -12,7 +12,7 @@ namespace ScenarioVersion
 {
 	SCENARIOCORE_API FString PluginVersion();
 	SCENARIOCORE_API FString EngineVersion();
-	/** "ScenarioUnreal/0.2.0 (Unreal 5.8.3; Mac)" */
+	/** "ScenarioUnreal/0.2.1 (Unreal 5.8.3; Mac)" */
 	SCENARIOCORE_API FString UserAgent();
 }
 
