@@ -35,8 +35,8 @@
           <p class="finder-empty" aria-live="polite"></p>
         </div>
       </form>
+      <nav class="pages" aria-label="Handbook pages"><ul>{{ nav }}</ul></nav>
       <nav class="outlinks" aria-label="Elsewhere">
-        <a class="wide-only" href="{{ releases }}">Releases</a>
         <a class="wide-only" href="{{ repo }}">GitHub</a>
         <a class="button" href="https://app.scenario.com/">App Login</a>
       </nav>
@@ -44,9 +44,11 @@
   </header>
 
   <div class="layout">
-    <aside class="side-nav">
-      <p class="eyebrow">Handbook</p>
-      <nav aria-label="Handbook pages"><ul>{{ nav }}</ul></nav>
+    <aside class="contents">
+      <details class="contents-box" open>
+        <summary class="eyebrow">Contents</summary>
+        <nav aria-label="On this page"><ul>{{ toc }}</ul></nav>
+      </details>
     </aside>
 
     <main id="content">
@@ -57,13 +59,6 @@
         {{ content }}
       </article>
     </main>
-
-    <aside class="on-page">
-      <details class="on-page-box" open>
-        <summary class="eyebrow">On this page</summary>
-        <nav aria-label="On this page"><ul>{{ toc }}</ul></nav>
-      </details>
-    </aside>
   </div>
 
   <footer class="foot">
@@ -71,6 +66,7 @@
       <img src="images/scenario-wordmark.svg" alt="Scenario" width="92" height="23">
       <span>Scenario for Unreal Engine {{ version }}</span>
       <a href="{{ repo }}">Source on GitHub</a>
+      <a href="{{ releases }}">Releases</a>
       <a href="{{ repo }}/blob/main/CHANGELOG.md">Release notes</a>
       <a href="{{ repo }}/issues/new/choose">Report an issue</a>
       <a href="{{ source }}">This page in Markdown</a>

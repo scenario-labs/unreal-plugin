@@ -1,7 +1,7 @@
 // @ts-check
 // Behaviour of the docs site pages; tools/build_site.py inlines this file into
 // template.html. Two parts:
-//   1. "On this page" folds into a box on narrow screens.
+//   1. The left column's contents fold into a box on phones.
 //   2. A finder for the current page. Each h2 or h3 with an id is an entry,
 //      holding the text up to the next heading. A query matches an entry when
 //      every query word starts some word of it; words in the heading count
@@ -12,10 +12,10 @@ const plain = (/** @type {string} */ s) => s.normalize("NFD").replace(/\p{M}/gu,
 const WORD = /[\p{L}\p{N}]+/gu;
 const wordsOf = (/** @type {string} */ s) => plain(s).match(WORD) ?? [];
 
-// 1. "On this page"
+// 1. Contents
 {
-  const box = /** @type {HTMLDetailsElement | null} */ (document.querySelector(".on-page-box"));
-  const narrow = window.matchMedia("(max-width: 1100px)");
+  const box = /** @type {HTMLDetailsElement | null} */ (document.querySelector(".contents-box"));
+  const narrow = window.matchMedia("(max-width: 760px)");
   if (box) {
     const fit = () => { box.open = !narrow.matches; };
     fit();
@@ -154,7 +154,7 @@ const wordsOf = (/** @type {string} */ s) => plain(s).match(WORD) ?? [];
         li.append(a);
         listbox.append(li);
       });
-      empty.textContent = found.length ? "" : "Nothing on this page matches. The other handbook pages are in the menu.";
+      empty.textContent = found.length ? "" : "Nothing on this page matches. The other handbook pages are in the header.";
       show(true);
       highlight(found.length ? 0 : -1);
     };

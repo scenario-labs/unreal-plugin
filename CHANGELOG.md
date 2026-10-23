@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The docs site takes the layout of the other Scenario plugin handbooks: each page's contents (sections and their subsections) in a left column, the handbook pages in the header, and one reading column.
+
 ## 0.2.1 (2026-10-22)
 
 - Uploads and thumbnail downloads send the plugin's User-Agent. Before, Unreal's default User-Agent went with them, and it names the project.

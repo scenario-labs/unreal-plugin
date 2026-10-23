@@ -90,7 +90,7 @@ def rewrite_links(text: str, docs: pathlib.Path) -> str:
 
 
 def render(source: pathlib.Path, docs: pathlib.Path) -> tuple[str, str, list]:
-    """Title (the first # heading), HTML body and the h2 contents of one Markdown page."""
+    """Title (the first # heading), HTML body and the contents (each h2 with its h3s) of one Markdown page."""
     text = source.read_text(encoding="utf-8")
     title_match = re.match(r"\A\s*# ([^\n]+)\n+", text)
     title = title_match.group(1).strip() if title_match else source.stem.replace("_", " ").title()
@@ -100,8 +100,19 @@ def render(source: pathlib.Path, docs: pathlib.Path) -> tuple[str, str, list]:
     md = markdown.Markdown(extensions=["toc", "tables", "fenced_code", "sane_lists"],
                            extension_configs={"toc": {"toc_depth": "2-3"}})
     content = md.convert(rewrite_links(body, docs))
-    contents = [(t["id"], t["name"]) for t in md.toc_tokens]
+    # A wide table scrolls inside its own box instead of widening the page.
+    content = content.replace("<table>", '<div class="table-box"><table>').replace("</table>", "</table></div>")
+    contents = [(t["id"], t["name"], [(c["id"], c["name"]) for c in t["children"]]) for t in md.toc_tokens]
     return title, content, contents
+
+
+def contents_html(contents: list) -> str:
+    """The left column's contents: one item per h2, its h3s in a nested list."""
+    items = []
+    for anchor, name, children in contents:
+        sub = "".join(f'<li><a href="#{i}">{n}</a></li>' for i, n in children)
+        items.append(f'<li><a href="#{anchor}">{name}</a>{f"<ul>{sub}</ul>" if sub else ""}</li>')
+    return "\n".join(items)
 
 
 def title_html(title: str) -> str:
@@ -139,7 +150,7 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
         )
         toc = list(contents)
         if index:
-            toc.insert(0, ("install", "Install"))
+            toc.insert(0, ("install", "Install", []))
         lead = ""
         if index:
             lead = (
@@ -165,7 +176,7 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
             "version": html.escape(version),
             "label": html.escape(label),
             "nav": nav,
-            "toc": "\n".join(f'<li><a href="#{i}">{n}</a></li>' for i, n in toc),
+            "toc": contents_html(toc),
             "lead": lead,
             "content": content,
             "source": f"{REPO}/blob/main/docs/{source}",
