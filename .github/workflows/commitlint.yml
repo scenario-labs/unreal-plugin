@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: commitlint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   # A check the main ruleset should require, with pr-title and ci-ok. It lints
   # every commit the PR adds on top of its base branch with the same

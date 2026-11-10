@@ -11,7 +11,8 @@ name: project
 # added too; this workflow never checks out or runs their code.
 
 on:
-  pull_request_target:
+  # Safe while nothing checks out or runs PR code and PR data only arrives through env.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, reopened, ready_for_review]
 
 permissions: {}

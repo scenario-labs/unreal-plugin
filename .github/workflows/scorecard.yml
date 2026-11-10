@@ -9,6 +9,7 @@ on:
   schedule:
     - cron: "30 2 * * 1"
 
+# Read-only at the workflow level, as the upstream Scorecard examples require.
 permissions: read-all
 
 jobs:
@@ -17,10 +18,10 @@ jobs:
     if: github.repository == 'scenario-labs/unreal-plugin'
     runs-on: ubuntu-latest
     permissions:
-      security-events: write
-      id-token: write
-      contents: read
-      actions: read
+      security-events: write # upload the SARIF to code scanning
+      id-token: write # publish the results to the Scorecard API
+      contents: read # read the repository
+      actions: read # read the workflows for the Token-Permissions check
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

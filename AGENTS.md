@@ -165,7 +165,7 @@ authorization for the project and budget first.
 | `pages.yml` | `main` when docs change | builds the docs site and deploys it to GitHub Pages |
 | `pr-name.yml` | pull requests | `pr-title`: the PR title against `commitlint.config.mjs` |
 | `commitlint.yml` | pull requests | `commits`: every commit the PR adds, same config |
-| `project.yml` | pull requests ready for review | adds them to the Plugins project (31) |
+| `project.yml` | non-draft PRs, when opened, reopened or marked ready (not Dependabot's) | adds them to the Plugins project (31) |
 | `scorecard.yml` | weekly, `main` | OpenSSF Scorecard |
 
 No engine build runs on GitHub. Before a release, `tools/build.sh` and
