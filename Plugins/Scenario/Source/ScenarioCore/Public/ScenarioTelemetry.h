@@ -7,7 +7,7 @@
 
 /**
  * Opt-in usage events. Nothing is sent unless the person agreed, and nothing is sent while no
- * collection endpoint is set: version 0.1 has none. Events carry only the allow-listed fields
+ * collection endpoint is set: version 0.2 has none. Events carry only the allow-listed fields
  * documented in docs/PRIVACY.md, never prompts, file contents, names, ids or credentials.
  */
 namespace ScenarioTelemetry
@@ -16,7 +16,7 @@ namespace ScenarioTelemetry
 	SCENARIOCORE_API void SetEnabled(bool bEnabled);
 	SCENARIOCORE_API bool IsEnabled();
 
-	/** Collection endpoint. Empty in version 0.1. */
+	/** Collection endpoint. Empty in version 0.2. */
 	SCENARIOCORE_API FString Endpoint();
 
 	/** The event body: name, plugin, engine and OS versions, and only the allow-listed fields. */

@@ -11,7 +11,7 @@ Pages (Markdown in docs/, or in --docs for a trial build):
   TROUBLESHOOTING.md  -> troubleshooting.html
 
 Every page shares docs/site/template.html, with docs/site/site.css and the
-in-page search docs/site/search.js inlined. Links between these Markdown files
+page script docs/site/handbook.js (the in-page finder) inlined. Links between these Markdown files
 become links between the pages; links to other repository files point at
 GitHub; images stay local (docs/images/ is copied to images/). The version and
 description come from Plugins/Scenario/Scenario.uplugin. Download links point
@@ -90,7 +90,7 @@ def rewrite_links(text: str, docs: pathlib.Path) -> str:
 
 
 def render(source: pathlib.Path, docs: pathlib.Path) -> tuple[str, str, list]:
-    """Title (the first # heading), HTML body and the h2 contents of one Markdown page."""
+    """Title (the first # heading), HTML body and the contents (each h2 with its h3s) of one Markdown page."""
     text = source.read_text(encoding="utf-8")
     title_match = re.match(r"\A\s*# ([^\n]+)\n+", text)
     title = title_match.group(1).strip() if title_match else source.stem.replace("_", " ").title()
@@ -100,8 +100,19 @@ def render(source: pathlib.Path, docs: pathlib.Path) -> tuple[str, str, list]:
     md = markdown.Markdown(extensions=["toc", "tables", "fenced_code", "sane_lists"],
                            extension_configs={"toc": {"toc_depth": "2-3"}})
     content = md.convert(rewrite_links(body, docs))
-    contents = [(t["id"], t["name"]) for t in md.toc_tokens]
+    # A wide table scrolls inside its own box instead of widening the page.
+    content = content.replace("<table>", '<div class="table-box"><table>').replace("</table>", "</table></div>")
+    contents = [(t["id"], t["name"], [(c["id"], c["name"]) for c in t["children"]]) for t in md.toc_tokens]
     return title, content, contents
+
+
+def contents_html(contents: list) -> str:
+    """The left column's contents: one item per h2, its h3s in a nested list."""
+    items = []
+    for anchor, name, children in contents:
+        sub = "".join(f'<li><a href="#{i}">{n}</a></li>' for i, n in children)
+        items.append(f'<li><a href="#{anchor}">{name}</a>{f"<ul>{sub}</ul>" if sub else ""}</li>')
+    return "\n".join(items)
 
 
 def title_html(title: str) -> str:
@@ -125,7 +136,7 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
     version = str(info["VersionName"])
     description = info["Description"]
     template = (SITE / "template.html").read_text(encoding="utf-8")
-    style, search = inline("site.css", "style"), inline("search.js", "script")
+    style, script = inline("site.css", "style"), inline("handbook.js", "script")
     releases = f"{REPO}/releases"
     hero = (output / "images/studio.png").is_file()
 
@@ -139,7 +150,7 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
         )
         toc = list(contents)
         if index:
-            toc.insert(0, ("install", "Install"))
+            toc.insert(0, ("install", "Install", []))
         lead = ""
         if index:
             lead = (
@@ -165,14 +176,14 @@ def build(output: pathlib.Path, docs: pathlib.Path) -> None:
             "version": html.escape(version),
             "label": html.escape(label),
             "nav": nav,
-            "toc": "\n".join(f'<li><a href="#{i}">{n}</a></li>' for i, n in toc),
+            "toc": contents_html(toc),
             "lead": lead,
             "content": content,
             "source": f"{REPO}/blob/main/docs/{source}",
             "repo": REPO,
             "releases": releases,
             "style": style,
-            "search": search,
+            "script": script,
         }
         rendered = re.sub(r"{{\s*(\w+)\s*}}", lambda m: slots[m.group(1)], template)
         (output / page).write_text(rendered, encoding="utf-8")

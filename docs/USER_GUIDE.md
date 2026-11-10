@@ -1,6 +1,6 @@
 # Scenario for Unreal Engine: user guide
 
-Version 0.2.0
+Version 0.2.1
 
 Scenario for Unreal Engine brings every Scenario model into the Unreal Editor: images, video, 3D, materials, audio and skies. Each request is priced before you send it, and each result lands as a native Unreal asset, placed in your level in one undo step. Agents such as Claude Code, Codex or Cursor drive the same features through the plugin's local Scenario MCP server.
 
