@@ -25,6 +25,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# Node tooling (pnpm install): commitlint
+node_modules/
+
 # Local secrets and test output (never commit)
 .env
 .env.*

@@ -1,6 +1,7 @@
 name: Bug report
 description: The Studio tab, a generation, an import or the agent server behaves wrong
 type: Bug
+projects: ["scenario-labs/31"]
 body:
   - type: markdown
     attributes:
@@ -59,6 +60,14 @@ body:
       description: The verbatim error text from the Studio tab or the Output Log (filter on LogScenario). Paste text, not a screenshot, so it is searchable.
     validations:
       required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often it happens
+      options:
+        - Every time I try
+        - Some of the time
+        - Only once so far
   - type: input
     id: unreal_version
     attributes:
