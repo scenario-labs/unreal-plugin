@@ -1,4 +1,16 @@
-# Scenario for Unreal Engine
+<p align="center">
+  <a href="https://www.scenario.com/"><img src="docs/images/scenario-logo.png" height="84" alt="Scenario"></a>
+</p>
+<h1 align="center">Scenario for Unreal Engine</h1>
+<p align="center">
+  <a href="https://github.com/scenario-labs/unreal-plugin/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/scenario-labs/unreal-plugin"></a>
+  <a href="https://github.com/scenario-labs/unreal-plugin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/scenario-labs/unreal-plugin/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="Unreal Engine 5.6, 5.7, 5.8" src="https://img.shields.io/badge/Unreal%20Engine-5.6%20%7C%205.7%20%7C%205.8-0E1128?logo=unrealengine&logoColor=white">
+  <a href="https://docs.scenario.com"><img alt="API documentation" src="https://img.shields.io/badge/documentation-api-black.svg"></a>
+  <a href="https://help.scenario.com"><img alt="App documentation" src="https://img.shields.io/badge/documentation-app-black.svg"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/scenario-labs/unreal-plugin"><img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/scenario-labs/unreal-plugin?label=openssf+scorecard&style=flat"></a>
+</p>
 
 ![A shrine level built in Unreal Engine 5.8 by an agent: Scenario 3D models, materials, sky and lighting](docs/images/hero-shrine.jpg)
 

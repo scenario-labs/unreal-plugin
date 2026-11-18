@@ -1,0 +1,4 @@
+# The web app rejects automated clients with 429 Too Many Requests.
+^https://app\.scenario\.com/
+# These exact repository forms redirect to GitHub login when unauthenticated.
+^https://github\.com/scenario-labs/unreal-plugin/(issues/new/choose|security/advisories/new)$
