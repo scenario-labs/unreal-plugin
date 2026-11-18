@@ -8,8 +8,8 @@ All connections use HTTPS.
 
 | Host | What for |
 |---|---|
-| `mcp.scenario.com` | Scenario's hosted service: every model, price, job, workflow, asset and account call; sign-in tokens and app registration |
-| Scenario's sign-in service, at the addresses Scenario's sign-in metadata lists (`clerk.scenario.com` today) | Signing in on another device, and revoking your session when you sign out |
+| `mcp.scenario.com` | Scenario's hosted service: every model, price, job, workflow, asset and account call |
+| `clerk.scenario.com`, Scenario's sign-in service | Signing in as "Scenario for Unreal Engine", in the browser or on another device; renewing the session; revoking it when you sign out |
 | `cdn.scenario.com`, `cdn.cloud.scenario.com` | Downloading results. Downloads go to these hosts only |
 | `*.amazonaws.com` | Uploading your input files, to the presigned storage addresses Scenario returns |
 | The image addresses Scenario returns for thumbnails | Showing thumbnails of models and assets in the Studio |
@@ -38,7 +38,7 @@ Scenario processes these under your Scenario account terms and privacy policy. G
 
 | Data | Where | Committed to source control? |
 |---|---|---|
-| OAuth refresh token, API key id and secret, the plugin's OAuth client id, the agent server token | macOS Keychain or Windows Credential Manager; on Linux, `~/.config/scenario/unreal/credentials.json`, readable only by you | No |
+| OAuth refresh token and the sign-in application it belongs to, API key id and secret, the agent server token | macOS Keychain or Windows Credential Manager; on Linux, `~/.config/scenario/unreal/credentials.json`, readable only by you | No |
 | OAuth access token | Memory only | No |
 | Chosen team and project (ids and names) | `<Project>/Saved/Scenario/workspace.json` | No, `Saved/` is excluded by Unreal's default ignore rules |
 | Your editor preferences, including the agent settings | Your per-user editor settings | No |

@@ -76,7 +76,7 @@ All network and file IO is asynchronous. HTTP runs on Unreal's HTTP module; call
 
 ## Credentials
 
-- OAuth: browser sign-in with PKCE and a loopback redirect on a random local port, with a device-code fallback. The refresh token is stored; the access token stays in memory.
+- OAuth: the plugin signs in as "Scenario for Unreal Engine", its registered public OAuth application on Scenario's identity provider (`clerk.scenario.com`), with a fixed client id and the scopes `openid offline_access`. Browser sign-in with PKCE and a loopback redirect on `127.0.0.1` (the first free port of 38917 to 38919; the provider accepts a loopback redirect on any port), with a device-code fallback. The refresh token is stored with the client id and issuer it belongs to, and a token saved for another application is deleted, never sent; the access token stays in memory. `SCENARIO_OAUTH_ISSUER` and `SCENARIO_OAUTH_CLIENT_ID`, set together, select a development instance.
 - API key and secret: checked with a free call, then stored.
 - Stores: macOS Keychain and Windows Credential Manager. On Linux, version 0.2 uses a file readable only by the user, and the Settings page says it is not encrypted.
 - Nothing secret is written to project config, `Saved/`, logs, provenance or diagnostics.

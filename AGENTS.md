@@ -41,8 +41,9 @@ use. Nothing else from the plugin is compiled into a packaged game.
     intent rows, Unknown state, reconciliation.
   - `ScenarioTransfer`: resumable downloads (`.part` files), presigned uploads,
     host allow-lists.
-  - `ScenarioOAuth`: browser sign-in with PKCE on a loopback port, device code
-    fallback, token refresh.
+  - `ScenarioOAuth`: sign-in as the plugin's registered OAuth application
+    (fixed client id, no registration): browser sign-in with PKCE on a
+    loopback port, device code fallback, token refresh.
   - `ScenarioCredentialStore` (+ `Private/Platform/`): macOS Keychain, Windows
     Credential Manager, otherwise an owner-only file in the user's config
     folder.
