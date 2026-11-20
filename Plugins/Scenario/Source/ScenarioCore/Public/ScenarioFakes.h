@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ScenarioHttp.h"
-#include "ScenarioMcpClient.h"
+#include "ScenarioRestClient.h"
 
 /**
  * Test doubles shared by the automation tests of the three modules.
@@ -22,11 +22,10 @@ struct SCENARIOCORE_API FScenarioFakeRequest
 
 	FString BodyText() const;
 	TSharedPtr<FJsonObject> BodyJson() const;
-	/** JSON-RPC method of an MCP request, or empty. */
-	FString RpcMethod() const;
-	/** Tool name of a tools/call request, or empty. */
-	FString ToolName() const;
-	TSharedPtr<FJsonObject> ToolArguments() const;
+	/** The URL's path, without the query. */
+	FString Path() const;
+	/** A decoded query parameter, or empty. */
+	FString Query(const FString& Name) const;
 };
 
 /**
@@ -43,7 +42,6 @@ public:
 
 	void Enqueue(const FScenarioHttpResponse& Response) { Queue.Add(Response); }
 	void EnqueueJson(int32 Status, const FString& Body, const TMap<FString, FString>& Headers = {});
-	void EnqueueSse(int32 Status, const FString& Body, const TMap<FString, FString>& Headers = {});
 	void EnqueueTransportError(EScenarioErrorKind Kind = EScenarioErrorKind::Transport);
 
 	/** Used when the queue is empty. */
@@ -51,60 +49,40 @@ public:
 
 	TArray<FScenarioFakeRequest> Requests;
 	TArray<float> Delays;
-	/** Requests to tools/call, in order (initialize and notifications left out). */
-	TArray<FScenarioFakeRequest> ToolCalls() const;
 
 	static FScenarioHttpResponse Json(int32 Status, const FString& Body, const TMap<FString, FString>& Headers = {});
-	/** A JSON-RPC result envelope for a tools/call, with the value as structuredContent. */
-	static FString ToolResult(int64 Id, const FString& StructuredJson, bool bIsError = false);
-	static FString InitializeResult(int64 Id);
 
 private:
 	TArray<FScenarioHttpResponse> Queue;
 };
 
 /**
- * A Scenario MCP server in a box: answers initialize and the notification,
- * and serves tools/call from per-tool handlers. Plug it into the fake
- * transport's Responder.
+ * IScenarioBackend answering requests from handlers, synchronously. A route is
+ * the verb and the path, where a segment written * stands for any one segment
+ * (the model id of a run, say). An exact route wins over a pattern.
  */
-class SCENARIOCORE_API FScenarioFakeMcpServer : public TSharedFromThis<FScenarioFakeMcpServer>
-{
-public:
-	using FToolHandler = TFunction<FScenarioHttpResponse(const TSharedPtr<FJsonObject>& Arguments, int64 RequestId)>;
-
-	/** Returns structured content JSON for the tool. */
-	void On(const FString& Tool, TFunction<FString(const TSharedPtr<FJsonObject>& Arguments)> Handler);
-	/** Full control over the HTTP response. */
-	void OnRaw(const FString& Tool, FToolHandler Handler);
-
-	FScenarioHttpResponse Handle(const FScenarioFakeRequest& Request);
-	void Attach(FScenarioFakeTransport& Transport);
-
-	FString SessionId = TEXT("fake-session");
-	TMap<FString, int32> CallCounts;
-
-private:
-	TMap<FString, FToolHandler> Handlers;
-};
-
-/** IScenarioBackend answering tool calls from handlers, synchronously. */
 class SCENARIOCORE_API FScenarioFakeBackend : public IScenarioBackend
 {
 public:
-	using FHandler = TFunction<FScenarioReply(const TSharedPtr<FJsonObject>& Arguments)>;
+	using FHandler = TFunction<FScenarioReply(const FScenarioRequest& Request)>;
 
-	virtual void CallTool(const FString& Tool, const TSharedPtr<FJsonObject>& Arguments, FScenarioReplyCallback OnDone, float TimeoutSeconds = 60.0f) override;
+	virtual void Send(const FScenarioRequest& Request, FScenarioReplyCallback OnDone) override;
 	virtual bool HasCredentials() const override { return bSignedIn; }
+	virtual bool UsesApiKey() const override { return bApiKey; }
 	virtual bool IsEstimateAlarmRaised() const override { return false; }
 
-	void On(const FString& Tool, FHandler Handler) { Handlers.Add(Tool, MoveTemp(Handler)); }
-	/** Answers the tool with this JSON object text. */
-	void OnJson(const FString& Tool, const FString& Json);
+	void On(const FString& Route, FHandler Handler) { Handlers.Add(Route, MoveTemp(Handler)); }
+	/** Answers the route with this JSON object text. */
+	void OnJson(const FString& Route, const FString& Json);
 
 	bool bSignedIn = true;
-	TArray<TPair<FString, TSharedPtr<FJsonObject>>> Calls;
-	int32 CountOf(const FString& Tool) const;
+	/** Answers as an API key would be answered; off by default so GET /teams is used. */
+	bool bApiKey = false;
+	TArray<FScenarioRequest> Calls;
+	int32 CountOf(const FString& Route) const;
+	/** The last request that matched the route, or null. */
+	const FScenarioRequest* Last(const FString& Route) const;
+	static bool Matches(const FString& Route, const FScenarioRequest& Request);
 
 private:
 	TMap<FString, FHandler> Handlers;

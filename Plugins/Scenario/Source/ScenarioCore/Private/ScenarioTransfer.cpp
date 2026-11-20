@@ -480,7 +480,8 @@ void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 			return;
 		}
 		// Completing again resumes the same upload (Scenario's documented recovery); it never creates a second asset.
-		if (Completed.Error.Kind == EScenarioErrorKind::Timeout && Attempt < 3)
+		// About a minute in all: a large 3D file takes that long to import.
+		if (Completed.Error.Kind == EScenarioErrorKind::Timeout && Attempt < 20)
 		{
 			This->Transport->Delay(3.0f, [WeakThis, State, Attempt]()
 			{

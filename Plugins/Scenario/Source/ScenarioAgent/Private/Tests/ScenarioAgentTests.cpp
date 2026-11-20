@@ -65,7 +65,9 @@ bool FScenarioAgentToolBudgetTest::RunTest(const FString& Parameters)
 	const FString Text = ScenarioJson::Write(List);
 	TestTrue(FString::Printf(TEXT("tools/list under 40,000 characters (%d)"), Text.Len()), Text.Len() < 40000);
 	const TArray<TSharedPtr<FJsonValue>> Tools = ScenarioJson::GetArray(List, TEXT("tools"));
-	TestEqual(TEXT("39 built-in tools and 9 kit tools"), Tools.Num(), 48);
+	// The size docs/ARCHITECTURE.md quotes ("Tool list size").
+	AddInfo(FString::Printf(TEXT("tools/list: %d tools, %d bytes"), Tools.Num(), FTCHARToUTF8(*Text).Length()));
+	TestEqual(TEXT("38 built-in tools and 9 kit tools"), Tools.Num(), 47);
 	TSet<FString> Names;
 	for (const TSharedPtr<FJsonValue>& Value : Tools)
 	{
@@ -151,7 +153,7 @@ bool FScenarioAgentRpcTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("unknown session asks to initialize again"), Send(*Server, Stale).Status, 404);
 
 	const TSharedPtr<FJsonObject> List = Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), TEXT("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"))));
-	TestEqual(TEXT("tools listed"), ScenarioJson::GetArray(ScenarioJson::GetObject(List, TEXT("result")), TEXT("tools")).Num(), 48);
+	TestEqual(TEXT("tools listed"), ScenarioJson::GetArray(ScenarioJson::GetObject(List, TEXT("result")), TEXT("tools")).Num(), 47);
 
 	const TSharedPtr<FJsonObject> Unknown = Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), TEXT("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"resources/list\"}"))));
 	TestEqual(TEXT("unknown method"), static_cast<int32>(ScenarioJson::GetNumber(ScenarioJson::GetObject(Unknown, TEXT("error")), TEXT("code"))), -32601);

@@ -220,8 +220,6 @@ public:
 	/** LocalId is the Spark job's row in the job list, empty when nothing was sent. */
 	void RunSpark(TFunction<void(const TArray<FString>& Variants, const FString& Error, const FString& LocalId)> OnDone);
 
-	/** Suggest: Scenario's recommendation for the prompt. */
-	void Suggest(TFunction<void(const TArray<TPair<FString, FString>>& Models, const FString& Error)> OnDone);
 
 	FSimpleMulticastDelegate OnChanged;
 

@@ -278,6 +278,41 @@ namespace
 		return Json;
 	}
 
+	/** The first Wanted assets of the project's asset list, newest first, read page after page (100 a page, two spare). */
+	void ListNewest(const TWeakPtr<FScenarioSession>& WeakSession, const FString& Kind, int32 Wanted, const FString& PageToken, TArray<FScenarioAssetInfo> Rows, int32 Pages,
+		TFunction<void(const TScenarioResult<TArray<FScenarioAssetInfo>>&)> OnDone)
+	{
+		const TSharedPtr<FScenarioSession> Session = WeakSession.Pin();
+		if (!Session.IsValid())
+		{
+			OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Fail(EScenarioErrorKind::Local, TEXT("The Scenario session ended.")));
+			return;
+		}
+		Session->Api().ListAssets(Kind, Wanted - Rows.Num(), PageToken,
+			[WeakSession, Kind, Wanted, Rows = MoveTemp(Rows), Pages, OnDone = MoveTemp(OnDone)](const TScenarioResult<FScenarioAssetPage>& Result) mutable
+		{
+			if (!Result.bOk)
+			{
+				OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Fail(Result.Error));
+				return;
+			}
+			Rows.Append(Result.Value.Assets);
+			if (Rows.Num() < Wanted && !Result.Value.NextPageToken.IsEmpty())
+			{
+				// Pages can come back short or empty with a token: stop past the pages Wanted needs, and say so.
+				if (Pages + 1 >= Wanted / 100 + 2)
+				{
+					OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Fail(EScenarioErrorKind::Local,
+						FString::Printf(TEXT("The asset list stopped after %d pages, short of row %d. Filter by kind or use search_assets."), Pages + 1, Wanted)));
+					return;
+				}
+				ListNewest(WeakSession, Kind, Wanted, Result.Value.NextPageToken, MoveTemp(Rows), Pages + 1, MoveTemp(OnDone));
+				return;
+			}
+			OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Ok(MoveTemp(Rows)));
+		});
+	}
+
 	void SearchLibrary(const TSharedPtr<FJsonObject>& Args, const FString& Query, FScenarioActionDone Done)
 	{
 		FScenarioActionResult Fail;
@@ -290,7 +325,7 @@ namespace
 		TSharedRef<FScenarioSession> Session = S->SessionShared();
 		const int32 Limit = Int(Args, TEXT("limit"), 20, 1, 50);
 		const int32 Offset = Int(Args, TEXT("offset"), 0, 0, 10000);
-		Session->Api().SearchAssets(Query, Str(Args, TEXT("kind")), Limit, Offset, [Session, Limit, Offset, Done](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result)
+		auto OnAssets = [Session, Limit, Offset, Done](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result, int32 Skip)
 		{
 			if (!Result.bOk)
 			{
@@ -298,9 +333,9 @@ namespace
 				return;
 			}
 			TArray<TSharedPtr<FJsonValue>> Rows;
-			for (const FScenarioAssetInfo& Asset : Result.Value)
+			for (int32 Index = Skip; Index < Result.Value.Num() && Rows.Num() < Limit; ++Index)
 			{
-				Rows.Add(MakeShared<FJsonValueObject>(AssetRow(*Session, Asset)));
+				Rows.Add(MakeShared<FJsonValueObject>(AssetRow(*Session, Result.Value[Index])));
 			}
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetArrayField(TEXT("assets"), Rows);
@@ -310,7 +345,15 @@ namespace
 			}
 			Json->SetStringField(TEXT("note"), TEXT("Asset ids go straight into file fields; nothing is uploaded again."));
 			Done(FScenarioActionResult::Ok(Json));
-		});
+		};
+		const FString Kind = Str(Args, TEXT("kind"));
+		if (Query.IsEmpty())
+		{
+			// Search ranks the whole team's index before it narrows to the project: browsing reads the project's list.
+			ListNewest(Session, Kind, Offset + Limit, FString(), {}, 0, [OnAssets, Offset](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result) { OnAssets(Result, Offset); });
+			return;
+		}
+		Session->Api().SearchAssets(Query, Kind, Limit, Offset, [OnAssets](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result) { OnAssets(Result, 0); });
 	}
 
 	/** Model form fields, then the run request, for estimate_cost. */
@@ -584,43 +627,6 @@ void FScenarioActions::RegisterScenarioActions()
 					}
 				}
 				Json->SetStringField(TEXT("files"), TEXT("File fields take Scenario asset ids: from upload_reference, search_assets or a finished job's files."));
-				Done(FScenarioActionResult::Ok(Json));
-			});
-		}));
-
-	// recommend_models
-	Register(Make(TEXT("recommend_models"), EScenarioActionKind::Read,
-		TEXT("Scenario's model recommendation for a prompt and capability (txt2img, img23d, txt2audio...), or for a plugin lane."),
-		Object({
-			{ TEXT("prompt"), TEXT("string") },
-			{ TEXT("capability"), TEXT("string") },
-			{ TEXT("lane"), TEXT("string"), FString(), FString(), Lanes },
-			{ TEXT("limit"), TEXT("integer") },
-		}, { TEXT("prompt") }),
-		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
-		{
-			FScenarioActionResult Fail;
-			UScenarioSubsystem* S = Subsystem(Fail, true);
-			if (!S)
-			{
-				Done(Fail);
-				return;
-			}
-			FString Capability = Str(Args, TEXT("capability"));
-			if (Capability.IsEmpty())
-			{
-				const FScenarioLane* Lane = FScenarioLanes::Get().Find(Str(Args, TEXT("lane"), TEXT("image")));
-				Capability = Lane ? Lane->Capability : TEXT("txt2img");
-			}
-			S->Session().Api().Recommend(Capability, Str(Args, TEXT("prompt")), Int(Args, TEXT("limit"), 5, 1, 10), [Done](const FScenarioReply& Reply)
-			{
-				if (!Reply.bOk)
-				{
-					Done(FScenarioActionResult::Fail(Reply.Error));
-					return;
-				}
-				TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-				Json->SetObjectField(TEXT("recommendation"), Reply.Value.IsValid() ? Reply.Value : MakeShared<FJsonObject>());
 				Done(FScenarioActionResult::Ok(Json));
 			});
 		}));
