@@ -15,7 +15,6 @@ struct SCENARIOCORE_API FScenarioOAuthMetadata
 	FString Issuer;
 	FString AuthorizationEndpoint;
 	FString TokenEndpoint;
-	FString RegistrationEndpoint;
 	FString DeviceAuthorizationEndpoint;
 	FString RevocationEndpoint;
 
@@ -32,20 +31,39 @@ struct SCENARIOCORE_API FScenarioDeviceCode
 	double ExpiresAt = 0.0;
 };
 
+/** The identity provider and the registered OAuth application Unreal signs in as. */
+struct SCENARIOCORE_API FScenarioOAuthApp
+{
+	FString Issuer;
+	FString ClientId;
+	/** Why the SCENARIO_OAUTH_* variables were refused; sign-in fails with it. Empty when usable. */
+	FString Problem;
+
+	FString MetadataUrl() const { return Issuer + TEXT("/.well-known/oauth-authorization-server"); }
+	/** Production, or the development instance named by both variables together (HTTPS issuer). */
+	static FScenarioOAuthApp Select(const FString& EnvIssuer, const FString& EnvClientId);
+	/** Select() with SCENARIO_OAUTH_ISSUER and SCENARIO_OAUTH_CLIENT_ID. */
+	static FScenarioOAuthApp FromEnvironment();
+};
+
 DECLARE_MULTICAST_DELEGATE(FOnScenarioOAuthChanged);
 
 /**
- * Sign in with Scenario: OAuth 2.1 through the hosted Scenario MCP's
- * authorization server. Authorization code with PKCE and a loopback redirect
- * by default, the device code grant as the fallback, refresh tokens in the
- * credential store, the access token in memory only.
+ * Sign in with Scenario as "Scenario for Unreal Engine", the plugin's
+ * registered public OAuth application on Scenario's identity provider.
+ * Authorization code with PKCE and a loopback redirect by default, the device
+ * code grant as the fallback, refresh tokens in the credential store, the
+ * access token in memory only.
  */
 class SCENARIOCORE_API FScenarioOAuth : public IScenarioAuthProvider, public TSharedFromThis<FScenarioOAuth>
 {
 public:
-	static const TCHAR* DefaultMetadataUrl;
-	static const TCHAR* DefaultResource;
-	/** Fixed loopback ports registered as redirect URIs; the first free one is used. */
+	static const TCHAR* ProductionIssuer;
+	/** The production application's client id: a public client, so not a secret. */
+	static const TCHAR* ProductionClientId;
+	/** The fewest scopes the provider accepts: who the person is, and a refresh token. */
+	static const TCHAR* DefaultScope;
+	/** Loopback ports tried in order; the provider accepts a loopback redirect on any port. */
 	static const TArray<int32>& RedirectPorts();
 	static constexpr double BrowserTimeoutSeconds = 300.0;
 
@@ -57,7 +75,11 @@ public:
 	virtual bool NeedsWorkspaceArguments() const override { return true; }
 	virtual void Refresh(TFunction<void(bool bRefreshed)> OnDone) override;
 
-	/** Loads the refresh token saved by an earlier session. True when one exists. */
+	/**
+	 * Loads the refresh token saved by an earlier session. True when one exists.
+	 * A token saved for another application (an older version's own client, or
+	 * another provider) is deleted without being sent anywhere.
+	 */
 	bool Restore();
 	bool HasRefreshToken() const { return !RefreshToken.IsEmpty(); }
 	bool IsAccessTokenFresh() const;
@@ -83,18 +105,16 @@ public:
 	// Exposed for tests.
 	static FString MakeCodeChallenge(const FString& Verifier);
 	static FString BuildAuthorizeUrl(const FScenarioOAuthMetadata& Metadata, const FString& ClientId, const FString& RedirectUri,
-		const FString& Challenge, const FString& State, const FString& Resource, const FString& Scope);
+		const FString& Challenge, const FString& State, const FString& Scope);
 	/** Reads ?code=&state=&iss= or ?error= from a callback query. Returns an error message or empty, and the code. */
 	static FString ReadCallback(const FString& Query, const FString& ExpectedState, const FString& ExpectedIssuer, FString& OutCode);
 
-	FString MetadataUrl;
-	FString Resource;
-	/** Empty by default: the authorization server's default scopes are used. */
+	FScenarioOAuthApp App;
 	FString Scope;
 
 private:
 	void Discover(TFunction<void(const FScenarioReply&)> OnDone);
-	void EnsureClient(TFunction<void(const FScenarioReply&, const FString& ClientId)> OnDone);
+	void ForgetSession();
 	void PostForm(const FString& Url, const TArray<TPair<FString, FString>>& Fields, FScenarioReplyCallback OnDone);
 	void ExchangeCode(const FString& Code, const FString& RedirectUri, FScenarioReplyCallback OnDone);
 	bool ApplyTokenResponse(const TSharedPtr<FJsonObject>& Token);
@@ -105,7 +125,6 @@ private:
 	TSharedRef<IScenarioHttpTransport> Transport;
 	TSharedRef<IScenarioCredentialStore> Store;
 	FScenarioOAuthMetadata Metadata;
-	FString ClientId;
 	FString AccessToken;
 	double AccessExpiresAt = 0.0;
 	FString RefreshToken;
