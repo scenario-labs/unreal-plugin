@@ -311,7 +311,9 @@ bool FScenarioOAuth::ApplyTokenResponse(const TSharedPtr<FJsonObject>& Token)
 		TSharedRef<FJsonObject> Client = MakeShared<FJsonObject>();
 		Client->SetStringField(TEXT("client_id"), App.ClientId);
 		Client->SetStringField(TEXT("issuer"), App.Issuer);
-		if (!Store->Write(ClientAccount, ScenarioJson::Write(Client)) || !Store->Write(RefreshAccount, RefreshToken))
+		// The token is saved even when its identity is not: Restore forgets a token whose saved identity does not match.
+		const bool bClientSaved = Store->Write(ClientAccount, ScenarioJson::Write(Client));
+		if (!Store->Write(RefreshAccount, RefreshToken) || !bClientSaved)
 		{
 			UE_LOG(LogScenario, Warning, TEXT("Scenario sign-in: could not save the session in %s; you will need to sign in again next time."), *Store->Describe());
 		}

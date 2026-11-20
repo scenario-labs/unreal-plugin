@@ -63,6 +63,17 @@ namespace ScenarioAuthTests
 		App.ClientId = TEXT("client_test");
 		return App;
 	}
+
+	/** A memory store that refuses writes to one account. */
+	class FRefusingStore : public FScenarioMemoryCredentialStore
+	{
+	public:
+		FString RefusedAccount;
+		virtual bool Write(const FString& Account, const FString& Secret) override
+		{
+			return Account != RefusedAccount && FScenarioMemoryCredentialStore::Write(Account, Secret);
+		}
+	};
 }
 
 using namespace ScenarioAuthTests;
@@ -211,6 +222,22 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("new bearer"), Next->AuthorizationHeader(), FString(TEXT("Bearer at_2")));
 	TestTrue(TEXT("refresh grant"), Server->TokenBodies.Last().Contains(TEXT("grant_type=refresh_token")));
 	TestTrue(TEXT("refresh names the app"), Server->TokenBodies.Last().Contains(TEXT("client_id=client_test")));
+
+	// A rotated refresh token is saved even when its identity cannot be written.
+	FString ClientJson;
+	Store->Read(TEXT("oauth-client"), ClientJson);
+	TSharedRef<FRefusingStore> Refusing = MakeShared<FRefusingStore>();
+	Refusing->Write(TEXT("oauth-refresh"), TEXT("rt_1"));
+	Refusing->Write(TEXT("oauth-client"), ClientJson);
+	Refusing->RefusedAccount = TEXT("oauth-client");
+	Server->TokenCalls = 0;
+	Server->TokenReplies = { TEXT("200:{\"access_token\":\"at_3\",\"refresh_token\":\"rt_3\",\"expires_in\":3600}") };
+	TSharedRef<FScenarioOAuth> Rotating = MakeShared<FScenarioOAuth>(Transport, Refusing);
+	Rotating->App = TestApp();
+	TestTrue(TEXT("restored before rotation"), Rotating->Restore());
+	bool bRotated = false;
+	Rotating->Refresh([&bRotated](bool bOk) { bRotated = bOk; });
+	TestTrue(TEXT("rotated token saved without its identity"), bRotated && Refusing->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_3"));
 
 	// Revoked session: invalid_grant clears the stored token.
 	Server->TokenCalls = 0;
