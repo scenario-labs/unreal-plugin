@@ -62,7 +62,6 @@ bool FScenarioLanes::LoadFromString(const FString& Text)
 		Lane.Hint = ScenarioJson::GetString(Object, TEXT("hint"));
 		Lane.Modes = ScenarioJson::GetStringArray(Object, TEXT("modes"));
 		Lane.StarterPrompts = ScenarioJson::GetStringArray(Object, TEXT("starter_prompts"));
-		Lane.bRecommend = ScenarioJson::GetBool(Object, TEXT("recommend"), true);
 		Lane.bNeedsCapture = ScenarioJson::GetBool(Object, TEXT("needs_capture"), false);
 		for (const TSharedPtr<FJsonValue>& ModelValue : ScenarioJson::GetArray(Object, TEXT("models")))
 		{

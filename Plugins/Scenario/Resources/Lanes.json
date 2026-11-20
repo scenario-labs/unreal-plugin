@@ -58,7 +58,6 @@
       "capability": "txt2img",
       "importer": "material",
       "folder": "Materials",
-      "recommend": false,
       "hint": "Tileable PBR material set on the selected actor's material slot.",
       "starter_prompts": [
         "wet cobblestone street, dark mortar",
@@ -76,7 +75,6 @@
       "capability": "txt2img",
       "importer": "sky",
       "folder": "Environments",
-      "recommend": false,
       "modes": ["generate", "hdri"],
       "hint": "360 skies on a sky sphere, or HDR lighting on an HDRI Backdrop.",
       "starter_prompts": [

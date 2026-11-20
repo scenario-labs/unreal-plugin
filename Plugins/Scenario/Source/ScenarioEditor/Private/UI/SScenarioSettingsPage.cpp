@@ -278,7 +278,7 @@ FString SScenarioSettingsPage::Diagnostics()
 	Lines.Add(FString::Printf(TEXT("Connection: %s"), Connections[FMath::Clamp(static_cast<int32>(Session->GetConnection()), 0, 3)]));
 	Lines.Add(FString::Printf(TEXT("Sign-in: %s"), *AuthText(*Session)));
 	Lines.Add(FString::Printf(TEXT("Credentials: %s%s"), *Session->DescribeCredentialStore(), Session->IsCredentialStoreSecure() ? TEXT("") : TEXT(" (not encrypted)")));
-	Lines.Add(FString::Printf(TEXT("Endpoint: %s"), Session->GetConfig().Endpoint.IsEmpty() ? TEXT("default") : *Session->GetConfig().Endpoint));
+	Lines.Add(FString::Printf(TEXT("API: %s"), Session->GetConfig().ApiUrl.IsEmpty() ? TEXT("default") : *Session->GetConfig().ApiUrl));
 	Lines.Add(FString::Printf(TEXT("Team/project ids: %s / %s"), *Session->GetWorkspace().TeamId, *Session->GetWorkspace().ProjectId));
 	Lines.Add(FString::Printf(TEXT("Spending: %s"), Session->IsSpendingDisabled() ? TEXT("off (SCENARIO_NO_SPEND=1)") : TEXT("on")));
 	Lines.Add(FString::Printf(TEXT("Automatic price checks: %s"), Session->IsEstimateAlarmRaised() ? TEXT("stopped (a price check returned a job)") : TEXT("on")));

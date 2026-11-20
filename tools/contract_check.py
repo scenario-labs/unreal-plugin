@@ -2,11 +2,12 @@
 # Copyright (c) 2026 Scenario Inc. Licensed under the MIT License.
 """Free live contract check (no Creative Units spent).
 
-Checks that the hosted Scenario MCP still answers the way the plugin expects:
-sign-in with an API key, workspace listing, the schema and the dry-run price of
-every lane model in Plugins/Scenario/Resources/Lanes.json, recommendations per
-lane, model thumbnails through search, Prompt Spark pricing and the usage read.
-Only reads and dry runs are sent. Paid calls are refused by this script itself.
+Checks that Scenario's REST API still answers the way the plugin expects:
+the API key reads its project, the public catalog lists, every lane model in
+Plugins/Scenario/Resources/Lanes.json loads its inputs and prices with a dry
+run, Prompt Spark prices, and the asset search, workflow lists and usage read
+still answer. Only reads and dry runs are sent: this script refuses any other
+request itself, before it leaves the machine.
 
 Credentials: SCENARIO_API_KEY and SCENARIO_API_SECRET, or on macOS a Keychain
 item named by SCENARIO_KEYCHAIN_SERVICE (read with /usr/bin/security; the
@@ -24,14 +25,15 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LANES = ROOT / "Plugins/Scenario/Resources/Lanes.json"
-ENDPOINT = os.environ.get("SCENARIO_MCP_URL", "https://mcp.scenario.com/mcp?toolsets=full")
-PROTOCOL = "2025-03-26"
+API = os.environ.get("SCENARIO_API_URL", "https://api.cloud.scenario.com/v1").rstrip("/")
 USER_AGENT = "ScenarioUnreal/contract-check"
-PAID_TOOLS = {"model_run", "workflow_run", "prompt_spark", "upload_asset", "upload_asset_complete", "job_cancel"}
+# Free requests that are not GETs: anything else that is not a dry run is refused.
+FREE_POSTS = {"/search/assets"}
 
 
 def keychain_credentials(service):
@@ -50,95 +52,39 @@ def keychain_credentials(service):
     return (account, value) if value else (None, None)
 
 
-class Mcp:
+class Api:
     def __init__(self, key, secret):
         self.auth = "Basic " + base64.b64encode(f"{key}:{secret}".encode()).decode()
-        self.session = ""
-        self.next_id = 1
 
-    def _post(self, payload):
-        data = json.dumps(payload).encode()
-        headers = {
-            "Authorization": self.auth,
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-            "MCP-Protocol-Version": PROTOCOL,
-            "User-Agent": USER_AGENT,
-        }
-        if self.session:
-            headers["Mcp-Session-Id"] = self.session
-        request = urllib.request.Request(ENDPOINT, data=data, headers=headers, method="POST")
+    def request(self, verb, path, query=None, body=None):
+        """One request; returns (status, JSON object). Refuses anything that could spend."""
+        query = {k: v for k, v in (query or {}).items() if v not in (None, "")}
+        if verb != "GET" and query.get("dryRun") != "true" and path not in FREE_POSTS:
+            raise RuntimeError(f"refused: {verb} {path} without dryRun=true could spend")
+        url = API + path + ("?" + urllib.parse.urlencode(query) if query else "")
+        data = json.dumps(body).encode() if body is not None else None
+        headers = {"Authorization": self.auth, "Accept": "application/json", "User-Agent": USER_AGENT}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=data, headers=headers, method=verb)
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
-                body = response.read().decode("utf-8", "replace")
-                self.session = response.headers.get("mcp-session-id", self.session)
-                return response.status, response.headers.get("content-type", ""), body
+                status, text = response.status, response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as error:
-            return error.code, error.headers.get("content-type", ""), error.read().decode("utf-8", "replace")
-
-    @staticmethod
-    def _messages(content_type, body):
-        if "text/event-stream" in content_type or body.lstrip().startswith(("data:", "event:")):
-            out, lines = [], []
-            for line in body.replace("\r\n", "\n").split("\n") + [""]:
-                if not line:
-                    if lines:
-                        try:
-                            out.append(json.loads("\n".join(lines)))
-                        except ValueError:
-                            pass
-                        lines = []
-                elif line.startswith("data:"):
-                    lines.append(line[5:].lstrip(" ") if line[5:6] == " " else line[5:])
-            return out
+            text = error.read().decode("utf-8", "replace")
+            try:
+                reason = json.loads(text).get("reason") or json.loads(text).get("error") or text
+            except ValueError:
+                reason = text
+            raise RuntimeError(f"{verb} {path}: HTTP {error.code}: {str(reason)[:300]}") from None
         try:
-            parsed = json.loads(body) if body.strip() else []
-        except ValueError:
-            return []
-        return parsed if isinstance(parsed, list) else [parsed]
+            parsed = json.loads(text) if text.strip() else {}
+        except ValueError as error:
+            raise RuntimeError(f"{verb} {path}: reply is not JSON") from error
+        return status, parsed if isinstance(parsed, dict) else {}
 
-    def rpc(self, method, params=None, notify=False):
-        payload = {"jsonrpc": "2.0", "method": method}
-        if not notify:
-            payload["id"] = self.next_id
-            self.next_id += 1
-        if params:
-            payload["params"] = params
-        status, content_type, body = self._post(payload)
-        if status >= 300:
-            raise RuntimeError(f"{method}: HTTP {status}: {body[:300]}")
-        if notify:
-            return None
-        found = None
-        for message in self._messages(content_type, body):
-            if isinstance(message, dict) and message.get("id") == payload["id"] and ("result" in message or "error" in message):
-                found = message
-        if not found:
-            raise RuntimeError(f"{method}: no reply")
-        if "error" in found:
-            raise RuntimeError(f"{method}: {json.dumps(found['error'])[:300]}")
-        return found["result"]
-
-    def initialize(self):
-        self.rpc("initialize", {"protocolVersion": PROTOCOL, "capabilities": {}, "clientInfo": {"name": "scenario-unreal-contract-check", "version": "0.2.1"}})
-        self.rpc("notifications/initialized", notify=True)
-
-    def call(self, tool, arguments):
-        if tool in PAID_TOOLS and not arguments.get("dry_run"):
-            raise RuntimeError(f"refused: {tool} without dry_run would spend")
-        result = self.rpc("tools/call", {"name": tool, "arguments": arguments})
-        if result.get("isError"):
-            text = next((c.get("text", "") for c in result.get("content", []) if c.get("type") == "text"), "")
-            raise RuntimeError(text[:400] or "tool error")
-        if isinstance(result.get("structuredContent"), dict):
-            return result["structuredContent"]
-        for item in result.get("content", []):
-            if item.get("type") == "text":
-                try:
-                    return json.loads(item["text"])
-                except ValueError:
-                    return {"text": item["text"]}
-        return {}
+    def get(self, path, **query):
+        return self.request("GET", path, query)[1]
 
 
 def job_id_in(value):
@@ -149,30 +95,42 @@ def job_id_in(value):
             return str(value[key])
     for key in ("job", "inference"):
         inner = value.get(key)
-        if isinstance(inner, dict) and (inner.get("id") or inner.get("jobId")):
-            return str(inner.get("id") or inner.get("jobId"))
+        if isinstance(inner, dict) and (inner.get("jobId") or inner.get("id")):
+            return str(inner.get("jobId") or inner.get("id"))
     return ""
 
 
-def price_params(schema, lane, presets):
-    """Minimal parameters for a dry run: a prompt, presets, schema defaults are left to Scenario."""
+def required(parameter):
+    value = parameter.get("required")
+    return bool(value.get("always")) if isinstance(value, dict) else value in (True, "true")
+
+
+def price_params(model, lane, presets):
+    """Minimal inputs for a dry run: a prompt and the lane's presets; defaults are left to Scenario."""
     params = dict(presets)
     missing_files = []
-    capabilities = schema.get("capabilities", [])
+    capabilities = model.get("capabilities", [])
+    inputs = [p for p in model.get("inputs", []) if isinstance(p, dict) and p.get("name")]
     if capabilities and not any(c.startswith("txt") for c in capabilities):
         # Image-to-3D, 3D edit and riggers need an input asset even when no field is marked required.
-        inputs = [p.get("name") for p in schema.get("parameters", []) if p.get("type") in ("file", "file_array")]
-        return params, inputs[:1] or ["an input asset"]
-    for parameter in schema.get("parameters", []):
-        name = parameter.get("name")
-        kind = parameter.get("type")
-        required = parameter.get("required") in (True, "true")
+        files = [p["name"] for p in inputs if p.get("type") in ("file", "file_array")]
+        return params, files[:1] or ["an input asset"]
+    for parameter in inputs:
+        name = parameter["name"]
         if parameter.get("prompt") or name in ("prompt", "text"):
-            if required or name == "prompt":
+            if required(parameter) or name == "prompt":
                 params.setdefault(name, lane["starter_prompts"][0])
-        elif required and kind in ("file", "file_array"):
+        elif required(parameter) and parameter.get("type") in ("file", "file_array"):
             missing_files.append(name)
     return params, missing_files
+
+
+def check(report, name, run):
+    """A read the plugin depends on: reported, without failing the run."""
+    try:
+        report["checks"][name] = run()
+    except Exception as error:  # noqa: BLE001 - every failure is reported, the run continues
+        report["checks"][name] = "error: " + str(error)[:200]
 
 
 def main():
@@ -192,18 +150,22 @@ def main():
         return 2
 
     config = json.loads(LANES.read_text())
-    mcp = Mcp(key, secret)
-    report = {"started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "credential_source": source, "models": [], "recommend": [], "checks": {}}
-    ok = True
+    api = Api(key, secret)
+    report = {"started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "credential_source": source, "models": [], "checks": {}}
+    failures = []
     started = time.time()
-    mcp.initialize()
-    teams = mcp.call("teams_list", {})
-    report["checks"]["teams_list"] = f"{len(teams.get('teams', []))} team(s)"
+
+    # An API key cannot list teams: like the plugin, it reads its own project.
+    projects = api.get("/projects", pageSize=100).get("projects", [])
+    project = next((p for p in projects if isinstance(p, dict) and p.get("id")), {})
+    report["checks"]["key_project"] = "found" if project else "none"
+    if not project:
+        failures.append(False)
 
     catalog = {}
     token = None
-    for _ in range(40):
-        page = mcp.call("models_list", {"limit": 100, "filters": {"privacy": "public"}, **({"page_token": token} if token else {})})
+    for _ in range(20):
+        page = api.get("/models", privacy="public", pageSize=500, paginationToken=token)
         catalog.update({row["id"]: row for row in page.get("models", []) if isinstance(row, dict) and row.get("id")})
         token = page.get("nextPaginationToken")
         if not token:
@@ -224,7 +186,7 @@ def main():
             tags = [t.lower() for t in (listed or {}).get("tags", [])]
             if listed is None:
                 row["state"] = "not-in-catalog"
-                ok = False
+                failures.append(False)
                 seen[model["id"]] = {"state": row["state"]}
                 report["models"].append(row)
                 continue
@@ -232,91 +194,68 @@ def main():
                 replacement = next((t.split(":", 1)[1] for t in listed.get("tags", []) if t.startswith("deprecated:")), "")
                 row["state"] = "LEGACY"
                 row["note"] = "replace with " + replacement if replacement else "marked legacy"
-                ok = False
+                failures.append(False)
                 seen[model["id"]] = {"state": row["state"], "note": row["note"]}
                 report["models"].append(row)
                 continue
             try:
-                schema = mcp.call("model_schema_get", {"model_id": model["id"]})
-                row["name"] = schema.get("name", "")
-                row["fields"] = len(schema.get("parameters", []))
-                row["capabilities"] = schema.get("capabilities", [])
-                params, missing = price_params(schema, lane, config["presets"].get(model["id"], {}))
+                record = api.get("/models/" + urllib.parse.quote(model["id"], safe=""))
+                record = record.get("model") if isinstance(record.get("model"), dict) else record
+                row["name"] = record.get("name", "")
+                row["fields"] = len(record.get("inputs", []))
+                row["capabilities"] = record.get("capabilities", [])
+                params, missing = price_params(record, lane, config["presets"].get(model["id"], {}))
                 if missing:
                     row["state"] = "needs-input"
                     row["note"] = "needs " + ", ".join(missing)
                 else:
-                    estimate = mcp.call("model_run", {"model_id": model["id"], "parameters": params, "dry_run": True})
+                    status, estimate = api.request("POST", "/generate/custom/" + urllib.parse.quote(model["id"], safe=""), {"dryRun": "true"}, params)
                     if job_id_in(estimate):
                         row["state"] = "ALARM"
                         row["note"] = "dry run returned a job " + job_id_in(estimate)
-                        ok = False
+                        failures.append(False)
+                    elif status != 269:
+                        row["state"] = "not-269"
+                        row["note"] = f"dry run answered HTTP {status}; the plugin takes a price only from 269"
+                        failures.append(False)
                     elif "creativeUnitsCost" in estimate:
                         row["state"] = "priced"
                         row["cu"] = estimate["creativeUnitsCost"]
+                        row["status"] = status
                     else:
                         row["state"] = "no-price"
                         row["note"] = json.dumps(estimate)[:160]
-                        ok = False
+                        failures.append(False)
             except Exception as error:  # noqa: BLE001 - every failure is reported, the run continues
                 row["state"] = "error"
                 row["note"] = str(error)[:200]
-                ok = False
+                failures.append(False)
             seen[model["id"]] = {k: v for k, v in row.items() if k not in ("lane", "mode", "model", "listed_name")}
             report["models"].append(row)
-        if lane.get("recommend", True):
-            try:
-                rec = mcp.call("recommend", {"capability": lane["capability"], "prompt": lane["starter_prompts"][0], "priority": "quality", "limit": 3})
-                ranked = rec.get("ranked") or rec.get("models") or rec.get("results") or []
-                first = ranked[0].get("model_id") or ranked[0].get("id") if ranked and isinstance(ranked[0], dict) else ""
-                report["recommend"].append({"lane": lane["id"], "count": len(ranked), "first": first})
-            except Exception as error:  # noqa: BLE001
-                report["recommend"].append({"lane": lane["id"], "error": str(error)[:200]})
 
-    try:
-        found = mcp.call("search", {"target": "models", "query": "GPT Image", "public": True, "include_urls": True, "limit": 3})
-        hits = found.get("results") or found.get("hits") or []
-        report["checks"]["search_models_thumbnails"] = sum(1 for h in hits if isinstance(h, dict) and h.get("thumbnail"))
-        report["checks"]["search_models_keys"] = sorted(hits[0].keys()) if hits and isinstance(hits[0], dict) else []
-    except Exception as error:  # noqa: BLE001
-        report["checks"]["search_models_thumbnails"] = "error: " + str(error)[:200]
-    try:
-        spark = mcp.call("prompt_spark", {"model_id": "model_openai-gpt-image-2-5-flare", "prompt": "a treasure chest", "dry_run": True})
-        report["checks"]["prompt_spark_dry_run"] = {k: spark.get(k) for k in ("creativeUnitsCost", "dry_run") if k in spark} or json.dumps(spark)[:200]
-        if job_id_in(spark):
-            ok = False
-            report["checks"]["prompt_spark_dry_run"] = "ALARM: job returned"
-    except Exception as error:  # noqa: BLE001
-        report["checks"]["prompt_spark_dry_run"] = "error: " + str(error)[:200]
-    try:
-        project = next((p.get("id") for t in teams.get("teams", []) for p in t.get("projects", [])), "")
-        usage = mcp.call("usage", {"project_id": project} if project else {})
-        report["checks"]["usage_totalCU_present"] = "totalCU" in (usage.get("totals") or {})
-    except Exception as error:  # noqa: BLE001
-        report["checks"]["usage_totalCU_present"] = "error: " + str(error)[:200]
-    try:
-        assets = mcp.call("search", {"target": "assets", "limit": 2, "sort_by": ["createdAt:desc"], "filter": "kind EXISTS"})
-        report["checks"]["search_assets_kind_exists"] = len(assets.get("assets", []))
-    except Exception as error:  # noqa: BLE001
-        report["checks"]["search_assets_kind_exists"] = "error: " + str(error)[:200]
-    try:
-        flows = mcp.call("workflows_list", {"privacy": "public", "tags": ["featured"], "limit": 5})
-        report["checks"]["workflows_featured"] = len(flows.get("workflows", []))
-    except Exception as error:  # noqa: BLE001
-        report["checks"]["workflows_featured"] = "error: " + str(error)[:200]
-    try:
-        flows = mcp.call("workflows_list", {"status": "ready", "limit": 5})
-        report["checks"]["workflows_ready"] = len(flows.get("workflows", []))
-    except Exception as error:  # noqa: BLE001
-        report["checks"]["workflows_ready"] = "error: " + str(error)[:200]
+    def spark():
+        body = {"mode": "contextual-v2", "modelId": "model_openai-gpt-image-2-5-flare", "prompt": "a treasure chest", "numResults": 1}
+        status, reply = api.request("POST", "/generate/prompt", {"dryRun": "true"}, body)
+        # A job or a reply without the dry-run status (269) fails the run, as the plugin refuses both.
+        if job_id_in(reply) or status != 269:
+            failures.append(False)
+            raise RuntimeError("ALARM: a dry run returned a job" if job_id_in(reply) else f"dry run answered HTTP {status}, not 269")
+        return {"status": status, "creativeUnitsCost": reply.get("creativeUnitsCost")}
 
+    check(report, "prompt_spark_dry_run", spark)
+    check(report, "search_assets_kind_exists", lambda: len(api.request("POST", "/search/assets", None, {"filter": "kind EXISTS", "sortBy": ["createdAt:desc"], "limit": 2})[1].get("hits", [])))
+    check(report, "assets_list", lambda: len(api.get("/assets", pageSize=2, sortBy="createdAt", sortDirection="desc").get("assets", [])))
+    check(report, "workflows_featured", lambda: len(api.get("/workflows", privacy="public", tags="featured", pageSize=5, full="false").get("workflows", [])))
+    check(report, "workflows_ready", lambda: len(api.get("/workflows", status="ready", pageSize=5, full="false").get("workflows", [])))
+    check(report, "jobs_list", lambda: "jobs" in api.get("/jobs", pageSize=2))
+    check(report, "usage_consumption_present", lambda: "consumption" in api.get("/usages", projectIds=project.get("id", ""), type="consumption", timeRange="last-thirty-one-days"))
+
+    ok = not failures
     report["seconds"] = round(time.time() - started, 1)
     report["ok"] = ok
     for row in report["models"]:
         cu = f"{row['cu']:g} CU" if isinstance(row.get("cu"), (int, float)) else ""
         print(f"  {row['lane']:11s} {row.get('mode', ''):8s} {row['model']:45s} {row.get('state', ''):12s} {cu:9s} {row.get('name', '')[:28]:28s} {row.get('note', '')[:60]}")
-    for rec in report["recommend"]:
-        print(f"  recommend {rec['lane']:11s} {rec.get('count', '-')} first={rec.get('first', '')} {rec.get('error', '')}")
     for name, value in report["checks"].items():
         print(f"  {name}: {value}")
     print("ok:", ok, f"({report['seconds']} s)")

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ScenarioMcpClient.h"
+#include "ScenarioRestClient.h"
 #include "ScenarioTypes.h"
 
 template <typename T>
@@ -147,12 +147,6 @@ struct SCENARIOCORE_API FScenarioAssetPage
 	FString NextPageToken;
 };
 
-struct SCENARIOCORE_API FScenarioWaitResult
-{
-	TArray<FScenarioJobInfo> Jobs;
-	TArray<FString> PendingJobIds;
-};
-
 struct SCENARIOCORE_API FScenarioUploadTicket
 {
 	FString UploadId;
@@ -161,9 +155,14 @@ struct SCENARIOCORE_API FScenarioUploadTicket
 	int64 PartSize = 0;
 	/** Set when the server finished the upload in one step. */
 	FString AssetId;
+
+	/** Every part but the last must be at least 5 MiB. */
+	static constexpr int64 DefaultPartSize = 6000000;
+	/** Lower-case words joined by dashes, extension kept: signed upload links break on spaces and brackets. */
+	static FString CleanFileName(const FString& Name);
 };
 
-/** Typed wrappers over the Scenario tools the plugin uses. All callbacks run on the game thread. */
+/** Typed calls to Scenario's REST API, the ones the plugin uses. All callbacks run on the game thread. */
 class SCENARIOCORE_API FScenarioApi
 {
 public:
@@ -175,7 +174,7 @@ public:
 	IScenarioBackend& Backend() const { return *BackendRef; }
 	TSharedRef<IScenarioBackend> BackendShared() const { return BackendRef; }
 
-	/** Free price check: model_run with dry_run. */
+	/** Free price check: the model run with dryRun. */
 	void Estimate(const FString& ModelId, const TSharedPtr<FJsonObject>& Parameters, TCallback<FScenarioEstimate> OnDone);
 	/** Paid. Sent exactly once. */
 	void Submit(const FString& ModelId, const TSharedPtr<FJsonObject>& Parameters, TCallback<FScenarioSubmitted> OnDone);
@@ -183,12 +182,11 @@ public:
 	void EstimateWorkflow(const FString& WorkflowId, const TSharedPtr<FJsonObject>& Inputs, TCallback<FScenarioEstimate> OnDone);
 	void SubmitWorkflow(const FString& WorkflowId, const TSharedPtr<FJsonObject>& Inputs, TCallback<FScenarioSubmitted> OnDone);
 
-	/** Prompt Spark price (free) and run (paid). The run returns Scenario's reply (prompts, calls and recommended_call). */
+	/** Prompt Spark price (free) and run (paid). The run returns Scenario's reply: prompts, the job, and calls (a ready run per prompt). */
 	void EstimatePromptSpark(const FString& ModelId, const FString& Prompt, const TArray<FString>& ImageIds, int32 NumResults, TCallback<FScenarioEstimate> OnDone);
 	void RunPromptSpark(const FString& ModelId, const FString& Prompt, const TArray<FString>& ImageIds, int32 NumResults, FScenarioReplyCallback OnDone);
 
 	void GetJob(const FString& JobId, TCallback<FScenarioJobInfo> OnDone);
-	void WaitJobs(const TArray<FString>& JobIds, TCallback<FScenarioWaitResult> OnDone);
 	void ListJobs(int32 Limit, TCallback<TArray<FScenarioJobInfo>> OnDone);
 	void CancelJob(const FString& JobId, FScenarioReplyCallback OnDone);
 
@@ -196,20 +194,22 @@ public:
 	/** Signed download URL; Format converts images and 3D (png, jpg, webp, glb, fbx, obj), empty keeps the original. */
 	void DownloadUrl(const FString& AssetId, const FString& Format, TCallback<FString> OnDone);
 
+	/** The model's inputs as {model_id, name, capabilities, parameters}, the shape ScenarioSchema reads. */
 	void GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone);
-	/** models_list page. Privacy "public" or "private"; Modality image, video, 3d, audio or empty. */
+	/**
+	 * One page of models. Privacy "public" or "private"; Modality image, video, 3d, audio or empty.
+	 * The API has no modality filter: rows are kept by capability, so a page may be empty and still have a next one.
+	 */
 	void ListModels(const FString& Privacy, const FString& Modality, int32 Limit, const FString& PageToken, TCallback<FScenarioModelPage> OnDone);
-	/** search target=models with URLs, used for thumbnails and text search. */
-	void SearchModels(const FString& Query, bool bPublic, int32 Limit, TCallback<TArray<FScenarioModelSummary>> OnDone);
 	void SearchAssets(const FString& Query, const FString& Kind, int32 Limit, int32 Offset, TCallback<TArray<FScenarioAssetInfo>> OnDone);
-	/** The project's assets, newest first, read from the project itself (assets_list). Kind image, 3d, audio, video or empty. */
+	/** The project's assets, newest first, read from the project itself. Kind image, 3d, audio, video or empty. */
 	void ListAssets(const FString& Kind, int32 Limit, const FString& PageToken, TCallback<FScenarioAssetPage> OnDone);
-	void Recommend(const FString& Capability, const FString& Prompt, int32 Limit, FScenarioReplyCallback OnDone);
 
+	/** Teams with their projects. An API key cannot list teams: it reads its own project and team instead. */
 	void ListTeams(TCallback<TArray<FScenarioTeam>> OnDone);
 	void ListProjects(const FString& TeamId, TCallback<TArray<FScenarioProject>> OnDone);
 
-	/** CU used (after discounts) between the two ISO dates. The project id is needed even with an API key (checked 2026-10-18). */
+	/** CU used (after discounts) between the two ISO dates, the last 31 days without them. The project id is needed even with an API key. */
 	void UsageTotal(const FString& ProjectId, const FString& StartDate, const FString& EndDate, TCallback<double> OnDone);
 
 	/** Tags filters the list ("featured" for Scenario's picks in the public catalog). */
@@ -219,13 +219,19 @@ public:
 
 	/** Multipart upload: start (creates an upload, costs no CU), then PUT parts, then complete. */
 	void UploadStart(const FString& FileName, const FString& ContentType, const FString& Kind, int64 FileSize, TCallback<FScenarioUploadTicket> OnDone);
+	/** Asks Scenario to assemble the parts, then reads the upload once: the asset id, or Timeout while it is still importing. */
 	void UploadComplete(const FString& UploadId, TCallback<FString> OnDone);
 
 	/** Finds the CU price in a dry-run reply, at the top level or one level down. */
 	static bool FindEstimate(const TSharedPtr<FJsonObject>& Value, FScenarioEstimate& Out);
 
-	/** The prompt variants of a Prompt Spark reply: prompts, else the prompts of calls, else recommended_prompt. */
+	/** The prompt variants of a Prompt Spark reply: prompts, else the prompts of calls. */
 	static TArray<FString> SparkPrompts(const TSharedPtr<FJsonObject>& Reply);
+
+	/** GET /models/{id} to the parameter list ScenarioSchema reads. */
+	static TSharedPtr<FJsonObject> SchemaFromModel(const TSharedPtr<FJsonObject>& Model);
+	/** True when a model with these capabilities produces the modality (image, video, 3d, audio); empty matches all. */
+	static bool HasModality(const TArray<FString>& Capabilities, const FString& Modality);
 
 private:
 	static TSharedPtr<FJsonObject> Args();

@@ -33,7 +33,6 @@ struct SCENARIOCORE_API FScenarioLane
 	TArray<FString> Modes;
 	TArray<FString> StarterPrompts;
 	TArray<FScenarioLaneModel> Models;
-	bool bRecommend = true;
 	bool bNeedsCapture = false;
 
 	/** Models for one mode (all when Mode is empty). */
