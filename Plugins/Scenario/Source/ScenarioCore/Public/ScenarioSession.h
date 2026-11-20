@@ -70,7 +70,8 @@ struct SCENARIOCORE_API FScenarioSessionConfig
 {
 	/** Folder for the job list, catalog cache, workspace and downloads (the project's Saved/Scenario). */
 	FString StateDir;
-	FString Endpoint;
+	/** Scenario's REST API address; empty for the default. */
+	FString ApiUrl;
 	TSharedPtr<IScenarioHttpTransport> Transport;
 	TSharedPtr<IScenarioCredentialStore> Store;
 	/** Tests inject a backend; sign-in is then the backend's business. */
@@ -229,7 +230,7 @@ private:
 	FScenarioSessionConfig Config;
 	TSharedPtr<IScenarioHttpTransport> Transport;
 	TSharedPtr<IScenarioCredentialStore> Store;
-	TSharedPtr<class FScenarioMcpClient> Client;
+	TSharedPtr<class FScenarioRestClient> Client;
 	TSharedPtr<IScenarioBackend> Backend;
 	TSharedPtr<FScenarioApi> ApiPtr;
 	TSharedPtr<FScenarioOAuth> OAuth;

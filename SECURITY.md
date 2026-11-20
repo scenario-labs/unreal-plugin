@@ -24,8 +24,8 @@ appropriate team and follows up through the same private channel.
 ## Scope
 
 This repository ships Scenario for Unreal Engine, an Unreal Editor plugin. It
-signs in to Scenario with OAuth or an API key, calls the Scenario MCP server at
-`mcp.scenario.com`, downloads generated files, imports them into the open
+signs in to Scenario with OAuth or an API key, calls Scenario's REST API at
+`api.cloud.scenario.com`, downloads generated files, imports them into the open
 project, and runs a local MCP server so agents can drive the editor. Relevant
 reports include:
 
@@ -52,7 +52,7 @@ reports include:
   and published, and what it contains.
 
 Platform vulnerabilities involving `app.scenario.com`, `api.cloud.scenario.com`
-or `mcp.scenario.com` use the same private channels above, not this
+or `clerk.scenario.com` use the same private channels above, not this
 repository's public issue tracker.
 
 ## Supported versions

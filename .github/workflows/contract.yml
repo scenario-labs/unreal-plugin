@@ -1,11 +1,11 @@
 name: contract
 
-# Weekly free check that Scenario still answers the way the plugin expects:
-# every model in Plugins/Scenario/Resources/Lanes.json loads its schema and
-# prices with a dry run, recommendations come back, and the reads the plugin
-# depends on still answer. tools/contract_check.py sends reads and dry runs
-# only and refuses paid tools itself; SCENARIO_NO_SPEND=1 is set as well, so no
-# run can spend. Separate from PR CI: it reads the test credentials, which pull
+# Weekly free check that Scenario's REST API still answers the way the plugin
+# expects: every model in Plugins/Scenario/Resources/Lanes.json loads its
+# inputs and prices with a dry run, and the reads the plugin depends on still
+# answer. tools/contract_check.py sends reads and dry runs only and refuses any
+# other request itself; SCENARIO_NO_SPEND=1 is set as well, so no run can
+# spend. Separate from PR CI: it reads the test credentials, which pull
 # requests from forks do not get (the check then skips with a warning).
 # GitHub can disable schedules after 60 days of repository inactivity.
 

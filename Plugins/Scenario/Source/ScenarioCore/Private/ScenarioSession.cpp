@@ -13,7 +13,7 @@
 #include "ScenarioHttp.h"
 #include "ScenarioJson.h"
 #include "ScenarioLanes.h"
-#include "ScenarioMcpClient.h"
+#include "ScenarioRestClient.h"
 #include "ScenarioOAuth.h"
 #include "ScenarioTransfer.h"
 
@@ -136,7 +136,7 @@ FScenarioSession::FScenarioSession(const FScenarioSessionConfig& InConfig)
 	}
 	else
 	{
-		Client = MakeShared<FScenarioMcpClient>(Transport.ToSharedRef(), Config.Endpoint.IsEmpty() ? FString(FScenarioMcpClient::DefaultEndpoint) : Config.Endpoint);
+		Client = MakeShared<FScenarioRestClient>(Transport.ToSharedRef(), Config.ApiUrl.IsEmpty() ? FString(FScenarioRestClient::DefaultApiUrl) : Config.ApiUrl);
 		Backend = Client;
 		OAuth = MakeShared<FScenarioOAuth>(Transport.ToSharedRef(), Store.ToSharedRef());
 	}
@@ -941,7 +941,7 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 				if (This.IsValid())
 				{
 					This->SparkResults.Add(LocalId, Reply.Value);
-					This->LedgerPtr->MarkSubmitted(LocalId, FScenarioMcpClient::CreatedJobId(Reply.Value), TEXT("success"), This->Now());
+					This->LedgerPtr->MarkSubmitted(LocalId, FScenarioRestClient::CreatedJobId(Reply.Value), TEXT("success"), This->Now());
 				}
 				OnDone(FResult::Ok(LocalId));
 			});
