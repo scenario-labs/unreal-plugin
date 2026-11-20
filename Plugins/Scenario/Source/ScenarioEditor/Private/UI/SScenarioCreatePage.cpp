@@ -527,46 +527,10 @@ TSharedRef<SWidget> SScenarioCreatePage::BuildModelMenu()
 	}
 	Menu.EndSection();
 	Menu.BeginSection(NAME_None, LOCTEXT("More", "More"));
-	Menu.AddMenuEntry(LOCTEXT("Suggest", "Suggest for my prompt"), LOCTEXT("SuggestTip", "Asks Scenario which models fit this prompt best. Free."),
-		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Star"), FUIAction(FExecuteAction::CreateSP(this, &SScenarioCreatePage::ShowSuggestions)));
 	Menu.AddMenuEntry(LOCTEXT("Browse", "Browse all models..."), LOCTEXT("BrowseTip", "Every Scenario model and your team's trained ones (Ctrl+M)."),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"), FUIAction(FExecuteAction::CreateSP(this, &SScenarioCreatePage::OpenPicker)));
 	Menu.EndSection();
 	return Menu.MakeWidget();
-}
-
-void SScenarioCreatePage::ShowSuggestions()
-{
-	const TSharedRef<FScenarioCreateModel> M = Model.ToSharedRef();
-	const TWeakPtr<SWidget> WeakCard = ModelCard;
-	M->Suggest([WeakCard, M](const TArray<TPair<FString, FString>>& Models, const FString& Error)
-	{
-		const TSharedPtr<SWidget> Anchor = WeakCard.Pin();
-		if (!Anchor.IsValid())
-		{
-			return;
-		}
-		FMenuBuilder Menu(true, nullptr);
-		Menu.BeginSection(NAME_None, LOCTEXT("Suggested", "Suggested for your prompt"));
-		if (Models.Num() == 0)
-		{
-			Menu.AddMenuEntry(Error.IsEmpty() ? LOCTEXT("NoSuggestion", "No suggestion for this prompt") : FText::FromString(Error), FText::GetEmpty(), FSlateIcon(),
-				FUIAction(FExecuteAction(), FCanExecuteAction::CreateLambda([]() { return false; })));
-		}
-		for (const TPair<FString, FString>& Entry : Models)
-		{
-			const FString Id = Entry.Key;
-			const FString Name = Entry.Value;
-			Menu.AddMenuEntry(FText::FromString(Name), FText::GetEmpty(), FSlateIcon(),
-				FUIAction(FExecuteAction::CreateLambda([M, Id, Name]() { M->SetModel(Id, Name); }),
-					FCanExecuteAction(), FIsActionChecked::CreateLambda([M, Id]() { return M->GetModelId() == Id; })),
-				NAME_None, EUserInterfaceActionType::RadioButton);
-		}
-		Menu.EndSection();
-		const FGeometry Geometry = Anchor->GetCachedGeometry();
-		const FVector2D Where = Geometry.GetAbsolutePositionAtCoordinates(FVector2D(1.0f, 1.0f)) - FVector2D(220.0f, 0.0f);
-		FSlateApplication::Get().PushMenu(Anchor.ToSharedRef(), FWidgetPath(), Menu.MakeWidget(), Where, FPopupTransitionEffect(FPopupTransitionEffect::ComboButton));
-	});
 }
 
 TSharedRef<SWidget> SScenarioCreatePage::BuildRecent()

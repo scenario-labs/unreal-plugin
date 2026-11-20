@@ -588,43 +588,6 @@ void FScenarioActions::RegisterScenarioActions()
 			});
 		}));
 
-	// recommend_models
-	Register(Make(TEXT("recommend_models"), EScenarioActionKind::Read,
-		TEXT("Scenario's model recommendation for a prompt and capability (txt2img, img23d, txt2audio...), or for a plugin lane."),
-		Object({
-			{ TEXT("prompt"), TEXT("string") },
-			{ TEXT("capability"), TEXT("string") },
-			{ TEXT("lane"), TEXT("string"), FString(), FString(), Lanes },
-			{ TEXT("limit"), TEXT("integer") },
-		}, { TEXT("prompt") }),
-		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
-		{
-			FScenarioActionResult Fail;
-			UScenarioSubsystem* S = Subsystem(Fail, true);
-			if (!S)
-			{
-				Done(Fail);
-				return;
-			}
-			FString Capability = Str(Args, TEXT("capability"));
-			if (Capability.IsEmpty())
-			{
-				const FScenarioLane* Lane = FScenarioLanes::Get().Find(Str(Args, TEXT("lane"), TEXT("image")));
-				Capability = Lane ? Lane->Capability : TEXT("txt2img");
-			}
-			S->Session().Api().Recommend(Capability, Str(Args, TEXT("prompt")), Int(Args, TEXT("limit"), 5, 1, 10), [Done](const FScenarioReply& Reply)
-			{
-				if (!Reply.bOk)
-				{
-					Done(FScenarioActionResult::Fail(Reply.Error));
-					return;
-				}
-				TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-				Json->SetObjectField(TEXT("recommendation"), Reply.Value.IsValid() ? Reply.Value : MakeShared<FJsonObject>());
-				Done(FScenarioActionResult::Ok(Json));
-			});
-		}));
-
 	// estimate_cost
 	Register(Make(TEXT("estimate_cost"), EScenarioActionKind::Read,
 		TEXT("Free price check of a model run (dry run). Returns quote_id and cu_cost_exact; generate needs both. Quotes are single use and last 120 s."),

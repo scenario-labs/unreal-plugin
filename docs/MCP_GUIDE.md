@@ -83,7 +83,6 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 |---|---|
 | `list_models` | Models for a lane (`image`, `video`, `3d`, `material`, `audio`, `environment`, `render`); the lane's picks first |
 | `model_schema` | Parameters, options, defaults, which change the price, and the Unreal-ready prompt for 3D |
-| `recommend_models` | Asks Scenario for the best models for a request |
 | `estimate_cost` | Free price check; returns the quote |
 | `generate` | SPENDS: runs the quoted request; returns `job_id` |
 | `job_status`, `wait_for_job` | State and files of a job; `wait_for_job` returns `still_running` after 45 seconds by default, call it again. Both also take an `approval_id` (a spend waiting for you, see section 8) |
@@ -173,7 +172,7 @@ Unreal 5.8 ships an Experimental Model Context Protocol plugin: an MCP server in
 
 **What the agent sees**
 
-- Toolset `ScenarioToolsets.ScenarioToolset`, 19 tools: `GetStatus`, `ListModels`, `GetModelSchema`, `RecommendModels`, `EstimateCost`, `Generate`, `ListWorkflows`, `GetWorkflowSchema`, `EstimateWorkflow`, `RunWorkflow`, `GetJobStatus`, `WaitForJob`, `ListJobs`, `CancelJob`, `CheckUnknownJob`, `SearchAssets`, `PrepareResult`, `ApplyResult`, `SaveChanges`. They run the same actions as the tools of the same purpose on the Scenario MCP server.
+- Toolset `ScenarioToolsets.ScenarioToolset`, 18 tools: `GetStatus`, `ListModels`, `GetModelSchema`, `EstimateCost`, `Generate`, `ListWorkflows`, `GetWorkflowSchema`, `EstimateWorkflow`, `RunWorkflow`, `GetJobStatus`, `WaitForJob`, `ListJobs`, `CancelJob`, `CheckUnknownJob`, `SearchAssets`, `PrepareResult`, `ApplyResult`, `SaveChanges`. They run the same actions as the tools of the same purpose on the Scenario MCP server.
 - Agent skill `/Script/ScenarioToolsets.ScenarioAgentSkill`, listed by Epic's `ToolsetRegistry.AgentSkillToolset` (`ListSkills`, `GetSkills`). It carries the live state (signed in, project, **Change this project**, spending switch, lanes) and the rules the tool descriptions cannot: price first, never repeat a paid call, apply then save, and which work belongs to Epic's toolsets.
 - Optional parameters have a word as default (`all`, `auto`, `default`, `*`, `selection`, `none`) because Epic's registry fills a left-out parameter only from its default. `Parameters` and `Inputs` are JSON object text, for example `{"prompt": "a stone well"}`.
 - Not in the toolset: Python, removals, kit tools, uploads, Prompt Spark, and level reads and screenshots (Epic's toolsets cover the level).

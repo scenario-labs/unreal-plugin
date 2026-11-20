@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ScenarioMcpClient.h"
+#include "ScenarioRestClient.h"
 #include "ScenarioTypes.h"
 
 class IScenarioCredentialStore;

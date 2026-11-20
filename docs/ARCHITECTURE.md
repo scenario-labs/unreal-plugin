@@ -15,9 +15,9 @@ How Scenario for Unreal Engine is built, for contributors and reviewers. The cod
    |  import (Interchange), placement (one transaction), provenance, Slate UI
    v
  ScenarioCore: session, quotes, job list, transfers, OAuth, credential store
-   |  HTTPS, JSON-RPC 2.0, SSE or JSON replies
+   |  HTTPS, JSON
    v
- Hosted Scenario MCP (mcp.scenario.com)
+ Scenario REST API (api.cloud.scenario.com)
 ```
 
 Four editor modules and one small runtime module. Only `ScenarioGameplay` is compiled into a packaged game.
@@ -42,11 +42,12 @@ The kit turns Scenario results that are already imported into a walkable level, 
 
 ## Backend
 
-The plugin calls the hosted Scenario MCP (`https://mcp.scenario.com/mcp?toolsets=full`) over JSON-RPC 2.0, the same backend as the other Scenario plugins. `IScenarioBackend` keeps the transport behind an interface so a REST client could replace it.
+The plugin calls Scenario's REST API (`https://api.cloud.scenario.com/v1`) with JSON requests and replies, the same API as the other Scenario plugins. `FScenarioRestClient` sends each request behind the `IScenarioBackend` interface, and `FScenarioApi` turns the plugin's calls into typed results.
 
-- Replies come as SSE or plain JSON; the parser keeps the message matching the request id.
-- Errors are sorted into kinds (`Auth`, `Forbidden`, `Quota`, `Moderated`, `RateLimit`, `NotFound`, `Invalid`, `Transport`, `Timeout`, `ServerError`, `Protocol`, ...) with one message each. Messages are cleaned of signed URL parameters and authorization headers before they reach a log, a toast or an agent.
-- Reads and dry runs are retried with backoff. Any tool not on the read allow-list is treated as able to spend and is never retried.
+- A signed-in person's requests name the team and project in the query (`teamId`, `projectId`); an API key is already scoped to its project. Listings name less: teams nothing, projects the team only. An API key cannot list teams, so it reads its own project.
+- Errors are sorted into kinds (`Auth`, `Forbidden`, `Quota`, `Moderated`, `RateLimit`, `NotFound`, `Invalid`, `Transport`, `Timeout`, `ServerError`, `Protocol`, ...) with one message each, built from the API's `reason`. Messages are cleaned of signed URL parameters and authorization headers before they reach a log, a toast or an agent.
+- Each request says whether it reads, prices, can spend or cancels. Reads and dry runs are retried with backoff; anything else is sent once. Credentials the API's gateway refuses (401, or 403 with `x-amzn-errortype: AccessDeniedException`) never reached a handler, so the token is renewed and the request resent once, paid or not.
+- The API has no long-poll: jobs are read one by one at the poll interval.
 - Creative Unit amounts stay exact decimal strings from parsing to display; no floating-point rounding on the money path.
 
 ## Money contract
@@ -115,7 +116,7 @@ Streamable HTTP on `127.0.0.1`, port 9877 or the next free one of ten. Requests 
 
 Unreal 5.8 adds Epic's Toolset Registry (Experimental): classes derived from `UToolsetDefinition` whose static `UFUNCTION(meta=(AICallable))` functions become tools, with schemas and descriptions taken from the reflection data and doc comments. Epic's Model Context Protocol plugin serves the registry through three tools: `list_toolsets`, `describe_toolset` and `call_tool`.
 
-- `ScenarioToolsets` holds `UScenarioToolset` (19 tools) and `UScenarioAgentSkill`. Each tool adapts one action of the registry above; no logic is duplicated. Results are `UToolCallAsyncResult` objects completed when the action answers, so long actions (`WaitForJob`) do not block the game thread.
+- `ScenarioToolsets` holds `UScenarioToolset` (18 tools) and `UScenarioAgentSkill`. Each tool adapts one action of the registry above; no logic is duplicated. Results are `UToolCallAsyncResult` objects completed when the action answers, so long actions (`WaitForJob`) do not block the game thread.
 - Optional: `Scenario.uplugin` lists `ToolsetRegistry` as an optional plugin. `ScenarioToolsets.Build.cs` adds the dependency and `WITH_SCENARIO_TOOLSETS=1` only when the engine has the registry folder; the reflected headers are guarded by an engine version check that the header tool understands. On 5.6 and 5.7 the module compiles to nothing.
 - Spending: the registry has no caller identity and Epic's server no token, so the toolset calls with `FScenarioCaller::bSpendWaitsForApproval`. `FScenarioActions::Call` then checks the quote and `approved_cost`, keeps an approval keyed by quote, answers `pending_approval` with an `approval_id` at once and asks the person with a toast. Approve runs the action once; Decline, a timeout or the quote's expiry sends nothing. `job_status` and `wait_for_job` accept the `approval_id`. The session's money rules still apply underneath.
 - Optional string parameters default to a word (`all`, `auto`, `default`, `*`, `selection`, `none`): the registry fills a left-out parameter only from its default, and treats an empty default as none.
@@ -126,11 +127,11 @@ Measured on Unreal 5.8.3 with the Scenario plugin and Epic's Model Context Proto
 
 | What | Bytes | About tokens |
 |---|---|---|
-| Scenario MCP server, `tools/list` (48 tools) | 29,425 | 7,350 |
+| Scenario MCP server, `tools/list` (47 tools) | 29,175 | 7,290 |
 | Scenario MCP server, `tools/list` with **Agent tool search** (4 tools) | 1,456 | 360 |
 | Epic's server, `tools/list` (3 meta tools) | 1,719 | 430 |
 | Epic's server, `list_toolsets` | 13,366 | 3,340 |
-| Epic's server, `describe_toolset` for the Scenario toolset (19 tools) | about 11,600 | 2,900 |
+| Epic's server, `describe_toolset` for the Scenario toolset (18 tools) | about 11,600 | 2,900 |
 
 The full list is above 6,000 tokens, so the server has an opt-in tool search mode (`bAgentToolSearch`, off by default): `tools/list` returns `scenario_status`, `find_tools`, `describe_tools` and `call_tool`, and every tool stays callable by name. It is off by default because clients that already defer tool definitions gain nothing from it and lose the per-tool annotations in the list.
 
