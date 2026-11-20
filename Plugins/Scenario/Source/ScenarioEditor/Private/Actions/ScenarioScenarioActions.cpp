@@ -278,6 +278,34 @@ namespace
 		return Json;
 	}
 
+	/** The first Wanted assets of the project's asset list, newest first, read page after page (at most 10). */
+	void ListNewest(const TWeakPtr<FScenarioSession>& WeakSession, const FString& Kind, int32 Wanted, const FString& PageToken, TArray<FScenarioAssetInfo> Rows, int32 Pages,
+		TFunction<void(const TScenarioResult<TArray<FScenarioAssetInfo>>&)> OnDone)
+	{
+		const TSharedPtr<FScenarioSession> Session = WeakSession.Pin();
+		if (!Session.IsValid())
+		{
+			OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Fail(EScenarioErrorKind::Local, TEXT("The Scenario session ended.")));
+			return;
+		}
+		Session->Api().ListAssets(Kind, Wanted - Rows.Num(), PageToken,
+			[WeakSession, Kind, Wanted, Rows = MoveTemp(Rows), Pages, OnDone = MoveTemp(OnDone)](const TScenarioResult<FScenarioAssetPage>& Result) mutable
+		{
+			if (!Result.bOk)
+			{
+				OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Fail(Result.Error));
+				return;
+			}
+			Rows.Append(Result.Value.Assets);
+			if (Rows.Num() < Wanted && !Result.Value.NextPageToken.IsEmpty() && Pages + 1 < 10)
+			{
+				ListNewest(WeakSession, Kind, Wanted, Result.Value.NextPageToken, MoveTemp(Rows), Pages + 1, MoveTemp(OnDone));
+				return;
+			}
+			OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Ok(MoveTemp(Rows)));
+		});
+	}
+
 	void SearchLibrary(const TSharedPtr<FJsonObject>& Args, const FString& Query, FScenarioActionDone Done)
 	{
 		FScenarioActionResult Fail;
@@ -290,7 +318,7 @@ namespace
 		TSharedRef<FScenarioSession> Session = S->SessionShared();
 		const int32 Limit = Int(Args, TEXT("limit"), 20, 1, 50);
 		const int32 Offset = Int(Args, TEXT("offset"), 0, 0, 10000);
-		Session->Api().SearchAssets(Query, Str(Args, TEXT("kind")), Limit, Offset, [Session, Limit, Offset, Done](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result)
+		auto OnAssets = [Session, Limit, Offset, Done](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result, int32 Skip)
 		{
 			if (!Result.bOk)
 			{
@@ -298,9 +326,9 @@ namespace
 				return;
 			}
 			TArray<TSharedPtr<FJsonValue>> Rows;
-			for (const FScenarioAssetInfo& Asset : Result.Value)
+			for (int32 Index = Skip; Index < Result.Value.Num() && Rows.Num() < Limit; ++Index)
 			{
-				Rows.Add(MakeShared<FJsonValueObject>(AssetRow(*Session, Asset)));
+				Rows.Add(MakeShared<FJsonValueObject>(AssetRow(*Session, Result.Value[Index])));
 			}
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetArrayField(TEXT("assets"), Rows);
@@ -310,7 +338,15 @@ namespace
 			}
 			Json->SetStringField(TEXT("note"), TEXT("Asset ids go straight into file fields; nothing is uploaded again."));
 			Done(FScenarioActionResult::Ok(Json));
-		});
+		};
+		const FString Kind = Str(Args, TEXT("kind"));
+		if (Query.IsEmpty())
+		{
+			// Search ranks the whole team's index before it narrows to the project: browsing reads the project's list.
+			ListNewest(Session, Kind, Offset + Limit, FString(), {}, 0, [OnAssets, Offset](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result) { OnAssets(Result, Offset); });
+			return;
+		}
+		Session->Api().SearchAssets(Query, Kind, Limit, Offset, [OnAssets](const TScenarioResult<TArray<FScenarioAssetInfo>>& Result) { OnAssets(Result, 0); });
 	}
 
 	/** Model form fields, then the run request, for estimate_cost. */

@@ -467,7 +467,7 @@ bool FScenarioApiListAssetsTest::RunTest(const FString& Parameters)
 {
 	TSharedRef<FScenarioFakeBackend> Backend = MakeShared<FScenarioFakeBackend>();
 	Backend->OnJson(TEXT("GET /assets"), TEXT("{\"assets\":[")
-		TEXT("{\"id\":\"asset_mesh\",\"kind\":\"3d\",\"metadata\":{\"modelId\":\"model_x\",\"prompt\":\"\"},\"url\":\"https://cdn.example.test/m\"},")
+		TEXT("{\"id\":\"asset_mesh\",\"kind\":\"3d\",\"metadata\":{\"modelId\":\"model_x\",\"prompt\":\"asset_prompt_text\"},\"url\":\"https://cdn.example.test/m\"},")
 		TEXT("{\"id\":\"asset_image\",\"kind\":\"image\",\"metadata\":{\"prompt\":\"a mossy arch\",\"type\":\"inference-txt2img\"},\"properties\":{\"size\":10,\"width\":1024,\"height\":768}}")
 		TEXT("],\"nextPaginationToken\":\"next_1\"}"));
 	Backend->OnJson(TEXT("POST /search/assets"), TEXT("{\"hits\":[{\"id\":\"asset_found\",\"mimeType\":\"model/gltf-binary\"}],\"limit\":20,\"offset\":0}"));
@@ -484,6 +484,7 @@ bool FScenarioApiListAssetsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("newest first"), Sent.QueryValue(TEXT("sortDirection")), FString(TEXT("desc")));
 	TestEqual(TEXT("next token"), Page.Value.NextPageToken, FString(TEXT("next_1")));
 	TestEqual(TEXT("model id from metadata"), Page.Value.Assets[0].ModelId, FString(TEXT("model_x")));
+	TestTrue(TEXT("a prompt kept as a text asset is not shown"), Page.Value.Assets[0].Prompt.IsEmpty());
 	TestEqual(TEXT("prompt from metadata"), Page.Value.Assets[1].Prompt, FString(TEXT("a mossy arch")));
 	TestEqual(TEXT("width from properties"), Page.Value.Assets[1].Width, 1024);
 

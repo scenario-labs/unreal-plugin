@@ -172,11 +172,14 @@ FScenarioAssetInfo FScenarioAssetInfo::FromJson(const TSharedPtr<FJsonObject>& O
 	{
 		Asset.ModelId = ScenarioJson::GetString(Object, TEXT("modelId"));
 	}
-	Asset.Prompt = ScenarioJson::GetString(Metadata, TEXT("prompt"));
-	if (Asset.Prompt.IsEmpty() && !ScenarioJson::GetString(Object, TEXT("prompt")).StartsWith(TEXT("asset_")))
+	for (const FString& Prompt : { ScenarioJson::GetString(Metadata, TEXT("prompt")), ScenarioJson::GetString(Object, TEXT("prompt")) })
 	{
 		// A prompt kept as a text asset comes back as its asset id: not a title.
-		Asset.Prompt = ScenarioJson::GetString(Object, TEXT("prompt"));
+		if (!Prompt.IsEmpty() && !Prompt.StartsWith(TEXT("asset_")))
+		{
+			Asset.Prompt = Prompt;
+			break;
+		}
 	}
 	if (Asset.Kind.IsEmpty())
 	{
