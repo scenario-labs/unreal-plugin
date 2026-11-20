@@ -110,24 +110,25 @@ FScenarioJobInfo FScenarioJobInfo::FromJson(const TSharedPtr<FJsonObject>& Objec
 		Job.AssetIds = ScenarioJson::GetStringArray(Object, TEXT("asset_ids"));
 	}
 	const TSharedPtr<FJsonObject> Billing = ScenarioJson::GetObject(Object, TEXT("billing"));
-	const TSharedPtr<FJsonObject> Details = ScenarioJson::GetObject(Billing, TEXT("cuCostDetails"));
-	if (Details.IsValid() && Details->Values.Num() > 0)
-	{
-		// cuCost is the main action alone; the details list every charge, add-ons (quality gate, IP detection) included.
-		double Total = 0.0;
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Details->Values)
-		{
-			Total += Pair.Value.IsValid() && Pair.Value->Type == EJson::Number ? Pair.Value->AsNumber() : 0.0;
-		}
-		Job.ChargedCU = Total;
-	}
-	else if (ScenarioJson::HasNumber(Object, TEXT("cuCost")))
+	if (ScenarioJson::HasNumber(Object, TEXT("cuCost")))
 	{
 		Job.ChargedCU = ScenarioJson::GetNumber(Object, TEXT("cuCost"));
 	}
 	else if (ScenarioJson::HasNumber(Billing, TEXT("cuCost")))
 	{
 		Job.ChargedCU = ScenarioJson::GetNumber(Billing, TEXT("cuCost"));
+	}
+	// cuCost is the main action alone; cuCostDetails lists only the add-ons charged beside it (quality gate...).
+	const TSharedPtr<FJsonObject> Details = ScenarioJson::GetObject(Billing, TEXT("cuCostDetails"));
+	if (Details.IsValid())
+	{
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Details->Values)
+		{
+			if (Pair.Value.IsValid() && Pair.Value->Type == EJson::Number)
+			{
+				Job.ChargedCU = FMath::Max(Job.ChargedCU, 0.0) + Pair.Value->AsNumber();
+			}
+		}
 	}
 	Job.CreatedAt = ScenarioParseIsoTime(FirstString(Object, { TEXT("createdAt"), TEXT("created_at") }));
 	for (const TSharedPtr<FJsonObject>& Source : { Object, Metadata })
@@ -659,7 +660,14 @@ void FScenarioApi::GetSchema(const FString& ModelId, FScenarioReplyCallback OnDo
 			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Protocol, TEXT("Scenario's reply had no 'model'.")));
 			return;
 		}
-		OnDone(FScenarioReply::Ok(SchemaFromModel(Model)));
+		const TSharedPtr<FJsonObject> Schema = SchemaFromModel(Model);
+		if (ScenarioJson::GetArray(Schema, TEXT("parameters")).Num() == 0)
+		{
+			// LoRAs and compositions list no inputs: they run through their base model, which the plugin does not wire yet.
+			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("This model lists no inputs of its own (a LoRA or a composition, for example), so the plugin cannot run it yet.")));
+			return;
+		}
+		OnDone(FScenarioReply::Ok(Schema));
 	});
 }
 

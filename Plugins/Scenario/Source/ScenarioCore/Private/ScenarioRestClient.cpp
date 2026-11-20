@@ -191,6 +191,15 @@ void FScenarioRestClient::Send(const FScenarioRequest& Request, FScenarioReplyCa
 		OnDone(Reply);
 		return;
 	}
+	const FString DryRun = Request.QueryValue(TEXT("dryRun"));
+	if (Request.Call == EScenarioCall::DryRun && DryRun != TEXT("true") && DryRun != TEXT("api"))
+	{
+		// Without dryRun the API runs the operation: a price check that lacks it would spend.
+		FScenarioReply Reply = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("This price check is not marked as a dry run, so nothing was sent."));
+		Reply.Error.bNotSent = true;
+		OnDone(Reply);
+		return;
+	}
 	Attempt(Request, 0, Request.IsRetryable() ? ReadAttempts : 1, MoveTemp(OnDone));
 }
 
@@ -264,8 +273,9 @@ void FScenarioRestClient::SendOnce(const FScenarioRequest& Request, bool bAllowR
 	}
 
 	TWeakPtr<FScenarioRestClient> WeakThis = AsShared();
-	Transport->Send(Request.Verb, UrlFor(Request), Headers, Body, FMath::Clamp(Request.TimeoutSeconds, 1.0f, 180.0f),
-		[WeakThis, Request, bAllowRefresh, OnDone](const FScenarioHttpResponse& Response)
+	const FString Url = UrlFor(Request);
+	Transport->Send(Request.Verb, Url, Headers, Body, FMath::Clamp(Request.TimeoutSeconds, 1.0f, 180.0f),
+		[WeakThis, Request, Url, bAllowRefresh, OnDone](const FScenarioHttpResponse& Response)
 	{
 		const TSharedPtr<FScenarioRestClient> This = WeakThis.Pin();
 		if (!This.IsValid())
@@ -274,11 +284,19 @@ void FScenarioRestClient::SendOnce(const FScenarioRequest& Request, bool bAllowR
 		}
 		if (bAllowRefresh && IsGatewayRefusal(Response) && This->Auth.IsValid())
 		{
-			This->Auth->Refresh([WeakThis, Request, Response, OnDone](bool bRefreshed)
+			This->Auth->Refresh([WeakThis, Request, Url, Response, OnDone](bool bRefreshed)
 			{
 				const TSharedPtr<FScenarioRestClient> Self = WeakThis.Pin();
 				if (!Self.IsValid())
 				{
+					return;
+				}
+				if (bRefreshed && Self->UrlFor(Request) != Url)
+				{
+					// The team or project changed during the renewal: the request was priced and approved for the old one.
+					FScenarioReply Moved = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The team or project changed while the session was renewed, so nothing was sent."));
+					Moved.Error.bNotSent = true;
+					OnDone(Moved);
 					return;
 				}
 				if (bRefreshed)
@@ -286,12 +304,23 @@ void FScenarioRestClient::SendOnce(const FScenarioRequest& Request, bool bAllowR
 					Self->SendOnce(Request, false, OnDone);
 					return;
 				}
-				OnDone(ReadResponse(Response, Request.IsSpend()));
+				OnDone(ReadReply(Request, Response));
 			});
 			return;
 		}
-		OnDone(ReadResponse(Response, Request.IsSpend()));
+		OnDone(ReadReply(Request, Response));
 	});
+}
+
+FScenarioReply FScenarioRestClient::ReadReply(const FScenarioRequest& Request, const FScenarioHttpResponse& Response)
+{
+	FScenarioReply Reply = ReadResponse(Response, Request.IsSpend());
+	// A price comes only from a reply the API marks as a dry run (HTTP 269). A reply with a job goes on to the alarm.
+	if (Request.Call == EScenarioCall::DryRun && Reply.bOk && Response.Status != 269 && CreatedJobId(Reply.Value).IsEmpty())
+	{
+		return FScenarioReply::Fail(EScenarioErrorKind::Protocol, TEXT("Scenario did not answer this price check as a dry run, so no price was taken."));
+	}
+	return Reply;
 }
 
 FScenarioReply FScenarioRestClient::ReadResponse(const FScenarioHttpResponse& Response, bool bPaid)

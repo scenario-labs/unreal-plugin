@@ -278,7 +278,7 @@ namespace
 		return Json;
 	}
 
-	/** The first Wanted assets of the project's asset list, newest first, read page after page (at most 10). */
+	/** The first Wanted assets of the project's asset list, newest first, read page after page (100 a page, two spare). */
 	void ListNewest(const TWeakPtr<FScenarioSession>& WeakSession, const FString& Kind, int32 Wanted, const FString& PageToken, TArray<FScenarioAssetInfo> Rows, int32 Pages,
 		TFunction<void(const TScenarioResult<TArray<FScenarioAssetInfo>>&)> OnDone)
 	{
@@ -297,8 +297,15 @@ namespace
 				return;
 			}
 			Rows.Append(Result.Value.Assets);
-			if (Rows.Num() < Wanted && !Result.Value.NextPageToken.IsEmpty() && Pages + 1 < 10)
+			if (Rows.Num() < Wanted && !Result.Value.NextPageToken.IsEmpty())
 			{
+				// Pages can come back short or empty with a token: stop past the pages Wanted needs, and say so.
+				if (Pages + 1 >= Wanted / 100 + 2)
+				{
+					OnDone(TScenarioResult<TArray<FScenarioAssetInfo>>::Fail(EScenarioErrorKind::Local,
+						FString::Printf(TEXT("The asset list stopped after %d pages, short of row %d. Filter by kind or use search_assets."), Pages + 1, Wanted)));
+					return;
+				}
 				ListNewest(WeakSession, Kind, Wanted, Result.Value.NextPageToken, MoveTemp(Rows), Pages + 1, MoveTemp(OnDone));
 				return;
 			}

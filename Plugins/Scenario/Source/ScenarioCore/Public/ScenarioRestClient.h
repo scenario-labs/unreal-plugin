@@ -155,6 +155,8 @@ public:
 	static bool IsGatewayRefusal(const FScenarioHttpResponse& Response);
 	/** An HTTP answer to a reply or an error, as a paid or free request sees it. */
 	static FScenarioReply ReadResponse(const FScenarioHttpResponse& Response, bool bPaid);
+	/** ReadResponse for this request; a price check's price counts only with HTTP 269. */
+	static FScenarioReply ReadReply(const FScenarioRequest& Request, const FScenarioHttpResponse& Response);
 
 private:
 	void Attempt(const FScenarioRequest& Request, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone);

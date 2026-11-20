@@ -214,6 +214,10 @@ def main():
                         row["state"] = "ALARM"
                         row["note"] = "dry run returned a job " + job_id_in(estimate)
                         failures.append(False)
+                    elif status != 269:
+                        row["state"] = "not-269"
+                        row["note"] = f"dry run answered HTTP {status}; the plugin takes a price only from 269"
+                        failures.append(False)
                     elif "creativeUnitsCost" in estimate:
                         row["state"] = "priced"
                         row["cu"] = estimate["creativeUnitsCost"]
@@ -232,8 +236,10 @@ def main():
     def spark():
         body = {"mode": "contextual-v2", "modelId": "model_openai-gpt-image-2-5-flare", "prompt": "a treasure chest", "numResults": 1}
         status, reply = api.request("POST", "/generate/prompt", {"dryRun": "true"}, body)
-        if job_id_in(reply):
-            raise RuntimeError("ALARM: a dry run returned a job")
+        # A job or a reply without the dry-run status (269) fails the run, as the plugin refuses both.
+        if job_id_in(reply) or status != 269:
+            failures.append(False)
+            raise RuntimeError("ALARM: a dry run returned a job" if job_id_in(reply) else f"dry run answered HTTP {status}, not 269")
         return {"status": status, "creativeUnitsCost": reply.get("creativeUnitsCost")}
 
     check(report, "prompt_spark_dry_run", spark)

@@ -30,11 +30,17 @@ namespace ScenarioRestTests
 			{
 				Token = TEXT("fresh-token");
 			}
+			if (DuringRefresh)
+			{
+				DuringRefresh();
+			}
 			OnDone(bRefreshWorks);
 		}
 		bool bWorkspace = false;
 		bool bRefreshWorks = true;
 		int32 Refreshes = 0;
+		/** Runs while the token is renewed, before the request is resent. */
+		TFunction<void()> DuringRefresh;
 		FString Token = TEXT("old-token");
 	};
 
@@ -194,6 +200,12 @@ bool FScenarioRestReadRetryTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a price check is a read and is retried"), Priced.bOk);
 	TestEqual(TEXT("269 carries the price"), ScenarioJson::GetNumber(Priced.Value, TEXT("creativeUnitsCost")), 11.0);
 	TestEqual(TEXT("two price attempts"), Prices, 2);
+
+	FRig Plain;
+	Plain.Transport->Responder = [](const FScenarioFakeRequest&) { return Status(200, TEXT("{\"creativeUnitsCost\":11}")); };
+	const FScenarioReply NotDry = Plain.Send(Price);
+	TestEqual(TEXT("a price without 269 is not taken"), NotDry.Error.Kind, EScenarioErrorKind::Protocol);
+	TestEqual(TEXT("and not retried"), Plain.Transport->Requests.Num(), 1);
 	return true;
 }
 
@@ -204,7 +216,7 @@ bool FScenarioRestEstimateAlarmTest::RunTest(const FString& Parameters)
 	Rig.Transport->Enqueue(Status(200, TEXT("{\"job\":{\"jobId\":\"job_surprise\",\"status\":\"queued\"}}")));
 	FScenarioRequest Price = FRig::Paid();
 	Price.Call = EScenarioCall::DryRun;
-	const FScenarioReply Reply = Rig.Send(Price);
+	const FScenarioReply Reply = Rig.Send(Price.Param(TEXT("dryRun"), TEXT("true")));
 	TestFalse(TEXT("price check with a job fails"), Reply.bOk);
 	TestEqual(TEXT("alarm kind"), Reply.Error.Kind, EScenarioErrorKind::EstimateJob);
 	TestEqual(TEXT("job id surfaced"), Reply.Error.JobId, FString(TEXT("job_surprise")));
@@ -248,6 +260,21 @@ bool FScenarioRestRefreshTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("forbidden"), Refused.Error.Kind, EScenarioErrorKind::Forbidden);
 	TestEqual(TEXT("no refresh for a real refusal"), Forbidden.Auth->Refreshes, 0);
 	TestTrue(TEXT("the reason reaches the message"), Refused.Error.Message.Contains(TEXT("Not allowed in this project")));
+
+	// The workspace changes while the token is renewed: the paid call is not resent to the new project.
+	FRig Moved(true);
+	Moved.Client->SetWorkspace(TEXT("team_1"), TEXT("proj_1"));
+	TSharedRef<FScenarioRestClient> MovedClient = Moved.Client;
+	Moved.Auth->DuringRefresh = [MovedClient]() { MovedClient->SetWorkspace(TEXT("team_1"), TEXT("proj_2")); };
+	Moved.Transport->Responder = [Denied](const FScenarioFakeRequest& Request)
+	{
+		return Request.Headers.FindRef(TEXT("Authorization")) == TEXT("Bearer fresh-token")
+			? Status(200, TEXT("{\"job\":{\"jobId\":\"job_3\",\"status\":\"queued\"}}"))
+			: Status(403, TEXT("{}"), Denied);
+	};
+	const FScenarioReply Stopped = Moved.Send(FRig::Paid());
+	TestTrue(TEXT("not resent after a workspace change"), !Stopped.bOk && Stopped.Error.bNotSent);
+	TestEqual(TEXT("only the refused request went out"), Moved.Transport->Requests.Num(), 1);
 	return true;
 }
 
@@ -256,13 +283,19 @@ bool FScenarioRestNoSpendTest::RunTest(const FString& Parameters)
 {
 	FRig Rig;
 	Rig.Client->bSpendingDisabled = true;
-	Rig.Transport->Responder = [](const FScenarioFakeRequest&) { return Status(200, TEXT("{\"creativeUnitsCost\":3}")); };
+	Rig.Transport->Responder = [](const FScenarioFakeRequest& Request)
+	{
+		return Request.Path() == TEXT("/v1/jobs/job_1/action") ? Status(200) : Status(269, TEXT("{\"creativeUnitsCost\":3}"));
+	};
 	const FScenarioReply Paid = Rig.Send(FRig::Paid());
 	TestTrue(TEXT("paid call refused locally"), !Paid.bOk && Paid.Error.bNotSent);
 	TestEqual(TEXT("nothing sent for the paid call"), Rig.Transport->Requests.Num(), 0);
 	FScenarioRequest Price = FRig::Paid();
 	Price.Call = EScenarioCall::DryRun;
-	TestTrue(TEXT("price checks still work"), Rig.Send(Price).bOk);
+	const FScenarioReply Unmarked = Rig.Send(Price);
+	TestTrue(TEXT("a price check without dryRun is refused"), !Unmarked.bOk && Unmarked.Error.bNotSent);
+	TestEqual(TEXT("and nothing was sent"), Rig.Transport->Requests.Num(), 0);
+	TestTrue(TEXT("price checks still work"), Rig.Send(Price.Param(TEXT("dryRun"), TEXT("true"))).bOk);
 	TestTrue(TEXT("cancel still works"), Rig.Send(FScenarioRequest::Post(TEXT("/jobs/job_1/action"), nullptr, EScenarioCall::Cancel)).bOk);
 	TestFalse(TEXT("uploads refused"), Rig.Send(FScenarioRequest::Post(TEXT("/uploads"), nullptr, EScenarioCall::Paid)).bOk);
 	TestEqual(TEXT("two requests went out"), Rig.Transport->Requests.Num(), 2);
@@ -400,13 +433,13 @@ bool FScenarioApiJobTest::RunTest(const FString& Parameters)
 {
 	// The REST job keeps outputs and errors under metadata; cuCost is the main action alone.
 	const FScenarioJobInfo Done = FScenarioJobInfo::FromJson(ScenarioJson::ParseObject(TEXT("{\"jobId\":\"job_1\",\"jobType\":\"custom\",\"status\":\"success\",\"progress\":1,")
-		TEXT("\"billing\":{\"cuCost\":11,\"cuCostDetails\":{\"custom-generation\":11,\"quality-gate\":1.75}},")
+		TEXT("\"billing\":{\"cuCost\":11,\"cuCostDetails\":{\"quality-gate\":1.75}},")
 		TEXT("\"metadata\":{\"assetIds\":[\"asset_a\",\"asset_b\"],\"input\":{\"modelId\":\"model_x\"},\"workflowId\":\"workflow_y\"}}")));
 	TestEqual(TEXT("success"), Done.Phase, EScenarioJobPhase::Success);
 	TestEqual(TEXT("outputs from metadata"), Done.AssetIds.Num(), 2);
 	TestEqual(TEXT("model from the input"), Done.ModelId, FString(TEXT("model_x")));
 	TestEqual(TEXT("workflow from metadata"), Done.WorkflowId, FString(TEXT("workflow_y")));
-	TestEqual(TEXT("every charge counted"), Done.ChargedCU, 12.75);
+	TestEqual(TEXT("main action plus add-ons"), Done.ChargedCU, 12.75);
 
 	const FScenarioJobInfo Failed = FScenarioJobInfo::FromJson(ScenarioJson::ParseObject(TEXT("{\"jobId\":\"job_2\",\"status\":\"failure\",\"billing\":{\"cuCost\":0},\"metadata\":{\"error\":\"Out of memory\",\"hint\":\"Lower the resolution\"}}")));
 	TestEqual(TEXT("failure"), Failed.Phase, EScenarioJobPhase::Failure);
@@ -440,7 +473,10 @@ bool FScenarioApiCatalogTest::RunTest(const FString& Parameters)
 		TEXT("{\"name\":\"numOutputs\",\"type\":\"number\",\"min\":1,\"max\":4,\"costImpact\":true},{\"type\":\"string\"}]}}"));
 	FScenarioApi Api(Backend);
 	const TScenarioResult<FScenarioModelPage> Meshes = Run<FScenarioModelPage>([&Api](auto Done) { Api.ListModels(TEXT("public"), TEXT("3d"), 900, FString(), Done); });
-	TestTrue(TEXT("3D only"), Meshes.bOk && Meshes.Value.Models.Num() == 1 && Meshes.Value.Models[0].Id == TEXT("model_mesh"));
+	if (!TestTrue(TEXT("3D only"), Meshes.bOk && Meshes.Value.Models.Num() == 1 && Meshes.Value.Models[0].Id == TEXT("model_mesh")))
+	{
+		return false;
+	}
 	TestEqual(TEXT("provider"), Meshes.Value.Models[0].Provider, FString(TEXT("Meshy")));
 	TestEqual(TEXT("next page"), Meshes.Value.NextPageToken, FString(TEXT("next")));
 	TestEqual(TEXT("page size capped at the API's 500"), Backend->Calls.Last().QueryValue(TEXT("pageSize")), FString(TEXT("500")));
@@ -459,6 +495,11 @@ bool FScenarioApiCatalogTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("model id"), ScenarioJson::GetString(Schema, TEXT("model_id")), FString(TEXT("model_img")));
 	TestEqual(TEXT("inputs become parameters, unnamed ones dropped"), ScenarioJson::GetArray(Schema, TEXT("parameters")).Num(), 2);
+
+	Backend->OnJson(TEXT("GET /models/model_lora"), TEXT("{\"model\":{\"id\":\"model_lora\",\"type\":\"flux.1-lora\",\"capabilities\":[\"txt2img\"]}}"));
+	FScenarioReply Lora = FScenarioReply::Ok();
+	Api.GetSchema(TEXT("model_lora"), [&Lora](const FScenarioReply& Reply) { Lora = Reply; });
+	TestTrue(TEXT("a model without inputs is an explicit error, not an empty form"), !Lora.bOk && Lora.Error.Kind == EScenarioErrorKind::Local);
 	return true;
 }
 
@@ -524,11 +565,17 @@ bool FScenarioApiWorkspaceTest::RunTest(const FString& Parameters)
 
 	const TScenarioResult<TArray<FScenarioTeam>> Teams = Run<TArray<FScenarioTeam>>([&Api](auto Done) { Api.ListTeams(Done); });
 	TestTrue(TEXT("teams with projects"), Teams.bOk && Teams.Value.Num() == 1 && Teams.Value[0].Projects.Num() == 1 && Teams.Value[0].Plan == TEXT("cu-pro"));
-	TestEqual(TEXT("teams carry no workspace"), Backend->Last(TEXT("GET /teams"))->Scope, EScenarioScope::None);
+	const FScenarioRequest* TeamsSent = Backend->Last(TEXT("GET /teams"));
+	if (!TestNotNull(TEXT("teams listed"), TeamsSent))
+	{
+		return false;
+	}
+	TestEqual(TEXT("teams carry no workspace"), TeamsSent->Scope, EScenarioScope::None);
 
 	Backend->bApiKey = true;
 	const TScenarioResult<TArray<FScenarioTeam>> KeyTeams = Run<TArray<FScenarioTeam>>([&Api](auto Done) { Api.ListTeams(Done); });
-	TestTrue(TEXT("a key reads its own project"), KeyTeams.bOk && KeyTeams.Value.Num() == 1 && KeyTeams.Value[0].Id == TEXT("team_key") && KeyTeams.Value[0].Projects[0].Id == TEXT("proj_key"));
+	TestTrue(TEXT("a key reads its own project"), KeyTeams.bOk && KeyTeams.Value.Num() == 1 && KeyTeams.Value[0].Id == TEXT("team_key")
+		&& KeyTeams.Value[0].Projects.Num() == 1 && KeyTeams.Value[0].Projects[0].Id == TEXT("proj_key"));
 	TestEqual(TEXT("a key never lists teams"), Backend->CountOf(TEXT("GET /teams")), 1);
 	Backend->bApiKey = false;
 
