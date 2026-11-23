@@ -1,0 +1,56 @@
+name: engine-build
+
+# Temporary: installs Unreal 5.8 on the macOS larger runner from a draft
+# release (readable only with write access, deleted after the test) and builds
+# the plugin with tools/build.sh, to see what a release build needs.
+
+on:
+  push:
+    branches: [ci/macos-runner]
+    paths: [.github/workflows/engine-build.yml]
+
+permissions: {}
+
+jobs:
+  mac:
+    runs-on: github-5-core-macOS-ARM64
+    timeout-minutes: 120
+    permissions:
+      # A draft release's assets need write access to read.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Unreal 5.8 from the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/parts" "$RUNNER_TEMP/UE_5.8"
+          start=$SECONDS
+          gh release download engine-ci-tmp --repo "$GITHUB_REPOSITORY" --pattern 'UE_5.8-Mac.tar.zst.part-*' --dir "$RUNNER_TEMP/parts"
+          echo "Downloaded $(du -sh "$RUNNER_TEMP/parts" | cut -f1) in $((SECONDS - start)) s"
+          start=$SECONDS
+          cat "$RUNNER_TEMP"/parts/UE_5.8-Mac.tar.zst.part-* | zstd -d -q -T0 | tar -xf - -C "$RUNNER_TEMP/UE_5.8"
+          rm -rf "$RUNNER_TEMP/parts"
+          echo "Unpacked $(du -sh "$RUNNER_TEMP/UE_5.8" | cut -f1) in $((SECONDS - start)) s"
+          df -h / | awk 'NR == 2 { print "Disk: " $4 " free" }'
+      - name: Build the plugin
+        env:
+          UE_ROOT: ${{ runner.temp }}/UE_5.8
+        run: |
+          set -euo pipefail
+          echo "Xcode: $(xcodebuild -version | head -1)"
+          start=$SECONDS
+          tools/build.sh
+          echo "Built in $((SECONDS - start)) s"
+          out="$(ls -d Build/Scenario-*-UE5.8 | head -1)"
+          (cd "$out/.." && ditto -c -k --keepParent "$(basename "$out")" "$RUNNER_TEMP/$(basename "$out")-Mac.zip")
+          ls -la "$RUNNER_TEMP"/*.zip
+          find "$out" -name '*.dylib' | sed "s|^$out/||"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-mac
+          path: ${{ runner.temp }}/*.zip
+          retention-days: 1

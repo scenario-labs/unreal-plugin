@@ -5,6 +5,7 @@ name: macos-runner
 on:
   push:
     branches: [ci/macos-runner]
+    paths: [.github/workflows/macos-runner.yml]
 
 permissions: {}
 
