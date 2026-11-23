@@ -50,6 +50,17 @@ The plugin calls Scenario's REST API (`https://api.cloud.scenario.com/v1`) with 
 - The API has no long-poll: jobs are read one by one at the poll interval.
 - Creative Unit amounts stay exact decimal strings from parsing to display; no floating-point rounding on the money path.
 
+## Trained models
+
+A trained model (a LoRA or a composition) is never the model called: it runs on a base model. Its record lists no inputs of its own.
+
+- **Bases.** `Resources/Trained.json` lists the base models to read. The catalog reads their schemas once and caches them with its rows (24 hours): a base takes a trained model when its `loras` or `modelId` input lists the trained model's `type` in `modelTypes`. The list says which models to read, never what they take.
+- **Kind.** A LoRA when a `loras` input lists the type; it runs with `loras: [id]` and `lorasScale: [weight]`. A composition when only a `modelId` input does; it runs with `modelId: id`, which replaces any LoRAs. `compliantModelIds` (base names such as `flux.1-dev`) only orders the candidates, through the file's name map. A type no base lists cannot run, and the plugin says so; nothing is guessed.
+- **Weight and trigger words.** The weight is the record's own (`concepts[].scale` for its id), else 0.75, within the base's range. Trigger words are `parameters.conceptPrompt`, else `promptEmbedding`, else a word in capitals that every sample prompt holds (two or more); they go once before the prompt unless it already holds them.
+- **Form.** The catalog's `GetSchema` gives a trained model the base's form without its trained inputs, plus `lorasScale` (a number, LoRAs only) and `addTriggerWords`, and a `trained` object (kind, base, weight range, trigger words).
+- **Runs.** `FScenarioSession::Resolve` turns a request for the trained model into the base's request (`ScenarioTrained::BaseParameters`) before the fingerprint, the price check and the paid call, so the money contract below applies unchanged and a quote covers the trained model and its weight. The job list and provenance keep the base as the model and the trained model beside it (`TrainedModelId`).
+- One trained model per run in version 0.2.
+
 ## Money contract
 
 Enforced in `FScenarioSession`, below every caller: the Studio, the composer, agents, Python, Blueprints and the commandlet.
@@ -65,7 +76,7 @@ No Creative Unit cap is set by the plugin.
 
 ## Job list and recovery
 
-`FScenarioLedger` keeps every request in `<Project>/Saved/Scenario/` (newest first, atomic writes, revision counter). Rows carry the local id (`local_<ms>_<n>`), Scenario's job id once known, model, prompt, quoted and charged CU, state and files.
+`FScenarioLedger` keeps every request in `<Project>/Saved/Scenario/` (newest first, atomic writes, revision counter). Rows carry the local id (`local_<ms>_<n>`), Scenario's job id once known, model (for a trained model's run, its base, with the trained model beside it), prompt, quoted and charged CU, state and files.
 
 - On startup, active rows resume polling, and downloads resume from their `.part` files with HTTP range requests.
 - An expired download link is replaced by a fresh one from Scenario; partial data is kept.
@@ -150,7 +161,7 @@ These are deliberate, listed so reviewers can judge them:
 
 ## Tests
 
-- `Scenario.Core.*` automation tests: JSON-RPC and SSE parsing, error kinds, retry policy, quotes and fingerprints, the job list state machine, schema forms, naming, OAuth helpers, the local HTTP listener, the session against a fake Scenario, recorded schema fixtures in `Plugins/Scenario/Tests/Fixtures/`.
+- `Scenario.Core.*` automation tests: JSON-RPC and SSE parsing, error kinds, retry policy, quotes and fingerprints, the job list state machine, schema forms, naming, OAuth helpers, the local HTTP listener, the session against a fake Scenario, trained models (bases, trigger words, the base's request, fingerprints), recorded schema fixtures in `Plugins/Scenario/Tests/Fixtures/`.
 - `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), tool list budget, tool search mode, permissions, client config writers.
 - `Scenario.Toolsets.*` automation tests (5.8): registration, each tool's schema against its action, the spend gate (a paid call through the registry answers `pending_approval`, consumes no quote and writes no job), reads without sign-in, the agent skill's size.
 - `tools/contract_check.py`: a free check against the live service (reads and dry runs only).

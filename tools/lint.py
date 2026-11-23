@@ -5,8 +5,8 @@
 - Every .h, .cpp and .cs file under Plugins/ and Source/ starts with the MIT
   copyright header.
 - No em dash (U+2014) in any text file.
-- Plugins/Scenario/Scenario.uplugin and Resources/Lanes.json are valid JSON
-  with the keys the plugin reads.
+- Plugins/Scenario/Scenario.uplugin, Resources/Lanes.json and
+  Resources/Trained.json are valid JSON with the keys the plugin reads.
 - Resources/AgentSkill/SKILL.md has `name` and `description` frontmatter.
 - No secret-looking strings (API keys, Basic or Bearer credentials, private
   keys, GitHub tokens, signed URL signatures), no personal home paths, and no
@@ -36,6 +36,7 @@ BINARY_SUFFIXES = {
 EM_DASH = chr(0x2014)
 UPLUGIN = "Plugins/Scenario/Scenario.uplugin"
 LANES = "Plugins/Scenario/Resources/Lanes.json"
+TRAINED = "Plugins/Scenario/Resources/Trained.json"
 SKILL = "Plugins/Scenario/Resources/AgentSkill/SKILL.md"
 # The one runtime module: actors that games made with the kit use. No network code, no Scenario data.
 RUNTIME_MODULES = {"ScenarioGameplay"}
@@ -160,6 +161,34 @@ def check_lanes(text: str) -> list[tuple[int, str]]:
     return problems
 
 
+def check_trained(text: str) -> list[tuple[int, str]]:
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        return [(getattr(error, "lineno", 1), f"invalid JSON: {error}")]
+    problems = [(1, f"missing key {key}") for key in ("version", "base_probes", "base_names", "default_scale") if key not in data]
+    probes = data.get("base_probes", [])
+    if not isinstance(probes, list) or not probes:
+        problems.append((1, "base_probes must be a non-empty list"))
+        probes = []
+    for model_id in probes:
+        if not str(model_id).startswith("model_"):
+            problems.append((1, f"base_probes: {model_id} does not start with model_"))
+    if len(set(map(str, probes))) != len(probes):
+        problems.append((1, "base_probes: duplicate id"))
+    names = data.get("base_names", {})
+    if not isinstance(names, dict):
+        problems.append((1, "base_names must be an object"))
+        names = {}
+    for name, model_id in names.items():
+        if model_id not in probes:
+            problems.append((1, f"base_names: {name} maps to {model_id}, which base_probes does not list"))
+    scale = data.get("default_scale", 0.75)
+    if not isinstance(scale, (int, float)) or isinstance(scale, bool) or scale < 0:
+        problems.append((1, "default_scale must be a number of 0 or more"))
+    return problems
+
+
 def check_skill(text: str) -> list[tuple[int, str]]:
     match = re.match(r"---\n(.*?)\n---\n", text, re.S)
     if not match:
@@ -184,10 +213,12 @@ def lint(root: pathlib.Path) -> list[str]:
             found += check_uplugin(text)
         elif name == LANES:
             found += check_lanes(text)
+        elif name == TRAINED:
+            found += check_trained(text)
         elif name == SKILL:
             found += check_skill(text)
         problems += [f"{name}:{line}: {message}" for line, message in found]
-    for required in (UPLUGIN, LANES, SKILL):
+    for required in (UPLUGIN, LANES, TRAINED, SKILL):
         if required not in names:
             problems.append(f"{required}:1: file is missing")
     return problems

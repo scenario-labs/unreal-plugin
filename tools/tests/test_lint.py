@@ -84,6 +84,22 @@ class ResourceTests(unittest.TestCase):
 
     def test_invalid_json(self):
         self.assertTrue(lint.check_lanes("{")[0][1].startswith("invalid JSON"))
+        self.assertTrue(lint.check_trained("{")[0][1].startswith("invalid JSON"))
+
+    def test_valid_trained(self):
+        data = {"version": 1, "base_probes": ["model_a", "model_b"], "base_names": {"a-1": "model_a"}, "default_scale": 0.75}
+        self.assertEqual(lint.check_trained(json.dumps(data)), [])
+
+    def test_trained_problems(self):
+        data = {"version": 1, "base_probes": ["model_a", "b", "model_a"], "base_names": {"c-1": "model_c"}, "default_scale": "high"}
+        messages = [m for _, m in lint.check_trained(json.dumps(data))]
+        self.assertIn("base_probes: b does not start with model_", messages)
+        self.assertIn("base_probes: duplicate id", messages)
+        self.assertIn("base_names: c-1 maps to model_c, which base_probes does not list", messages)
+        self.assertIn("default_scale must be a number of 0 or more", messages)
+        self.assertEqual(lint.check_trained(json.dumps({"version": 1})), [
+            (1, "missing key base_probes"), (1, "missing key base_names"), (1, "missing key default_scale"),
+            (1, "base_probes must be a non-empty list")])
 
     def test_uplugin_modules_are_editor_only(self):
         plugin = {key: "x" for key in lint.UPLUGIN_KEYS}

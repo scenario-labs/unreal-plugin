@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ScenarioApi.h"
+#include "ScenarioTrained.h"
 
 /** One model in the picker, with what the picker derives from Scenario's tags. */
 struct SCENARIOCORE_API FScenarioCatalogModel
@@ -47,6 +48,10 @@ struct SCENARIOCORE_API FScenarioCatalogQuery
  * The model catalog: every public model plus the workspace's trained models,
  * cached for 24 hours in Saved/Scenario/catalog.json and refreshed in the
  * background. Search and filters run locally on the cached rows.
+ *
+ * It also knows how trained models run (ScenarioTrained.h): the base models
+ * of Resources/Trained.json are read once and cached with the rows, and each
+ * trained model's record is read when its form is asked for.
  */
 class SCENARIOCORE_API FScenarioCatalog : public TSharedFromThis<FScenarioCatalog>
 {
@@ -84,12 +89,33 @@ public:
 	static bool ParseRow(const TSharedPtr<FJsonObject>& Row, bool bTeam, FScenarioCatalogModel& Out);
 	static int32 MatchScore(const FScenarioCatalogModel& Model, const FString& Text);
 
+	// Trained models
+
+	/** The base models read from Resources/Trained.json's list, in its order. */
+	const TArray<FScenarioTrainedBase>& Bases() const { return BaseModels; }
+	bool HasFreshBases() const;
+	/** Reads the listed base models' schemas when they are older than a day (free reads). A base that cannot be read is left out. */
+	void LoadBases(TFunction<void(const FScenarioError& Error)> OnDone = nullptr);
+	/** How a trained row runs, from its type and the bases read so far (no request). */
+	FScenarioTrainedInfo TrainedInfo(const FScenarioCatalogModel& Model) const;
+	/**
+	 * A model's form, the shape ScenarioSchema reads: its own inputs, or for a
+	 * trained model its base's form with the trained input (ScenarioTrained::FormSchema).
+	 * A trained model with no base is an error that says so.
+	 */
+	void GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone);
+	/** How a trained model runs, once GetSchema read it in this workspace; null otherwise. */
+	const FScenarioTrainedInfo* FindTrained(const FString& ModelId) const;
+	/** True for a trained row GetSchema has not read yet in this workspace. */
+	bool NeedsResolve(const FString& ModelId) const;
+
 	DECLARE_MULTICAST_DELEGATE(FOnChanged);
 	FOnChanged OnChanged;
 
 private:
 	void FetchPage(const FString& Privacy, const FString& Token, int32 PageIndex, int32 Generation, TSharedRef<TArray<FScenarioCatalogModel>> Collected, TFunction<void(const FScenarioError&)> OnDone);
 	bool SaveCache() const;
+	void ResolveTrained(const FScenarioModelSummary& Summary, int32 Generation, FScenarioReplyCallback OnDone);
 
 	TSharedRef<FScenarioApi> Api;
 	FString CachePath;
@@ -100,4 +126,20 @@ private:
 	bool bRefreshing = false;
 	int32 RefreshGeneration = 0;
 	TArray<TFunction<void(const FScenarioError&)>> Waiters;
+
+	TArray<FScenarioTrainedBase> BaseModels;
+	double BasesFetchedAt = 0.0;
+	bool bLoadingBases = false;
+	TArray<TFunction<void(const FScenarioError&)>> BaseWaiters;
+	/** Trained models read in this workspace: how they run, and their form. */
+	struct FTrainedEntry
+	{
+		FScenarioTrainedInfo Info;
+		TSharedPtr<FJsonObject> Form;
+	};
+	TMap<FString, FTrainedEntry> Trained;
+	/** Rows with a trained type whose record lists inputs of its own: they run as themselves. */
+	TSet<FString> OwnInputs;
+	/** Bumped on workspace switch, so a reply for the old workspace is not kept. */
+	int32 TrainedGeneration = 0;
 };

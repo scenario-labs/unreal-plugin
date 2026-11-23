@@ -26,12 +26,14 @@ FString FScenarioQuotes::WorkspaceScope(const FString& TeamId, const FString& Pr
 	return TeamId + TEXT("/") + ProjectId;
 }
 
-const FScenarioQuote& FScenarioQuotes::Store(EScenarioQuoteKind Kind, const FString& TargetId, const TSharedPtr<FJsonObject>& Parameters, const FString& Scope, double CU, double Discount, double Now)
+const FScenarioQuote& FScenarioQuotes::Store(EScenarioQuoteKind Kind, const FString& TargetId, const TSharedPtr<FJsonObject>& Parameters, const FString& Scope, double CU, double Discount, double Now,
+	const FString& TrainedModelId)
 {
 	Prune(Now);
 	FScenarioQuote Quote;
 	Quote.Kind = Kind;
 	Quote.TargetId = TargetId;
+	Quote.TrainedModelId = TrainedModelId;
 	Quote.Scope = Scope;
 	Quote.Parameters = ScenarioJson::CloneObject(Parameters.IsValid() ? Parameters : MakeShared<FJsonObject>());
 	Quote.Fingerprint = Fingerprint(TargetId, Quote.Parameters, Scope);

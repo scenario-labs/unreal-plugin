@@ -10,7 +10,8 @@
 
 namespace
 {
-	constexpr int32 CacheVersion = 1;
+	/** 2: trained rows keep compliantModelIds, their own weight and trigger words; the read bases are kept too. */
+	constexpr int32 CacheVersion = 2;
 	constexpr int32 PageSize = 100;
 	/** 728 public models fit in 8 pages on 2026-10-18; the guard stops a runaway token loop. */
 	constexpr int32 MaxPages = 40;
@@ -82,11 +83,29 @@ namespace
 			Compliance->SetStringField(TEXT("modelProvider"), S.Provider);
 			Row->SetObjectField(TEXT("complianceMetadata"), Compliance);
 		}
+		// Trained rows, in the record's own shape so FScenarioModelSummary::FromJson reads them back.
+		if (S.CompliantModelIds.Num() > 0)
+		{
+			Row->SetField(TEXT("compliantModelIds"), ScenarioJson::StringArrayValue(S.CompliantModelIds));
+		}
+		if (S.OwnScale >= 0.0)
+		{
+			TSharedRef<FJsonObject> Concept = MakeShared<FJsonObject>();
+			Concept->SetStringField(TEXT("modelId"), S.Id);
+			Concept->SetNumberField(TEXT("scale"), S.OwnScale);
+			Row->SetArrayField(TEXT("concepts"), { MakeShared<FJsonValueObject>(Concept) });
+		}
+		if (!S.TriggerWords.IsEmpty())
+		{
+			TSharedRef<FJsonObject> Parameters = MakeShared<FJsonObject>();
+			Parameters->SetStringField(TEXT("conceptPrompt"), S.TriggerWords);
+			Row->SetObjectField(TEXT("parameters"), Parameters);
+		}
 		Row->SetBoolField(TEXT("team"), Model.bTeam);
 		return Row;
 	}
 
-	bool ParseCache(const FString& Text, TArray<FScenarioCatalogModel>& OutModels, double& OutFetchedAt, FString& OutWorkspace)
+	bool ParseCache(const FString& Text, TArray<FScenarioCatalogModel>& OutModels, double& OutFetchedAt, FString& OutWorkspace, TArray<FScenarioTrainedBase>& OutBases, double& OutBasesAt)
 	{
 		const TSharedPtr<FJsonObject> Root = ScenarioJson::ParseObject(Text);
 		if (!Root.IsValid() || ScenarioJson::GetNumber(Root, TEXT("version")) != CacheVersion)
@@ -95,6 +114,15 @@ namespace
 		}
 		OutFetchedAt = ScenarioJson::GetNumber(Root, TEXT("fetchedAt"));
 		OutWorkspace = ScenarioJson::GetString(Root, TEXT("workspace"));
+		OutBasesAt = ScenarioJson::GetNumber(Root, TEXT("basesFetchedAt"));
+		for (const TSharedPtr<FJsonValue>& Value : ScenarioJson::GetArray(Root, TEXT("bases")))
+		{
+			FScenarioTrainedBase Base;
+			if (Value.IsValid() && Value->Type == EJson::Object && FScenarioTrainedBase::FromJson(Value->AsObject(), Base))
+			{
+				OutBases.Add(MoveTemp(Base));
+			}
+		}
 		for (const TSharedPtr<FJsonValue>& Value : ScenarioJson::GetArray(Root, TEXT("models")))
 		{
 			if (!Value.IsValid() || Value->Type != EJson::Object)
@@ -258,13 +286,20 @@ bool FScenarioCatalog::LoadCache()
 	TArray<FScenarioCatalogModel> Parsed;
 	double ParsedAt = 0.0;
 	FString ParsedWorkspace;
-	if (!ParseCache(Text, Parsed, ParsedAt, ParsedWorkspace))
+	TArray<FScenarioTrainedBase> ParsedBases;
+	double ParsedBasesAt = 0.0;
+	if (!ParseCache(Text, Parsed, ParsedAt, ParsedWorkspace, ParsedBases, ParsedBasesAt))
 	{
 		UE_LOG(LogScenario, Warning, TEXT("Scenario catalog cache unreadable; it will be fetched again."));
 		return false;
 	}
 	FetchedAtSeconds = ParsedAt;
 	Workspace = ParsedWorkspace;
+	if (ParsedBases.Num() > 0)
+	{
+		BaseModels = MoveTemp(ParsedBases);
+		BasesFetchedAt = ParsedBasesAt;
+	}
 	SetModels(MoveTemp(Parsed));
 	return true;
 }
@@ -399,6 +434,13 @@ bool FScenarioCatalog::SaveCache() const
 		Rows.Add(MakeShared<FJsonValueObject>(RowToJson(Model)));
 	}
 	Root->SetArrayField(TEXT("models"), Rows);
+	TArray<TSharedPtr<FJsonValue>> Bases;
+	for (const FScenarioTrainedBase& Base : BaseModels)
+	{
+		Bases.Add(MakeShared<FJsonValueObject>(Base.ToJson()));
+	}
+	Root->SetArrayField(TEXT("bases"), Bases);
+	Root->SetNumberField(TEXT("basesFetchedAt"), BasesFetchedAt);
 	const FString Text = ScenarioJson::Write(Root);
 	const FString Temp = CachePath + TEXT(".tmp");
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(CachePath), true);
@@ -416,6 +458,10 @@ void FScenarioCatalog::ClearPrivate()
 	++RefreshGeneration;
 	bRefreshing = false;
 	Workspace.Reset();
+	// Trained models are read again in the next workspace; the bases are public and stay.
+	Trained.Reset();
+	OwnInputs.Reset();
+	++TrainedGeneration;
 	SetModels(MoveTemp(Kept));
 	SaveCache();
 }
@@ -572,4 +618,218 @@ TArray<FString> FScenarioCatalog::ChipsForModality(const FString& Modality) cons
 		}
 	}
 	return Out;
+}
+
+// Trained models
+
+bool FScenarioCatalog::HasFreshBases() const
+{
+	return BaseModels.Num() > 0 && ScenarioNow() - BasesFetchedAt <= MaxAgeSeconds;
+}
+
+void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> OnDone)
+{
+	if (HasFreshBases())
+	{
+		if (OnDone)
+		{
+			OnDone(FScenarioError());
+		}
+		return;
+	}
+	if (OnDone)
+	{
+		BaseWaiters.Add(MoveTemp(OnDone));
+	}
+	if (bLoadingBases)
+	{
+		return;
+	}
+	const TArray<FString> Probes = FScenarioTrainedData::Get().BaseProbes;
+	struct FProbe
+	{
+		TArray<TOptional<FScenarioTrainedBase>> Found;
+		int32 Pending = 0;
+		FScenarioError LastError;
+	};
+	TSharedRef<FProbe> Probe = MakeShared<FProbe>();
+	Probe->Found.SetNum(Probes.Num());
+	Probe->Pending = Probes.Num();
+	TWeakPtr<FScenarioCatalog> WeakSelf = AsShared();
+	auto Finish = [WeakSelf, Probe]()
+	{
+		const TSharedPtr<FScenarioCatalog> Self = WeakSelf.Pin();
+		if (!Self.IsValid())
+		{
+			return;
+		}
+		TArray<FScenarioTrainedBase> Read;
+		for (const TOptional<FScenarioTrainedBase>& Base : Probe->Found)
+		{
+			if (Base.IsSet())
+			{
+				Read.Add(Base.GetValue());
+			}
+		}
+		Self->bLoadingBases = false;
+		FScenarioError Error;
+		if (Read.Num() > 0)
+		{
+			Self->BaseModels = MoveTemp(Read);
+			Self->BasesFetchedAt = ScenarioNow();
+			if (Self->Models.Num() > 0)
+			{
+				Self->SaveCache();
+			}
+		}
+		else
+		{
+			// Nothing read (offline, or no list): the bases kept from before still serve; asked again next time.
+			Error = Probe->LastError.Kind != EScenarioErrorKind::None ? Probe->LastError : FScenarioError();
+			if (Error.Kind == EScenarioErrorKind::None)
+			{
+				Error.Kind = EScenarioErrorKind::Local;
+				Error.Message = TEXT("The plugin could not read the base models that run trained models.");
+			}
+		}
+		TArray<TFunction<void(const FScenarioError&)>> Done = MoveTemp(Self->BaseWaiters);
+		Self->OnChanged.Broadcast();
+		for (const TFunction<void(const FScenarioError&)>& Waiter : Done)
+		{
+			Waiter(Error);
+		}
+	};
+	if (Probes.Num() == 0)
+	{
+		Finish();
+		return;
+	}
+	bLoadingBases = true;
+	for (int32 Index = 0; Index < Probes.Num(); ++Index)
+	{
+		Api->GetModel(Probes[Index], [Probe, Index, Finish](const FScenarioReply& Reply)
+		{
+			FScenarioTrainedBase Base;
+			if (Reply.bOk && FScenarioTrainedBase::FromModel(Reply.Value, Base))
+			{
+				Probe->Found[Index] = Base;
+			}
+			else if (!Reply.bOk)
+			{
+				Probe->LastError = Reply.Error;
+			}
+			if (--Probe->Pending == 0)
+			{
+				Finish();
+			}
+		});
+	}
+}
+
+FScenarioTrainedInfo FScenarioCatalog::TrainedInfo(const FScenarioCatalogModel& Model) const
+{
+	if (const FTrainedEntry* Entry = Trained.Find(Model.Id()))
+	{
+		return Entry->Info;
+	}
+	return ScenarioTrained::Derive(Model.Summary, BaseModels, FScenarioTrainedData::Get());
+}
+
+const FScenarioTrainedInfo* FScenarioCatalog::FindTrained(const FString& ModelId) const
+{
+	const FTrainedEntry* Entry = Trained.Find(ModelId);
+	return Entry ? &Entry->Info : nullptr;
+}
+
+bool FScenarioCatalog::NeedsResolve(const FString& ModelId) const
+{
+	if (Trained.Contains(ModelId) || OwnInputs.Contains(ModelId))
+	{
+		return false;
+	}
+	const FScenarioCatalogModel* Model = Find(ModelId);
+	return Model && Model->bTrained && ScenarioTrained::IsTrainedType(Model->Summary.Type);
+}
+
+void FScenarioCatalog::GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone)
+{
+	if (const FTrainedEntry* Entry = Trained.Find(ModelId))
+	{
+		OnDone(FScenarioReply::Ok(ScenarioJson::CloneObject(Entry->Form)));
+		return;
+	}
+	TWeakPtr<FScenarioCatalog> WeakSelf = AsShared();
+	const int32 Generation = TrainedGeneration;
+	Api->GetModel(ModelId, [WeakSelf, ModelId, Generation, OnDone](const FScenarioReply& Reply)
+	{
+		if (!Reply.bOk)
+		{
+			OnDone(Reply);
+			return;
+		}
+		const TSharedPtr<FScenarioCatalog> Self = WeakSelf.Pin();
+		const TSharedPtr<FJsonObject> Schema = FScenarioApi::SchemaFromModel(Reply.Value);
+		if (ScenarioJson::GetArray(Schema, TEXT("parameters")).Num() > 0)
+		{
+			if (Self.IsValid() && Generation == Self->TrainedGeneration)
+			{
+				Self->OwnInputs.Add(ModelId);
+			}
+			OnDone(FScenarioReply::Ok(Schema));
+			return;
+		}
+		const FScenarioModelSummary Summary = FScenarioModelSummary::FromJson(Reply.Value);
+		if (!ScenarioTrained::IsTrainedType(Summary.Type))
+		{
+			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("This model lists no inputs of its own, so the plugin cannot run it.")));
+			return;
+		}
+		if (!Self.IsValid())
+		{
+			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The Scenario session ended.")));
+			return;
+		}
+		Self->ResolveTrained(Summary, Generation, OnDone);
+	});
+}
+
+void FScenarioCatalog::ResolveTrained(const FScenarioModelSummary& Summary, int32 Generation, FScenarioReplyCallback OnDone)
+{
+	TWeakPtr<FScenarioCatalog> WeakSelf = AsShared();
+	LoadBases([WeakSelf, Summary, Generation, OnDone](const FScenarioError& Error)
+	{
+		const TSharedPtr<FScenarioCatalog> Self = WeakSelf.Pin();
+		if (!Self.IsValid())
+		{
+			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The Scenario session ended.")));
+			return;
+		}
+		if (Self->BaseModels.Num() == 0)
+		{
+			OnDone(FScenarioReply::Fail(Error));
+			return;
+		}
+		const FScenarioTrainedInfo Info = ScenarioTrained::Derive(Summary, Self->BaseModels, FScenarioTrainedData::Get());
+		if (!Info.IsRunnable())
+		{
+			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, Info.Problem()));
+			return;
+		}
+		// The base's own form, read fresh like any model's.
+		Self->Api->GetSchema(Info.BaseId(), [WeakSelf, Info, Generation, OnDone](const FScenarioReply& Base)
+		{
+			if (!Base.bOk)
+			{
+				OnDone(Base);
+				return;
+			}
+			const TSharedRef<FJsonObject> Form = ScenarioTrained::FormSchema(Info, Base.Value);
+			const TSharedPtr<FScenarioCatalog> Inner = WeakSelf.Pin();
+			if (Inner.IsValid() && Generation == Inner->TrainedGeneration)
+			{
+				Inner->Trained.Add(Info.Id, { Info, ScenarioJson::CloneObject(Form) });
+			}
+			OnDone(FScenarioReply::Ok(Form));
+		});
+	});
 }

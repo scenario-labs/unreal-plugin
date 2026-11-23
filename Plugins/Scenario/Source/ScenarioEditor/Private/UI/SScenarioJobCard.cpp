@@ -16,6 +16,7 @@
 #include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
 #include "ScenarioThumbnails.h"
+#include "ScenarioTrained.h"
 #include "ScenarioWidgets.h"
 #include "SScenarioModelPicker.h"
 #include "Styling/AppStyle.h"
@@ -385,6 +386,11 @@ namespace ScenarioJobActions
 		{
 			return Row.ModelName.IsEmpty() ? TEXT("Workflow") : Row.ModelName;
 		}
+		if (!Row.TrainedModelId.IsEmpty())
+		{
+			// A trained model's run: the trained model, on the base Scenario ran.
+			return FString::Printf(TEXT("%s on %s"), *ScenarioUI::ModelName(Row.TrainedModelId, Row.TrainedModelName), *ScenarioUI::ModelName(Row.ModelId, Row.ModelName));
+		}
 		return ScenarioUI::ModelName(Row.ModelId, Row.ModelName);
 	}
 
@@ -611,6 +617,12 @@ namespace ScenarioJobActions
 			Create->SetWorkflow(Row->WorkflowId, Row->ModelName, FString());
 			Create->ApplyValues(Row->Parameters);
 			FScenarioEditorModule::OpenStudio(ScenarioPages::Create);
+			return;
+		}
+		if (!Row->TrainedModelId.IsEmpty())
+		{
+			// Back to the trained model's own form: its weight, without the base's trained inputs.
+			FScenarioEditorModule::OpenCreate(Row->Lane, Row->TrainedModelId, ScenarioTrained::FormValues(Row->Parameters));
 			return;
 		}
 		FScenarioEditorModule::OpenCreate(Row->Lane, Row->ModelId, Row->Parameters);

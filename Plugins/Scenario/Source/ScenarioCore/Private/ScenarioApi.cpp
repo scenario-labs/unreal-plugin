@@ -5,6 +5,7 @@
 #include "Misc/Paths.h"
 #include "ScenarioCU.h"
 #include "ScenarioJson.h"
+#include "ScenarioTrained.h"
 
 namespace
 {
@@ -222,6 +223,12 @@ FScenarioModelSummary FScenarioModelSummary::FromJson(const TSharedPtr<FJsonObje
 	Model.CreatedAt = ScenarioParseIsoTime(ScenarioJson::GetString(Object, TEXT("createdAt")));
 	Model.Provider = ScenarioJson::GetString(ScenarioJson::GetObject(Object, TEXT("complianceMetadata")), TEXT("modelProvider"));
 	Model.Status = ScenarioJson::GetString(Object, TEXT("status"));
+	if (ScenarioTrained::IsTrainedType(Model.Type))
+	{
+		Model.CompliantModelIds = ScenarioJson::GetStringArray(Object, TEXT("compliantModelIds"));
+		Model.OwnScale = ScenarioTrained::OwnScale(Object);
+		Model.TriggerWords = ScenarioTrained::TriggerWords(Object);
+	}
 	// Model rows and search hits carry a thumbnail URL or object.
 	Model.ThumbnailUrl = ScenarioJson::GetString(Object, TEXT("thumbnail"));
 	if (Model.ThumbnailUrl.IsEmpty())
@@ -645,7 +652,7 @@ void FScenarioApi::DownloadUrl(const FString& AssetId, const FString& Format, TC
 	});
 }
 
-void FScenarioApi::GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone)
+void FScenarioApi::GetModel(const FString& ModelId, FScenarioReplyCallback OnDone)
 {
 	BackendRef->Send(FScenarioRequest::Get(TEXT("/models/") + FScenarioRequest::Segment(ModelId)), [OnDone](const FScenarioReply& Reply)
 	{
@@ -660,11 +667,24 @@ void FScenarioApi::GetSchema(const FString& ModelId, FScenarioReplyCallback OnDo
 			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Protocol, TEXT("Scenario's reply had no 'model'.")));
 			return;
 		}
-		const TSharedPtr<FJsonObject> Schema = SchemaFromModel(Model);
+		OnDone(FScenarioReply::Ok(Model));
+	});
+}
+
+void FScenarioApi::GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone)
+{
+	GetModel(ModelId, [OnDone](const FScenarioReply& Reply)
+	{
+		if (!Reply.bOk)
+		{
+			OnDone(Reply);
+			return;
+		}
+		const TSharedPtr<FJsonObject> Schema = SchemaFromModel(Reply.Value);
 		if (ScenarioJson::GetArray(Schema, TEXT("parameters")).Num() == 0)
 		{
-			// LoRAs and compositions list no inputs: they run through their base model, which the plugin does not wire yet.
-			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("This model lists no inputs of its own (a LoRA or a composition, for example), so the plugin cannot run it yet.")));
+			// LoRAs and compositions list no inputs: they run on a base model (FScenarioCatalog::GetSchema).
+			OnDone(FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("This model lists no inputs of its own, so the plugin cannot run it.")));
 			return;
 		}
 		OnDone(FScenarioReply::Ok(Schema));
