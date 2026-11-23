@@ -41,7 +41,7 @@ jobs:
           UE_ROOT: ${{ runner.temp }}/UE_5.8
         run: |
           set -euo pipefail
-          echo "Xcode: $(xcodebuild -version | head -1)"
+          echo "Xcode: $(xcodebuild -version | sed -n 1p)"
           start=$SECONDS
           tools/build.sh
           echo "Built in $((SECONDS - start)) s"
