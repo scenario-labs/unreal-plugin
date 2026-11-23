@@ -1,6 +1,6 @@
 name: macos-runner
 
-# Temporary: checks what the org's macOS larger runner offers for Unreal builds.
+# Temporary: checks what the org's macOS and Windows larger runners offer for Unreal builds.
 
 on:
   push:
@@ -20,3 +20,22 @@ jobs:
           df -h / | awk 'NR == 2 { print "Disk: " $4 " free of " $2 }'
           echo "Xcode: $(xcodebuild -version | head -1); installed: $(ls -d /Applications/Xcode*.app | xargs -n1 basename | paste -sd, -)"
           ls -d "/Users/Shared/Epic Games"/UE_* 2>/dev/null | xargs -n1 basename | paste -sd, - | sed 's/^/Unreal: /' | grep . || echo "Unreal: not installed"
+
+  windows:
+    runs-on: github-8code-windows-x64
+    timeout-minutes: 10
+    steps:
+      - name: Describe the runner
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          "OS: $($os.Caption) $($os.Version), $env:PROCESSOR_ARCHITECTURE"
+          "RAM: $([math]::Round($os.TotalVisibleMemorySize / 1MB)) GB, CPUs: $env:NUMBER_OF_PROCESSORS"
+          Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | ForEach-Object { "Disk $($_.Name): $([math]::Round($_.Free / 1GB)) GB free of $([math]::Round(($_.Free + $_.Used) / 1GB)) GB" }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          & $vswhere -all -products * -format json | ConvertFrom-Json | ForEach-Object { "Visual Studio: $($_.displayName) $($_.catalog.productDisplayVersion)" }
+          $vs = & $vswhere -latest -products * -property installationPath
+          "MSVC toolsets: " + ((Get-ChildItem "$vs\VC\Tools\MSVC" -Directory | Select-Object -ExpandProperty Name) -join ', ')
+          "Windows SDKs: " + ((Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory | Select-Object -ExpandProperty Name) -join ', ')
+          $ue = Get-ChildItem "$env:ProgramFiles\Epic Games" -Directory -Filter 'UE_*' -ErrorAction SilentlyContinue
+          if ($ue) { "Unreal: " + ($ue.Name -join ', ') } else { 'Unreal: not installed' }
