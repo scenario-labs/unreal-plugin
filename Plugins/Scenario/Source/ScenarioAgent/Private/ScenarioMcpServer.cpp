@@ -27,7 +27,9 @@ namespace
 		return TEXT("Scenario for Unreal Engine: generate images, video, 3D, materials, audio and skies with Scenario and land them in this Unreal project. ")
 			TEXT("Order: scenario_status, scene_summary, list_models, model_schema, estimate_cost, generate (quote_id and approved_cost from the estimate), ")
 			TEXT("wait_for_job, prepare_result_application, apply_result_application, then save_changes. ")
-			TEXT("Never resend a request whose job is unknown: use recover_local_job.");
+			TEXT("Never resend a request whose job is unknown: use recover_local_job. ")
+			TEXT("More tools (the kit's worlds, games and films, Prompt Spark, the Scenario library, the Output Log) are in the catalog: ")
+			TEXT("unreal_tools_list or unreal_tools_search, then unreal_tool_execute_<lane> or the tool's own name.");
 	}
 
 	/** Same length and same bytes, without an early exit. */
@@ -147,68 +149,37 @@ bool FScenarioMcpServer::TokenMatches(const FString& Authorization) const
 	return ConstantTimeEquals(Value.RightChop(7).TrimStartAndEnd(), Token);
 }
 
-TSharedRef<FJsonObject> FScenarioMcpServer::ToolJson(const FScenarioAction& Action)
-{
-	TSharedRef<FJsonObject> Tool = MakeShared<FJsonObject>();
-	Tool->SetStringField(TEXT("name"), Action.Name);
-	Tool->SetStringField(TEXT("description"), Action.Description);
-	Tool->SetObjectField(TEXT("inputSchema"), Action.InputSchema.IsValid() ? Action.InputSchema.ToSharedRef() : MakeShared<FJsonObject>());
-	TSharedRef<FJsonObject> Annotations = MakeShared<FJsonObject>();
-	const bool bReadOnly = Action.Kind == EScenarioActionKind::Read;
-	Annotations->SetBoolField(TEXT("readOnlyHint"), bReadOnly);
-	if (!bReadOnly)
-	{
-		Annotations->SetBoolField(TEXT("destructiveHint"), Action.bDestructive);
-	}
-	if (Action.Kind == EScenarioActionKind::Spend)
-	{
-		Annotations->SetBoolField(TEXT("openWorldHint"), true);
-	}
-	Tool->SetObjectField(TEXT("annotations"), Annotations);
-	return Tool;
-}
-
-TSharedRef<FJsonObject> FScenarioMcpServer::ToolsList()
-{
-	TArray<TSharedPtr<FJsonValue>> Tools;
-	for (const FScenarioAction& Action : FScenarioActions::Get().All())
-	{
-		Tools.Add(MakeShared<FJsonValueObject>(ToolJson(Action)));
-	}
-	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-	Json->SetArrayField(TEXT("tools"), Tools);
-	return Json;
-}
-
 namespace
 {
-	const TCHAR* FindTools = TEXT("find_tools");
-	const TCHAR* DescribeTools = TEXT("describe_tools");
-	const TCHAR* CallTool = TEXT("call_tool");
+	// The catalog, named as scenario-mcp names its own (scenario_tools_list...): every tool stays callable by name.
+	const TCHAR* const ToolsListName = TEXT("unreal_tools_list");
+	const TCHAR* const ToolsSearchName = TEXT("unreal_tools_search");
+	const TCHAR* const ExecutePrefix = TEXT("unreal_tool_execute_");
+	/** The marker scenario-mcp puts on tools served only through its catalog. */
+	const TCHAR* const ListingKey = TEXT("scenario.com/listing");
 
-	TSharedRef<FJsonObject> MetaTool(const TCHAR* Name, const TCHAR* Description, const TSharedRef<FJsonObject>& Properties, const TArray<FString>& Required, bool bReadOnly)
+	TSharedRef<FJsonObject> Annotations(const FString& Title, bool bReadOnly, bool bDestructive, bool bIdempotent, bool bOpenWorld)
 	{
-		TSharedRef<FJsonObject> Schema = MakeShared<FJsonObject>();
-		Schema->SetStringField(TEXT("type"), TEXT("object"));
-		Schema->SetObjectField(TEXT("properties"), Properties);
-		if (Required.Num() > 0)
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		if (!Title.IsEmpty())
 		{
-			Schema->SetField(TEXT("required"), ScenarioJson::StringArrayValue(Required));
+			Json->SetStringField(TEXT("title"), Title);
 		}
-		TSharedRef<FJsonObject> Tool = MakeShared<FJsonObject>();
-		Tool->SetStringField(TEXT("name"), Name);
-		Tool->SetStringField(TEXT("description"), Description);
-		Tool->SetObjectField(TEXT("inputSchema"), Schema);
-		TSharedRef<FJsonObject> Annotations = MakeShared<FJsonObject>();
-		Annotations->SetBoolField(TEXT("readOnlyHint"), bReadOnly);
-		if (!bReadOnly)
+		Json->SetBoolField(TEXT("readOnlyHint"), bReadOnly);
+		Json->SetBoolField(TEXT("destructiveHint"), bDestructive);
+		Json->SetBoolField(TEXT("idempotentHint"), bIdempotent);
+		Json->SetBoolField(TEXT("openWorldHint"), bOpenWorld);
+		return Json;
+	}
+
+	/** The catalog executor that runs a tool, from its hints: read, write or delete. */
+	FString LaneOf(const FScenarioAction& Action)
+	{
+		if (Action.Kind == EScenarioActionKind::Read)
 		{
-			// call_tool reaches every tool, paid and destructive ones included.
-			Annotations->SetBoolField(TEXT("destructiveHint"), true);
-			Annotations->SetBoolField(TEXT("openWorldHint"), true);
+			return TEXT("read");
 		}
-		Tool->SetObjectField(TEXT("annotations"), Annotations);
-		return Tool;
+		return Action.bDestructive ? TEXT("delete") : TEXT("write");
 	}
 
 	TSharedRef<FJsonObject> Prop(const TCHAR* Type, const TCHAR* Description)
@@ -219,27 +190,110 @@ namespace
 		return Json;
 	}
 
-	const TCHAR* KindName(EScenarioActionKind Kind)
+	TSharedRef<FJsonObject> CatalogTool(const FString& Name, const TCHAR* Title, const TCHAR* Description, const TSharedRef<FJsonObject>& Properties,
+		const TArray<FString>& Required, const TSharedRef<FJsonObject>& Hints)
 	{
-		switch (Kind)
+		TSharedRef<FJsonObject> Schema = MakeShared<FJsonObject>();
+		Schema->SetStringField(TEXT("type"), TEXT("object"));
+		Schema->SetObjectField(TEXT("properties"), Properties);
+		if (Required.Num() > 0)
 		{
-		case EScenarioActionKind::Read: return TEXT("read");
-		case EScenarioActionKind::Editor: return TEXT("editor");
-		case EScenarioActionKind::Spend: return TEXT("spend");
-		case EScenarioActionKind::Change: return TEXT("change");
-		default: return TEXT("python");
+			Schema->SetField(TEXT("required"), ScenarioJson::StringArrayValue(Required));
 		}
+		TSharedRef<FJsonObject> Tool = MakeShared<FJsonObject>();
+		Tool->SetStringField(TEXT("name"), Name);
+		Tool->SetStringField(TEXT("title"), Title);
+		Tool->SetStringField(TEXT("description"), Description);
+		Tool->SetObjectField(TEXT("inputSchema"), Schema);
+		Tool->SetObjectField(TEXT("annotations"), Hints);
+		return Tool;
 	}
 
-	/** find_tools: names and descriptions, matched on every word of the query. */
-	TSharedRef<FJsonObject> FoundTools(const TSharedPtr<FJsonObject>& Args)
+	/** unreal_tools_list, unreal_tools_search and the three executors. */
+	TArray<TSharedPtr<FJsonValue>> CatalogTools()
 	{
-		TArray<FString> Words;
-		ScenarioJson::GetString(Args, TEXT("query")).ToLower().ParseIntoArrayWS(Words);
+		TArray<TSharedPtr<FJsonValue>> Tools;
+		Tools.Add(MakeShared<FJsonValueObject>(CatalogTool(ToolsListName, TEXT("List Unreal Tools"),
+			TEXT("Every tool of this editor's Scenario server, including those not in tools/list: the kit's worlds, games and films, Prompt Spark, the Scenario library, the Output Log. Free.\n")
+			TEXT("Returns: { tools: [{ name, title, summary, lane (read, write or delete), listed }] }. listed tools can be called directly; get another tool's input schema from unreal_tools_search, then run it with unreal_tool_execute_<lane> or by its name."),
+			MakeShared<FJsonObject>(), {}, Annotations(TEXT("List Unreal Tools"), true, false, true, false))));
+
+		TSharedRef<FJsonObject> SearchProps = MakeShared<FJsonObject>();
+		SearchProps->SetObjectField(TEXT("query"), Prop(TEXT("string"), TEXT("Words matched against tool names, titles and descriptions, for example film or prompt.")));
+		SearchProps->SetObjectField(TEXT("limit"), Prop(TEXT("integer"), TEXT("Most tools to return, 1 to 20. Default 8.")));
+		Tools.Add(MakeShared<FJsonValueObject>(CatalogTool(ToolsSearchName, TEXT("Search Unreal Tools"),
+			TEXT("Finds tools of this editor's Scenario server by keyword and gives their input schemas. Searches tools only: for models use list_models, for project assets find_assets. Free.\n")
+			TEXT("Returns: { results: [{ name, title, lane, listed, description, inputSchema, annotations }] }; run a result with unreal_tool_execute_<lane> or by its name."),
+			SearchProps, { TEXT("query") }, Annotations(TEXT("Search Unreal Tools"), true, false, true, false))));
+
+		struct FLane { const TCHAR* Lane; const TCHAR* Title; const TCHAR* Description; bool bDestructive; };
+		const FLane Lanes[] = {
+			{ TEXT("read"), TEXT("Run Read Tool"),
+				TEXT("Runs one read-only tool from unreal_tools_search by name, with the same permissions as calling it directly. Tools of the write and delete lanes are refused here, with the executor to use.\n")
+				TEXT("Returns: the tool's own result."), false },
+			{ TEXT("write"), TEXT("Run Write Tool"),
+				TEXT("Runs one tool of the write lane by name: it changes the project, or SPENDS Creative Units, with the same permissions and money rules as calling it directly (price first, quote_id and approved_cost; paid calls are sent once). Read and delete tools are refused here.\n")
+				TEXT("Returns: the tool's own result."), false },
+			{ TEXT("delete"), TEXT("Run Delete Tool"),
+				TEXT("Runs one destructive tool by name, such as remove_scenario_items or the kit's world, game and film tools, with the same permissions as calling it directly. Confirm with the person first. Read and write tools are refused here.\n")
+				TEXT("Returns: the tool's own result."), true },
+		};
+		for (const FLane& Lane : Lanes)
+		{
+			TSharedRef<FJsonObject> Props = MakeShared<FJsonObject>();
+			Props->SetObjectField(TEXT("name"), Prop(TEXT("string"), TEXT("Tool name, as unreal_tools_list or unreal_tools_search gives it.")));
+			Props->SetObjectField(TEXT("parameters"), Prop(TEXT("object"), TEXT("The tool's arguments, matching its inputSchema.")));
+			const bool bRead = FCString::Strcmp(Lane.Lane, TEXT("read")) == 0;
+			Tools.Add(MakeShared<FJsonValueObject>(CatalogTool(FString(ExecutePrefix) + Lane.Lane, Lane.Title, Lane.Description, Props, { TEXT("name") },
+				Annotations(Lane.Title, bRead, Lane.bDestructive, bRead, !bRead))));
+		}
+		return Tools;
+	}
+
+	/** Up to the first sentence of a description, for unreal_tools_list. */
+	FString Summary(const FString& Description)
+	{
+		FString First = Description;
+		int32 Cut = INDEX_NONE;
+		if (First.FindChar(TEXT('\n'), Cut))
+		{
+			First.LeftInline(Cut);
+		}
+		Cut = First.Find(TEXT(". "));
+		return Cut == INDEX_NONE ? First : First.Left(Cut + 1);
+	}
+
+	TSharedRef<FJsonObject> ListedTools()
+	{
 		TArray<TSharedPtr<FJsonValue>> Rows;
 		for (const FScenarioAction& Action : FScenarioActions::Get().All())
 		{
-			const FString Haystack = (Action.Name + TEXT(" ") + Action.Description).ToLower();
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("name"), Action.Name);
+			Row->SetStringField(TEXT("title"), Action.Title);
+			Row->SetStringField(TEXT("summary"), Summary(Action.Description));
+			Row->SetStringField(TEXT("lane"), LaneOf(Action));
+			Row->SetBoolField(TEXT("listed"), !Action.bCatalogOnly);
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetArrayField(TEXT("tools"), Rows);
+		return Json;
+	}
+
+	FScenarioActionResult SearchedTools(const TSharedPtr<FJsonObject>& Args)
+	{
+		TArray<FString> Words;
+		ScenarioJson::GetString(Args, TEXT("query")).ToLower().ParseIntoArrayWS(Words);
+		if (Words.Num() == 0)
+		{
+			return FScenarioActionResult::Fail(TEXT("BadRequest"), TEXT("query is empty: unreal_tools_list lists every tool."));
+		}
+		const int32 Limit = FMath::Clamp(static_cast<int32>(ScenarioJson::GetNumber(Args, TEXT("limit"), 8.0)), 1, 20);
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const FScenarioAction& Action : FScenarioActions::Get().All())
+		{
+			const FString Haystack = (Action.Name + TEXT(" ") + Action.Title + TEXT(" ") + Action.Description).ToLower();
 			bool bMatch = true;
 			for (const FString& Word : Words)
 			{
@@ -249,78 +303,70 @@ namespace
 			{
 				continue;
 			}
-			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
-			Row->SetStringField(TEXT("name"), Action.Name);
-			Row->SetStringField(TEXT("kind"), KindName(Action.Kind));
-			Row->SetStringField(TEXT("description"), Action.Description);
+			TSharedRef<FJsonObject> Row = FScenarioMcpServer::ToolJson(Action);
+			Row->SetStringField(TEXT("lane"), LaneOf(Action));
+			Row->SetBoolField(TEXT("listed"), !Action.bCatalogOnly);
 			Rows.Add(MakeShared<FJsonValueObject>(Row));
-		}
-		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-		Json->SetArrayField(TEXT("tools"), Rows);
-		Json->SetStringField(TEXT("next"), TEXT("describe_tools for the input schemas, then call_tool (or the tool by its own name)."));
-		return Json;
-	}
-
-	/** describe_tools: the full tools/list entries for the names asked. */
-	FScenarioActionResult DescribedTools(const TSharedPtr<FJsonObject>& Args)
-	{
-		TArray<TSharedPtr<FJsonValue>> Tools;
-		TArray<FString> Unknown;
-		for (const FString& Name : ScenarioJson::GetStringArray(Args, TEXT("names")))
-		{
-			if (const FScenarioAction* Action = FScenarioActions::Get().Find(Name))
+			if (Rows.Num() >= Limit)
 			{
-				Tools.Add(MakeShared<FJsonValueObject>(FScenarioMcpServer::ToolJson(*Action)));
-			}
-			else
-			{
-				Unknown.Add(Name.Left(64));
+				break;
 			}
 		}
-		if (Tools.Num() == 0)
-		{
-			return FScenarioActionResult::Fail(TEXT("NotFound"), TEXT("No tool with these names: find_tools lists them."));
-		}
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-		Json->SetArrayField(TEXT("tools"), Tools);
-		if (Unknown.Num() > 0)
-		{
-			Json->SetField(TEXT("unknown"), ScenarioJson::StringArrayValue(Unknown));
-		}
+		Json->SetStringField(TEXT("query"), ScenarioJson::GetString(Args, TEXT("query")));
+		Json->SetArrayField(TEXT("results"), Rows);
 		return FScenarioActionResult::Ok(Json);
 	}
 }
 
-TSharedRef<FJsonObject> FScenarioMcpServer::ToolSearchList()
+TSharedRef<FJsonObject> FScenarioMcpServer::ToolJson(const FScenarioAction& Action)
+{
+	TSharedRef<FJsonObject> Tool = MakeShared<FJsonObject>();
+	Tool->SetStringField(TEXT("name"), Action.Name);
+	if (!Action.Title.IsEmpty())
+	{
+		Tool->SetStringField(TEXT("title"), Action.Title);
+	}
+	Tool->SetStringField(TEXT("description"), Action.Description);
+	Tool->SetObjectField(TEXT("inputSchema"), Action.InputSchema.IsValid() ? Action.InputSchema.ToSharedRef() : MakeShared<FJsonObject>());
+	const bool bReadOnly = Action.Kind == EScenarioActionKind::Read;
+	Tool->SetObjectField(TEXT("annotations"), Annotations(Action.Title, bReadOnly, !bReadOnly && Action.bDestructive, bReadOnly, Action.bOpenWorld));
+	return Tool;
+}
+
+TSharedRef<FJsonObject> FScenarioMcpServer::ToolsList(bool bEveryTool)
 {
 	TArray<TSharedPtr<FJsonValue>> Tools;
-	if (const FScenarioAction* Status = FScenarioActions::Get().Find(TEXT("scenario_status")))
+	for (const FScenarioAction& Action : FScenarioActions::Get().All())
 	{
-		Tools.Add(MakeShared<FJsonValueObject>(ToolJson(*Status)));
+		if (bEveryTool || !Action.bCatalogOnly)
+		{
+			Tools.Add(MakeShared<FJsonValueObject>(ToolJson(Action)));
+		}
 	}
-
-	TSharedRef<FJsonObject> FindProps = MakeShared<FJsonObject>();
-	FindProps->SetObjectField(TEXT("query"), Prop(TEXT("string"), TEXT("Words matched against tool names and descriptions, for example material or job. Empty lists every tool.")));
-	Tools.Add(MakeShared<FJsonValueObject>(MetaTool(FindTools,
-		TEXT("Finds Scenario tools: name, kind (read, editor, spend, change, python) and description. Free."), FindProps, {}, true)));
-
-	TSharedRef<FJsonObject> NamesProp = Prop(TEXT("array"), TEXT("Tool names from find_tools."));
-	TSharedRef<FJsonObject> Items = MakeShared<FJsonObject>();
-	Items->SetStringField(TEXT("type"), TEXT("string"));
-	NamesProp->SetObjectField(TEXT("items"), Items);
-	TSharedRef<FJsonObject> DescribeProps = MakeShared<FJsonObject>();
-	DescribeProps->SetObjectField(TEXT("names"), NamesProp);
-	Tools.Add(MakeShared<FJsonValueObject>(MetaTool(DescribeTools,
-		TEXT("Input schemas and annotations of Scenario tools, as tools/list gives them. Free."), DescribeProps, { TEXT("names") }, true)));
-
-	TSharedRef<FJsonObject> CallProps = MakeShared<FJsonObject>();
-	CallProps->SetObjectField(TEXT("name"), Prop(TEXT("string"), TEXT("Tool name.")));
-	CallProps->SetObjectField(TEXT("arguments"), Prop(TEXT("object"), TEXT("The tool's arguments.")));
-	Tools.Add(MakeShared<FJsonValueObject>(MetaTool(CallTool,
-		TEXT("Runs one Scenario tool with the same permissions and money rules as calling it by name. Tools of kind spend SPEND Creative Units: price first, pass quote_id and approved_cost."),
-		CallProps, { TEXT("name") }, false)));
-
+	Tools.Append(CatalogTools());
 	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetArrayField(TEXT("tools"), Tools);
+	return Json;
+}
+
+TSharedRef<FJsonObject> FScenarioMcpServer::Snapshot()
+{
+	TArray<TSharedPtr<FJsonValue>> Tools;
+	for (const FScenarioAction& Action : FScenarioActions::Get().All())
+	{
+		TSharedRef<FJsonObject> Tool = ToolJson(Action);
+		if (Action.bCatalogOnly)
+		{
+			TSharedRef<FJsonObject> Meta = MakeShared<FJsonObject>();
+			Meta->SetStringField(ListingKey, TEXT("catalog"));
+			Tool->SetObjectField(TEXT("_meta"), Meta);
+		}
+		Tools.Add(MakeShared<FJsonValueObject>(Tool));
+	}
+	Tools.Append(CatalogTools());
+	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("instructions"), Instructions());
 	Json->SetArrayField(TEXT("tools"), Tools);
 	return Json;
 }
@@ -486,7 +532,7 @@ void FScenarioMcpServer::HandleRpc(const TSharedPtr<FJsonObject>& Message, const
 	}
 	if (Method == TEXT("tools/list"))
 	{
-		Respond(RpcResult(Id, bToolSearch ? ToolSearchList() : ToolsList()));
+		Respond(RpcResult(Id, ToolsList(bListEveryTool)));
 		return;
 	}
 	if (Method != TEXT("tools/call"))
@@ -497,24 +543,32 @@ void FScenarioMcpServer::HandleRpc(const TSharedPtr<FJsonObject>& Message, const
 
 	FString Name = ScenarioJson::GetString(Params, TEXT("name"));
 	TSharedPtr<FJsonObject> Arguments = ScenarioJson::GetObject(Params, TEXT("arguments"));
-	// The search tools answer in every mode, so a client keeps working when the setting changes.
-	if (Name == FindTools)
+	// The catalog answers whatever tools/list shows, so a client keeps working when the setting changes.
+	if (Name == ToolsListName)
 	{
-		Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Ok(FoundTools(Arguments)))));
+		Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Ok(ListedTools()))));
 		return;
 	}
-	if (Name == DescribeTools)
+	if (Name == ToolsSearchName)
 	{
-		Respond(RpcResult(Id, ToolResult(DescribedTools(Arguments))));
+		Respond(RpcResult(Id, ToolResult(SearchedTools(Arguments))));
 		return;
 	}
-	if (Name == CallTool)
+	if (Name.StartsWith(ExecutePrefix))
 	{
+		const FString Lane = Name.RightChop(FCString::Strlen(ExecutePrefix));
 		Name = ScenarioJson::GetString(Arguments, TEXT("name"));
-		Arguments = ScenarioJson::GetObject(Arguments, TEXT("arguments"));
-		if (!FScenarioActions::Get().Find(Name))
+		Arguments = ScenarioJson::GetObject(Arguments, TEXT("parameters"));
+		const FScenarioAction* Target = FScenarioActions::Get().Find(Name);
+		if (!Target)
 		{
-			Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Fail(TEXT("NotFound"), FString::Printf(TEXT("No tool named %s: find_tools lists them."), *Name.Left(64))))));
+			Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Fail(TEXT("NotFound"), FString::Printf(TEXT("No tool named %s: unreal_tools_search finds them."), *Name.Left(64))))));
+			return;
+		}
+		if (LaneOf(*Target) != Lane)
+		{
+			Respond(RpcResult(Id, ToolResult(FScenarioActionResult::Fail(TEXT("WrongLane"),
+				FString::Printf(TEXT("%s is a %s tool: run it with unreal_tool_execute_%s."), *Name, *LaneOf(*Target), *LaneOf(*Target))))));
 			return;
 		}
 	}

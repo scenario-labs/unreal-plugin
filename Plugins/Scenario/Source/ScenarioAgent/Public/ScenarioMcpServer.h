@@ -30,18 +30,26 @@ public:
 
 	FString Token;
 	bool bRequireToken = true;
-	/** tools/list returns ToolSearchList() instead of every tool (opt-in, "bAgentToolSearch"). */
-	bool bToolSearch = false;
+	/** tools/list lists every tool, the catalog-only ones too (opt-in, "bAgentListEveryTool"). */
+	bool bListEveryTool = false;
 
 	/** Request handling, callable without sockets (tests). Port is the one the Host header must name. */
 	void Handle(const FScenarioLocalRequest& Request, FScenarioLocalRespond Respond);
 	void SetPortForTests(int32 InPort) { Port = InPort; }
 
-	/** tools/list result, also used by the size budget test. */
-	static TSharedRef<FJsonObject> ToolsList();
+	/**
+	 * tools/list: the tools not marked bCatalogOnly (every tool with bEveryTool), then the catalog:
+	 * unreal_tools_list, unreal_tools_search and unreal_tool_execute_read, _write and _delete, named
+	 * as scenario-mcp names its own. Every tool stays callable by name.
+	 */
+	static TSharedRef<FJsonObject> ToolsList(bool bEveryTool = false);
 	static TSharedRef<FJsonObject> ToolJson(const FScenarioAction& Action);
-	/** Tool search mode: scenario_status, find_tools, describe_tools and call_tool. Every tool stays callable by name. */
-	static TSharedRef<FJsonObject> ToolSearchList();
+	/**
+	 * Every tool as tools/list sends it (catalog-only ones marked with scenario-mcp's _meta
+	 * "scenario.com/listing": "catalog"), and the initialize instructions: the snapshot that
+	 * Plugins/Scenario/Tests/mcp-tools.json commits, so the tools are checked without Unreal.
+	 */
+	static TSharedRef<FJsonObject> Snapshot();
 
 	struct FClient
 	{

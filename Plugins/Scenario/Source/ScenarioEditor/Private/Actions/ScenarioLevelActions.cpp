@@ -35,10 +35,14 @@ namespace
 {
 	using FRunFn = TFunction<void(const TSharedPtr<FJsonObject>&, const FScenarioCaller&, FScenarioActionDone)>;
 
-	FScenarioAction Make(const FString& Name, EScenarioActionKind Kind, const FString& Description, const TSharedPtr<FJsonObject>& Schema, FRunFn Run)
+	FScenarioAction Make(const FString& Name, const FString& Title, EScenarioActionKind Kind, const FString& Description, const TSharedPtr<FJsonObject>& Schema, FRunFn Run)
 	{
+		// Listed in the agent server's catalog instead of tools/list.
+		static const TSet<FString> CatalogOnly = { TEXT("output_log") };
 		FScenarioAction Action;
 		Action.Name = Name;
+		Action.Title = Title;
+		Action.bCatalogOnly = CatalogOnly.Contains(Name);
 		Action.Kind = Kind;
 		Action.Description = Description;
 		Action.InputSchema = Schema;
@@ -245,11 +249,11 @@ namespace
 void FScenarioActions::RegisterLevelActions()
 {
 	// scene_summary
-	Register(Make(TEXT("scene_summary"), EScenarioActionKind::Read,
-		TEXT("The open level: World Partition state (only loaded actors are listed there), one file per actor, data layers, selection, viewport camera, actor counts by class, and a page of actors with labels, ids, classes, locations and tags."),
+	Register(Make(TEXT("scene_summary"), TEXT("Summarize Level"), EScenarioActionKind::Read,
+		TEXT("The open level: World Partition state (only loaded actors are listed there), one file per actor, data layers, selection, viewport camera, actor counts by class, and a page of actors with labels, ids, classes, locations and tags.\nReturns: { level, unsaved_changes, world_partition, selection, viewport_camera, actor_counts, actors: [{ label, id, class, location, tags, placed_by_scenario }], actors_matching, next_page, notes }."),
 		Object({
 			{ TEXT("class"), TEXT("string"), TEXT("Only actors whose class name contains this.") },
-			{ TEXT("page"), TEXT("integer") },
+			{ TEXT("page"), TEXT("integer"), TEXT("Page of the actor list: next_page from the previous call.") },
 			{ TEXT("page_size"), TEXT("integer"), TEXT("Default 50, max 200.") },
 		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
@@ -352,9 +356,9 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// object_detail
-	Register(Make(TEXT("object_detail"), EScenarioActionKind::Read,
-		TEXT("One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance."),
-		Object({ { TEXT("actor_id"), TEXT("string") } }, { TEXT("actor_id") }),
+	Register(Make(TEXT("object_detail"), TEXT("Get Actor Details"), EScenarioActionKind::Read,
+		TEXT("One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance.\nReturns: { label, id, class, folder, location, rotation, scale, bounds_center, bounds_size, mesh, materials, components, placed_by_scenario, scenario }."),
+		Object({ { TEXT("actor_id"), TEXT("string"), TEXT("Actor id or label, from scene_summary.") } }, { TEXT("actor_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			const TArray<AActor*> Found = ScenarioPlacement::ResolveTargets({ Str(Args, TEXT("actor_id"), TEXT("?")) });
@@ -432,10 +436,8 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// screenshot_viewport
-	Register(Make(TEXT("screenshot_viewport"), EScenarioActionKind::Read,
-		TEXT("Image of the active level viewport's camera (no gizmos), returned to you, with the world, camera, FOV and size it shows. ")
-		TEXT("Pass camera to render another view without moving the person's viewport (also works with no viewport open). ")
-		TEXT("frame_check flags all-black, all-white, uniform, clipped or crushed frames; exposure_override says when the viewport's fixed exposure differs from the game's."),
+	Register(Make(TEXT("screenshot_viewport"), TEXT("Screenshot Viewport"), EScenarioActionKind::Read,
+		TEXT("Image of the active level viewport's camera (no gizmos), returned to you, with the world, camera, FOV and size it shows. Pass camera to render another view without moving the person's viewport (also works with no viewport open). frame_check flags all-black, all-white, uniform, clipped or crushed frames; exposure_override says when the viewport's fixed exposure differs from the game's.\nReturns: the image, and { captured, file, frame_check, exposure_override }."),
 		Object({
 			{ TEXT("width"), TEXT("integer"), TEXT("Default 1024, max 1920.") },
 			{ TEXT("height"), TEXT("integer"), TEXT("Default 576, max 1080.") },
@@ -483,8 +485,8 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// find_assets
-	Register(Make(TEXT("find_assets"), EScenarioActionKind::Read,
-		TEXT("Content Browser search by folder, class, name and Scenario origin. Reads the asset registry; loads nothing."),
+	Register(Make(TEXT("find_assets"), TEXT("Find Assets"), EScenarioActionKind::Read,
+		TEXT("Content Browser search by folder, class, name and Scenario origin. Reads the asset registry; loads nothing.\nReturns: { assets: [{ path, class, from_scenario }], matched }."),
 		Object({
 			{ TEXT("path"), TEXT("string"), TEXT("Content folder, default /Game.") },
 			{ TEXT("class"), TEXT("string"), TEXT("StaticMesh, Texture2D, MaterialInstanceConstant, SoundWave...") },
@@ -551,8 +553,8 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// asset_detail
-	Register(Make(TEXT("asset_detail"), EScenarioActionKind::Read,
-		TEXT("One asset: class, size on disk, referencers and dependencies, source file, Scenario provenance, and mesh checks (scale, triangles, bones)."),
+	Register(Make(TEXT("asset_detail"), TEXT("Get Asset Details"), EScenarioActionKind::Read,
+		TEXT("One asset: class, size on disk, referencers and dependencies, source file, Scenario provenance, and mesh checks (scale, triangles, bones).\nReturns: { path, class, size_on_disk_kb, referenced_by, depends_on, source_file, scenario, checks }."),
 		Object({ { TEXT("asset_path"), TEXT("string"), TEXT("Object path, for example /Game/Scenario/Meshes/SM_Well.SM_Well.") }, { TEXT("checks"), TEXT("boolean"), TEXT("Load meshes to run checks (default true).") } }, { TEXT("asset_path") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -619,12 +621,12 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// output_log
-	Register(Make(TEXT("output_log"), EScenarioActionKind::Read,
-		TEXT("Recent warnings and errors from the Output Log (and Scenario and Interchange messages), newest last."),
+	Register(Make(TEXT("output_log"), TEXT("Read Output Log"), EScenarioActionKind::Read,
+		TEXT("Recent warnings and errors from the Output Log (and Scenario and Interchange messages), newest last.\nReturns: { lines }."),
 		Object({
-			{ TEXT("severity"), TEXT("string"), FString(), FString(), { TEXT("errors"), TEXT("warnings"), TEXT("all") } },
+			{ TEXT("severity"), TEXT("string"), TEXT("errors, warnings (default, with errors) or all."), FString(), { TEXT("errors"), TEXT("warnings"), TEXT("all") } },
 			{ TEXT("category"), TEXT("string"), TEXT("Prefix, for example LogInterchange.") },
-			{ TEXT("since_seconds"), TEXT("integer") },
+			{ TEXT("since_seconds"), TEXT("integer"), TEXT("Only lines from the last this many seconds.") },
 			{ TEXT("limit"), TEXT("integer"), TEXT("Default 50, max 200.") },
 		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
@@ -644,11 +646,11 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// prepare_result_application
-	Register(Make(TEXT("prepare_result_application"), EScenarioActionKind::Read,
-		TEXT("Describes how a finished job will land: purpose import, place, material, environment, media_plate or mesh_edit, with targets. Changes nothing. Returns application_id and the review text."),
+	Register(Make(TEXT("prepare_result_application"), TEXT("Prepare Result"), EScenarioActionKind::Read,
+		TEXT("Describes how a finished job will land: purpose import, place, material, environment, media_plate, mesh_edit or sequencer_audio, with targets. Changes nothing; apply_result_application applies it.\nReturns: { application_id, review, next }."),
 		Object({
-			{ TEXT("job_id"), TEXT("string") },
-			{ TEXT("purpose"), TEXT("string"), FString(), FString(), { TEXT("import"), TEXT("place"), TEXT("material"), TEXT("environment"), TEXT("media_plate"), TEXT("mesh_edit"), TEXT("sequencer_audio") } },
+			{ TEXT("job_id"), TEXT("string"), TEXT("Finished job id from job_status.") },
+			{ TEXT("purpose"), TEXT("string"), TEXT("How the result lands: import, place (default), material, environment, media_plate, mesh_edit or sequencer_audio."), FString(), { TEXT("import"), TEXT("place"), TEXT("material"), TEXT("environment"), TEXT("media_plate"), TEXT("mesh_edit"), TEXT("sequencer_audio") } },
 			{ TEXT("actor_ids"), TEXT("array"), TEXT("Targets (material, media_plate, mesh_edit, at_pivot); default the selection.") },
 			{ TEXT("placement"), TEXT("string"), TEXT("For place."), FString(), { TEXT("auto"), TEXT("in_front_of_camera"), TEXT("at_pivot"), TEXT("at_location"), TEXT("on_selection") } },
 			{ TEXT("location"), TEXT("array"), TEXT("[x, y, z] in cm for at_location."), TEXT("number") },
@@ -766,9 +768,9 @@ void FScenarioActions::RegisterLevelActions()
 
 	// apply_result_application
 	{
-		FScenarioAction Action = Make(TEXT("apply_result_application"), EScenarioActionKind::Change,
-			TEXT("Applies a prepared application once, in one undo step, and returns exactly what changed and the import checks. When agent changes are off, the person gets a proposal and the result is pending_approval."),
-			Object({ { TEXT("application_id"), TEXT("string") } }, { TEXT("application_id") }),
+		FScenarioAction Action = Make(TEXT("apply_result_application"), TEXT("Apply Result"), EScenarioActionKind::Change,
+			TEXT("Applies a prepared application once, in one undo step. When agent changes are off, the person gets a proposal instead.\nReturns: { state, review, next } with what changed and the import checks, or state pending_approval while the person decides."),
+			Object({ { TEXT("application_id"), TEXT("string"), TEXT("application_id from prepare_result_application.") } }, { TEXT("application_id") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{
 				const FString Id = Str(Args, TEXT("application_id"));
@@ -809,9 +811,9 @@ void FScenarioActions::RegisterLevelActions()
 	}
 
 	// select_objects
-	Register(Make(TEXT("select_objects"), EScenarioActionKind::Editor,
-		TEXT("Selects actors by id or label (replaces the selection unless add is true)."),
-		Object({ { TEXT("actor_ids"), TEXT("array") }, { TEXT("add"), TEXT("boolean") } }, { TEXT("actor_ids") }),
+	Register(Make(TEXT("select_objects"), TEXT("Select Actors"), EScenarioActionKind::Editor,
+		TEXT("Selects actors by id or label (replaces the selection unless add is true).\nReturns: { selected }."),
+		Object({ { TEXT("actor_ids"), TEXT("array"), TEXT("Actor ids or labels.") }, { TEXT("add"), TEXT("boolean"), TEXT("Add to the selection instead of replacing it. Default false.") } }, { TEXT("actor_ids") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			const TArray<FString> Ids = Strings(Args, TEXT("actor_ids"));
@@ -840,9 +842,9 @@ void FScenarioActions::RegisterLevelActions()
 		}));
 
 	// save_changes
-	Register(Make(TEXT("save_changes"), EScenarioActionKind::Change,
-		TEXT("Saves the packages the plugin created or changed this session (and the level, with World Partition actor files, when include_levels is true). Returns each file written."),
-		Object({ { TEXT("include_levels"), TEXT("boolean") } }),
+	Register(Make(TEXT("save_changes"), TEXT("Save Changes"), EScenarioActionKind::Change,
+		TEXT("Saves the packages the plugin created or changed this session (and the level, with World Partition actor files, when include_levels is true).\nReturns: { ok, saved_files, warnings, error }."),
+		Object({ { TEXT("include_levels"), TEXT("boolean"), TEXT("Also save the open level and its World Partition actor files. Default false.") } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -868,9 +870,9 @@ void FScenarioActions::RegisterLevelActions()
 
 	// remove_scenario_items
 	{
-		FScenarioAction Action = Make(TEXT("remove_scenario_items"), EScenarioActionKind::Change,
-			TEXT("Removes actors the plugin placed (one undo step), and a job's imported assets when nothing references them. Returns what was removed."),
-			Object({ { TEXT("actor_ids"), TEXT("array") }, { TEXT("job_id"), TEXT("string"), TEXT("Removes this job's imported assets.") } }),
+		FScenarioAction Action = Make(TEXT("remove_scenario_items"), TEXT("Remove Scenario Items"), EScenarioActionKind::Change,
+			TEXT("Removes actors the plugin placed (one undo step), and a job's imported assets when nothing references them.\nReturns: the actors and assets removed."),
+			Object({ { TEXT("actor_ids"), TEXT("array"), TEXT("Ids or labels of actors the plugin placed.") }, { TEXT("job_id"), TEXT("string"), TEXT("Removes this job's imported assets.") } }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 			{
 				FScenarioActionResult Fail;
@@ -930,9 +932,9 @@ void FScenarioActions::RegisterLevelActions()
 
 	// execute_python
 	{
-		FScenarioAction Action = Make(TEXT("execute_python"), EScenarioActionKind::Python,
-			TEXT("Runs Unreal Python in the editor (game thread) inside one undo step. Off unless the person allows it. Output capped at 20,000 characters."),
-			Object({ { TEXT("code"), TEXT("string") } }, { TEXT("code") }),
+		FScenarioAction Action = Make(TEXT("execute_python"), TEXT("Run Python"), EScenarioActionKind::Python,
+			TEXT("Runs Unreal Python in the editor (game thread) inside one undo step. Off unless the person allows it. Output capped at 20,000 characters.\nReturns: { ok, output, result }."),
+			Object({ { TEXT("code"), TEXT("string"), TEXT("Python source to run.") } }, { TEXT("code") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 			{
 				IPythonScriptPlugin* Python = IPythonScriptPlugin::Get();
@@ -986,9 +988,9 @@ void FScenarioActions::RegisterLevelActions()
 	}
 
 	// unreal_api_help
-	Register(Make(TEXT("unreal_api_help"), EScenarioActionKind::Read,
-		TEXT("Reflection help before writing Python: a class (functions and properties) or one member (\"StaticMeshActor\", \"EditorActorSubsystem.SpawnActorFromClass\")."),
-		Object({ { TEXT("name"), TEXT("string") } }, { TEXT("name") }),
+	Register(Make(TEXT("unreal_api_help"), TEXT("Unreal API Help"), EScenarioActionKind::Read,
+		TEXT("Reflection help before writing Python: a class (functions and properties) or one member (\"StaticMeshActor\", \"EditorActorSubsystem.SpawnActorFromClass\").\nReturns: { type, python, parent, about, functions, properties } for a class, or the member's signature and about."),
+		Object({ { TEXT("name"), TEXT("string"), TEXT("A class, or Class.member.") } }, { TEXT("name") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FString ClassName = Str(Args, TEXT("name"));

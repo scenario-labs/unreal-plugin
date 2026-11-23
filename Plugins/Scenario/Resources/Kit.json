@@ -1,17 +1,18 @@
 {
-  "about": "Kit tools: Scenario MCP tools that lay Scenario results out as a walkable world, a game or a film. Each runs scenario_unreal.recipes in the editor's Python (Content/Python). kind: read, editor or change. undo: run inside one undo step (false for tools that open a level or start a render).",
+  "about": "Kit tools: Scenario MCP tools that lay Scenario results out as a walkable world, a game or a film. Each runs scenario_unreal.recipes in the editor's Python (Content/Python). kind: read, editor or change. undo: run inside one undo step (false for tools that open a level or start a render). title: the MCP tool title. The agent server lists these tools in its catalog (unreal_tools_list), not in tools/list.",
   "tools": [
     {
       "name": "build_world",
+      "title": "Build World",
       "kind": "change",
       "undo": false,
       "time_limit": 180,
-      "description": "Creates and opens a new walkable level under /Game/Scenario/Worlds: sun, sky light and fog for the time of day (mist for ground fog), a ground, invisible walls around the play area, a player start and the project's third-person game mode. Generate the Scenario assets first or in parallel; pass them here or to dress_world. Fails if the open level has unsaved changes.",
+      "description": "Creates and opens a new walkable level under /Game/Scenario/Worlds: sun, sky light and fog for the time of day (mist for ground fog), a ground, invisible walls around the play area, a player start and the project's third-person game mode. Generate the Scenario assets first or in parallel; pass them here or to dress_world. Fails if the open level has unsaved changes.\nReturns: { level, size_m, play_area_m, player_start_m, landmark_spot_m, game_mode, time_of_day, mist, sun, next }.",
       "input_schema": {
         "type": "object",
         "properties": {
           "name": { "type": "string", "description": "World name, also the level name (\"Misty Bamboo Temple\")." },
-          "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"], "default": "day" },
+          "time_of_day": { "type": "string", "description": "day (default), morning, golden, dusk, night or overcast.", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"], "default": "day" },
           "size_m": { "type": "number", "description": "Side of the square play area in meters (40 to 600). Default 120: about a minute to walk across." },
           "ground_material": { "type": "string", "description": "Material from a Scenario material result (created_assets path). Tiled in world space." },
           "ground_tile_m": { "type": "number", "description": "Meters per texture tile on the ground. Default 4." },
@@ -24,10 +25,11 @@
     },
     {
       "name": "dress_world",
+      "title": "Dress World",
       "kind": "change",
       "undo": true,
       "time_limit": 300,
-      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.",
+      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.\nReturns: { level, size_m, props: [{ actor, mesh, at_m, height_m, yaw, on_path }], placed, asked, warnings, note }.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -72,14 +74,14 @@
               "required": ["mesh"]
             }
           },
-          "ground_material": { "type": "string" },
-          "ground_tile_m": { "type": "number" },
+          "ground_material": { "type": "string", "description": "Material from a Scenario material result, as in build_world." },
+          "ground_tile_m": { "type": "number", "description": "Meters per texture tile on the ground." },
           "ground_tint": { "type": "array", "items": { "type": "number" }, "description": "[r, g, b] 0 to 1, multiplies the ground's color (the ground_material given, or the one already on the ground)." },
-          "sky": { "type": "string" },
+          "sky": { "type": "string", "description": "Material or panorama texture from a Scenario environment (skybox) result." },
           "mist": { "type": "number", "description": "Ground fog from 0 to 1, as in build_world. Omit to keep the level's." },
           "ambient": { "type": "string", "description": "Sound from a Scenario audio result, looped over the whole world." },
           "ambient_volume": { "type": "number", "description": "Default 0.5." },
-          "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
+          "time_of_day": { "type": "string", "description": "day, morning, golden, dusk, night or overcast.", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
           "seed": { "type": "integer", "description": "Change it for another layout. Default 7." },
           "replace": { "type": "boolean", "description": "Removes the props, their lights and the landmark of the previous call first. Default true. A new path always replaces the old one." }
         }
@@ -87,16 +89,18 @@
     },
     {
       "name": "make_game",
+      "title": "Make Game",
       "kind": "change",
       "undo": true,
       "time_limit": 180,
-      "description": "Turns the open level (a kit world or a dressed template) into a small game: Scenario pickups spread over free floor (they spin and glow), an optional goal (in front of the landmark when there is one), a timer, looping music and a HUD. Winning: collect every pickup, then reach the goal. Uses the plugin's Scenario Pickup, Goal and Game Rules actors, so the game also works in a packaged build.",
+      "description": "Turns the open level (a kit world or a dressed template) into a small game: Scenario pickups spread over free floor (they spin and glow), an optional goal (in front of the landmark when there is one), a timer, looping music and a HUD. Winning: collect every pickup, then reach the goal. Uses the plugin's Scenario Pickup, Goal and Game Rules actors, so the game also works in a packaged build.\nReturns: { level, title, pickups, pickup_mesh, time_limit_s, music }.",
       "input_schema": {
         "type": "object",
         "properties": {
           "title": { "type": "string", "description": "Shown on the HUD (\"Lantern Hunt\")." },
           "pickups": {
             "type": "object",
+            "description": "What to collect: a Scenario mesh, how many, their name on the HUD and a pickup sound.",
             "properties": {
               "mesh": { "type": "string" },
               "count": { "type": "integer", "description": "1 to 40. Default 8." },
@@ -119,12 +123,12 @@
           },
           "time_limit_s": { "type": "number", "description": "0: no limit. Default 25 s per pickup plus 30." },
           "music": { "type": "string", "description": "Scenario music, looped." },
-          "music_volume": { "type": "number" },
-          "win_sound": { "type": "string" },
-          "lose_sound": { "type": "string" },
+          "music_volume": { "type": "number", "description": "Default 0.6." },
+          "win_sound": { "type": "string", "description": "Scenario sound played when the player wins." },
+          "lose_sound": { "type": "string", "description": "Scenario sound played when time runs out." },
           "objective": { "type": "string", "description": "One HUD line. Default: \"Collect every <name>, then reach the goal.\"" },
           "accent": { "type": "array", "items": { "type": "number" }, "description": "HUD and glow color, [r, g, b] 0 to 1." },
-          "seed": { "type": "integer" },
+          "seed": { "type": "integer", "description": "Change it for another layout." },
           "replace": { "type": "boolean", "description": "Removes the previous game's actors first. Default true." }
         },
         "required": ["title", "pickups"]
@@ -132,20 +136,22 @@
     },
     {
       "name": "dress_template",
+      "title": "Dress Template",
       "kind": "change",
       "undo": false,
       "time_limit": 240,
-      "description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.",
+      "description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.\nReturns: { level, template, materials_replaced, swapped: [{ replace, with, count }], placed, asked }.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
+          "name": { "type": "string", "description": "Name of the copy, also the level name." },
           "template": { "type": "string", "description": "A name above or a level path. Default platforming." },
           "floor_material": { "type": "string", "description": "Replaces the grey grid floors and walls." },
           "block_material": { "type": "string", "description": "Replaces the colored blocks." },
           "tile_m": { "type": "number", "description": "Meters per texture tile. Default 4." },
           "swaps": {
             "type": "array",
+            "description": "Template meshes to replace: which shape, and the Scenario mesh that takes its place.",
             "items": {
               "type": "object",
               "properties": {
@@ -155,33 +161,35 @@
               "required": ["replace", "mesh"]
             }
           },
-          "props": { "type": "array", "items": { "type": "object", "properties": { "mesh": { "type": "string" }, "count": { "type": "integer" }, "height_m": {} }, "required": ["mesh"] } },
-          "sky": { "type": "string" },
-          "time_of_day": { "type": "string", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
-          "music": { "type": "string" },
-          "music_volume": { "type": "number" },
-          "seed": { "type": "integer" }
+          "props": { "type": "array", "description": "Scenario meshes scattered as decor on free floor.", "items": { "type": "object", "properties": { "mesh": { "type": "string" }, "count": { "type": "integer" }, "height_m": {} }, "required": ["mesh"] } },
+          "sky": { "type": "string", "description": "Material or panorama texture from a Scenario environment (skybox) result." },
+          "time_of_day": { "type": "string", "description": "day, morning, golden, dusk, night or overcast.", "enum": ["day", "morning", "golden", "dusk", "night", "overcast"] },
+          "music": { "type": "string", "description": "Scenario music, looped." },
+          "music_volume": { "type": "number", "description": "Music volume." },
+          "seed": { "type": "integer", "description": "Change it for another layout." }
         },
         "required": ["name"]
       }
     },
     {
       "name": "make_film",
+      "title": "Make Film",
       "kind": "change",
       "undo": true,
       "time_limit": 180,
-      "description": "Builds a short film in the open level as a Level Sequence: cine cameras on smooth moves (aerial, crane_down, orbit, walk, detail, rise) around the landmark, camera cuts, fade in and out, and Scenario music and sound effects. Default: six shots over duration_s. Then render_film.",
+      "description": "Builds a short film in the open level as a Level Sequence: cine cameras on smooth moves (aerial, crane_down, orbit, walk, detail, rise) around the landmark, camera cuts, fade in and out, and Scenario music and sound effects. Default: six shots over duration_s. Then render_film.\nReturns: { film, sequence, level, duration_s, shots, audio, next }.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
+          "name": { "type": "string", "description": "Film name, also the Level Sequence name." },
           "duration_s": { "type": "number", "description": "6 to 120. Default 24." },
           "music": { "type": "string", "description": "Scenario music for the whole film." },
-          "music_volume": { "type": "number" },
-          "sfx": { "type": "array", "items": { "type": "object", "properties": { "sound": { "type": "string" }, "at_s": { "type": "number" }, "volume": { "type": "number" } }, "required": ["sound", "at_s"] } },
+          "music_volume": { "type": "number", "description": "Default 0.9." },
+          "sfx": { "type": "array", "description": "Scenario sound effects, each at a time in the film.", "items": { "type": "object", "properties": { "sound": { "type": "string" }, "at_s": { "type": "number" }, "volume": { "type": "number" } }, "required": ["sound", "at_s"] } },
           "focus": { "description": "What the film is about: an actor label, or [x, y, z] in meters. Default: the landmark.", "oneOf": [ { "type": "string" }, { "type": "array", "items": { "type": "number" } } ] },
           "shots": {
             "type": "array",
+            "description": "Shots in order; default six over duration_s.",
             "items": {
               "type": "object",
               "properties": {
@@ -193,49 +201,53 @@
             }
           },
           "fps": { "type": "integer", "description": "Default 24." },
-          "seed": { "type": "integer" }
+          "seed": { "type": "integer", "description": "Change it for other camera paths." }
         },
         "required": ["name"]
       }
     },
     {
       "name": "render_film",
+      "title": "Render Film",
       "kind": "change",
       "undo": false,
       "time_limit": 60,
-      "description": "Renders a film with Movie Render Queue in the editor, then encodes an MP4 with its music when ffmpeg is installed. Returns at once: poll film_status about every 20 seconds. A 24 s film at 720p draft takes a few minutes.",
+      "description": "Renders a film with Movie Render Queue in the editor, then encodes an MP4 with its music when ffmpeg is installed. Returns at once: poll film_status about every 20 seconds. A 24 s film at 720p draft takes a few minutes.\nReturns: { film, state, frames, resolution, output_dir, note, next }.",
       "input_schema": {
         "type": "object",
         "properties": {
           "film": { "type": "string", "description": "Film name or sequence path. Default: the newest film." },
-          "resolution": { "type": "string", "enum": ["720p", "1080p"], "default": "720p" },
+          "resolution": { "type": "string", "description": "720p (default) or 1080p.", "enum": ["720p", "1080p"], "default": "720p" },
           "quality": { "type": "string", "enum": ["draft", "high"], "description": "high: 4 temporal samples (smoother, about 4x slower). Default draft." }
         }
       }
     },
     {
       "name": "film_status",
+      "title": "Get Film Status",
       "kind": "read",
       "undo": false,
       "time_limit": 20,
-      "description": "Where a film render is: rendering (frames_done of frames), encoding, done (mp4 path) or failed (error).",
-      "input_schema": { "type": "object", "properties": { "film": { "type": "string" } } }
+      "description": "Where a film render is: rendering (frames_done of frames), encoding, done (mp4 path) or failed (error).\nReturns: { film, state, next } with frames_done and frames while rendering, the mp4 path when done, or error.",
+      "input_schema": { "type": "object", "properties": { "film": { "type": "string", "description": "Film name or sequence path. Default: the newest film." } } }
     },
     {
       "name": "kit_status",
+      "title": "Get Kit Status",
       "kind": "read",
       "undo": false,
       "time_limit": 20,
-      "description": "What the kit made in the open level: kit world or not, size, props and their lights, landmark, path, sky, time of day, mist, pickups, goal, game rules, films. During Play it reports the player character instead (pawn, pawn_at_m); stop Play to read the level again.",
+      "description": "What the kit made in the open level: kit world or not, size, props and their lights, landmark, path, sky, time of day, mist, pickups, goal, game rules, films. During Play it reports the player character instead (pawn, pawn_at_m); stop Play to read the level again.\nReturns: { level, kit_world } and what the kit made there, or the player character during Play.",
       "input_schema": { "type": "object", "properties": {} }
     },
     {
       "name": "play_level",
+      "title": "Play Level",
       "kind": "editor",
       "undo": false,
       "time_limit": 20,
-      "description": "Starts (or stops) Play in the editor so the person can walk the level or play the game. Call kit_status a few seconds after starting: it reports the player character once it has spawned.",
-      "input_schema": { "type": "object", "properties": { "action": { "type": "string", "enum": ["start", "stop"], "default": "start" } } }
+      "description": "Starts (or stops) Play in the editor so the person can walk the level or play the game. Call kit_status a few seconds after starting: it reports the player character once it has spawned.\nReturns: { playing, note }.",
+      "input_schema": { "type": "object", "properties": { "action": { "type": "string", "description": "start (default) or stop.", "enum": ["start", "stop"], "default": "start" } } }
     }
   ]
 }
