@@ -12,7 +12,7 @@
 
 const TCHAR* FScenarioOAuth::ProductionIssuer = TEXT("https://clerk.scenario.com");
 const TCHAR* FScenarioOAuth::ProductionClientId = TEXT("U67CS7IbpZy0PPe0");
-const TCHAR* FScenarioOAuth::DefaultScope = TEXT("openid offline_access");
+const TCHAR* FScenarioOAuth::DefaultScope = TEXT("openid profile email offline_access");
 
 namespace
 {
@@ -40,6 +40,12 @@ namespace
 			return Description;
 		}
 		return Code.IsEmpty() ? Fallback : Code;
+	}
+
+	/** True when a saved client record names this application and provider. */
+	bool BelongsTo(const TSharedPtr<FJsonObject>& Client, const FScenarioOAuthApp& App)
+	{
+		return ScenarioJson::GetString(Client, TEXT("client_id")) == App.ClientId && ScenarioJson::GetString(Client, TEXT("issuer")) == App.Issuer;
 	}
 }
 
@@ -133,8 +139,7 @@ bool FScenarioOAuth::Restore()
 	FString ClientJson;
 	Store->Read(ClientAccount, ClientJson);
 	const TSharedPtr<FJsonObject> Client = ScenarioJson::ParseObject(ClientJson);
-	if (ScenarioJson::GetString(Client, TEXT("client_id")) != App.ClientId
-		|| ScenarioJson::GetString(Client, TEXT("issuer")) != App.Issuer)
+	if (!BelongsTo(Client, App))
 	{
 		// Saved by another application, such as the client an older version registered: its provider
 		// is not this one, so the token is only forgotten.
@@ -143,6 +148,31 @@ bool FScenarioOAuth::Restore()
 		return false;
 	}
 	RefreshToken = Saved;
+	StoredRefreshToken = Saved;
+	AccountId = ScenarioJson::GetString(Client, TEXT("sub"));
+	AccountEmail = ScenarioJson::GetString(Client, TEXT("email"));
+	return true;
+}
+
+bool FScenarioOAuth::AdoptStoredSession()
+{
+	FString Saved;
+	if (RefreshToken.IsEmpty() || !Store->Read(RefreshAccount, Saved) || Saved.IsEmpty() || Saved == StoredRefreshToken)
+	{
+		return false;
+	}
+	FString ClientJson;
+	Store->Read(ClientAccount, ClientJson);
+	const TSharedPtr<FJsonObject> Client = ScenarioJson::ParseObject(ClientJson);
+	const FString SavedId = ScenarioJson::GetString(Client, TEXT("sub"));
+	// Another account's session belongs to the editor that signed in with it.
+	if (!BelongsTo(Client, App) || (!AccountId.IsEmpty() && SavedId != AccountId))
+	{
+		return false;
+	}
+	RefreshToken = Saved;
+	StoredRefreshToken = Saved;
+	AccountEmail = ScenarioJson::GetString(Client, TEXT("email"), AccountEmail);
 	return true;
 }
 
@@ -215,6 +245,22 @@ FString FScenarioOAuth::ReadCallback(const FString& Query, const FString& Expect
 	}
 	OutCode = *Code;
 	return FString();
+}
+
+TSharedPtr<FJsonObject> FScenarioOAuth::ReadTokenClaims(const FString& Jwt)
+{
+	TArray<FString> Parts;
+	if (Jwt.ParseIntoArray(Parts, TEXT("."), false) != 3)
+	{
+		return nullptr;
+	}
+	TArray<uint8> Payload;
+	if (!ScenarioHash::FromBase64Url(Parts[1], Payload))
+	{
+		return nullptr;
+	}
+	const FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Payload.GetData()), Payload.Num());
+	return ScenarioJson::ParseObject(FString(Text.Length(), Text.Get()));
 }
 
 void FScenarioOAuth::Discover(TFunction<void(const FScenarioReply&)> OnDone)
@@ -303,17 +349,43 @@ bool FScenarioOAuth::ApplyTokenResponse(const TSharedPtr<FJsonObject>& Token)
 	AccessToken = NewAccess;
 	const double ExpiresIn = ScenarioJson::GetNumber(Token, TEXT("expires_in"), 0.0);
 	AccessExpiresAt = ExpiresIn > 0.0 ? ScenarioNow() + ExpiresIn : 0.0;
+	// Who signed in, for the editor. The ID token comes straight from the provider over HTTPS, so its claims are
+	// read without checking its signature (OpenID Connect Core 3.1.3.7). A refresh may not repeat it.
+	const TSharedPtr<FJsonObject> Claims = ReadTokenClaims(ScenarioJson::GetString(Token, TEXT("id_token")));
+	if (Claims.IsValid() && ScenarioJson::GetString(Claims, TEXT("iss")) == Metadata.Issuer)
+	{
+		const FString Id = ScenarioJson::GetString(Claims, TEXT("sub"));
+		const FString Email = ScenarioJson::GetString(Claims, TEXT("email"));
+		if (Id != AccountId || !Email.IsEmpty())
+		{
+			AccountId = Id;
+			AccountEmail = Email;
+		}
+	}
 	const FString NewRefresh = ScenarioJson::GetString(Token, TEXT("refresh_token"));
 	if (!NewRefresh.IsEmpty())
 	{
 		RefreshToken = NewRefresh;
-		// Which application and provider the token belongs to, so a later session only resumes it with them.
+		// Which application, provider and account the token belongs to, so a later session only resumes it with them.
 		TSharedRef<FJsonObject> Client = MakeShared<FJsonObject>();
 		Client->SetStringField(TEXT("client_id"), App.ClientId);
 		Client->SetStringField(TEXT("issuer"), App.Issuer);
+		if (!AccountId.IsEmpty())
+		{
+			Client->SetStringField(TEXT("sub"), AccountId);
+		}
+		if (!AccountEmail.IsEmpty())
+		{
+			Client->SetStringField(TEXT("email"), AccountEmail);
+		}
 		// The token is saved even when its identity is not: Restore forgets a token whose saved identity does not match.
 		const bool bClientSaved = Store->Write(ClientAccount, ScenarioJson::Write(Client));
-		if (!Store->Write(RefreshAccount, RefreshToken) || !bClientSaved)
+		const bool bTokenSaved = Store->Write(RefreshAccount, RefreshToken);
+		if (bTokenSaved)
+		{
+			StoredRefreshToken = RefreshToken;
+		}
+		if (!bTokenSaved || !bClientSaved)
 		{
 			UE_LOG(LogScenario, Warning, TEXT("Scenario sign-in: could not save the session in %s; you will need to sign in again next time."), *Store->Describe());
 		}
@@ -566,6 +638,11 @@ void FScenarioOAuth::PollDevice(const FString& DeviceCode, double Interval, doub
 
 void FScenarioOAuth::Refresh(TFunction<void(bool)> OnDone)
 {
+	if (!bRefreshing)
+	{
+		// Another editor on this machine may have refreshed since, which replaced the token this one holds.
+		AdoptStoredSession();
+	}
 	if (RefreshToken.IsEmpty())
 	{
 		OnDone(false);
@@ -578,23 +655,7 @@ void FScenarioOAuth::Refresh(TFunction<void(bool)> OnDone)
 	}
 	bRefreshing = true;
 	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	auto Finish = [WeakThis](bool bOk)
-	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
-		if (!This.IsValid())
-		{
-			return;
-		}
-		This->bRefreshing = false;
-		TArray<TFunction<void(bool)>> Waiters = MoveTemp(This->RefreshWaiters);
-		This->RefreshWaiters.Reset();
-		This->OnChanged.Broadcast();
-		for (TFunction<void(bool)>& Waiter : Waiters)
-		{
-			Waiter(bOk);
-		}
-	};
-	Discover([WeakThis, Finish](const FScenarioReply& Discovered)
+	Discover([WeakThis](const FScenarioReply& Discovered)
 	{
 		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
 		if (!This.IsValid())
@@ -603,35 +664,59 @@ void FScenarioOAuth::Refresh(TFunction<void(bool)> OnDone)
 		}
 		if (!Discovered.bOk)
 		{
-			Finish(false);
+			This->FinishRefresh(false);
 			return;
 		}
-		TArray<TPair<FString, FString>> Fields = {
-			{ TEXT("grant_type"), TEXT("refresh_token") },
-			{ TEXT("refresh_token"), This->RefreshToken },
-			{ TEXT("client_id"), This->App.ClientId },
-		};
-		This->PostForm(This->Metadata.TokenEndpoint, Fields, [WeakThis, Finish](const FScenarioReply& Reply)
-		{
-			const TSharedPtr<FScenarioOAuth> Self = WeakThis.Pin();
-			if (!Self.IsValid())
-			{
-				return;
-			}
-			if (Reply.bOk && Self->ApplyTokenResponse(Reply.Value))
-			{
-				Finish(true);
-				return;
-			}
-			if (!Reply.bOk && (Reply.Error.Detail == TEXT("invalid_grant") || Reply.Error.HttpStatus == 400 || Reply.Error.HttpStatus == 401))
-			{
-				// The session was revoked or expired: sign in again.
-				UE_LOG(LogScenario, Log, TEXT("Scenario session expired; sign in again."));
-				Self->ForgetSession();
-			}
-			Finish(false);
-		});
+		This->SendRefresh(false);
 	});
+}
+
+void FScenarioOAuth::SendRefresh(bool bRetried)
+{
+	TArray<TPair<FString, FString>> Fields = {
+		{ TEXT("grant_type"), TEXT("refresh_token") },
+		{ TEXT("refresh_token"), RefreshToken },
+		{ TEXT("client_id"), App.ClientId },
+	};
+	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
+	PostForm(Metadata.TokenEndpoint, Fields, [WeakThis, bRetried](const FScenarioReply& Reply)
+	{
+		const TSharedPtr<FScenarioOAuth> Self = WeakThis.Pin();
+		if (!Self.IsValid())
+		{
+			return;
+		}
+		if (Reply.bOk && Self->ApplyTokenResponse(Reply.Value))
+		{
+			Self->FinishRefresh(true);
+			return;
+		}
+		if (!Reply.bOk && (Reply.Error.Detail == TEXT("invalid_grant") || Reply.Error.HttpStatus == 400 || Reply.Error.HttpStatus == 401))
+		{
+			// Refused because another editor refreshed in the meantime: once, with the token it saved.
+			if (!bRetried && Self->AdoptStoredSession())
+			{
+				Self->SendRefresh(true);
+				return;
+			}
+			// The session was revoked or expired: sign in again.
+			UE_LOG(LogScenario, Log, TEXT("Scenario session expired; sign in again."));
+			Self->ForgetSession(true);
+		}
+		Self->FinishRefresh(false);
+	});
+}
+
+void FScenarioOAuth::FinishRefresh(bool bOk)
+{
+	bRefreshing = false;
+	TArray<TFunction<void(bool)>> Waiters = MoveTemp(RefreshWaiters);
+	RefreshWaiters.Reset();
+	OnChanged.Broadcast();
+	for (TFunction<void(bool)>& Waiter : Waiters)
+	{
+		Waiter(bOk);
+	}
 }
 
 void FScenarioOAuth::Cancel()
@@ -684,6 +769,8 @@ void FScenarioOAuth::StopCallbackServer()
 void FScenarioOAuth::SignOut()
 {
 	Cancel();
+	// Revoke the newest token, which another editor may have saved since.
+	AdoptStoredSession();
 	const FString Token = RefreshToken;
 	if (!Token.IsEmpty() && !Metadata.RevocationEndpoint.IsEmpty() && ScenarioUrl::IsHttps(Metadata.RevocationEndpoint))
 	{
@@ -694,11 +781,19 @@ void FScenarioOAuth::SignOut()
 	OnChanged.Broadcast();
 }
 
-void FScenarioOAuth::ForgetSession()
+void FScenarioOAuth::ForgetSession(bool bKeepNewer)
 {
 	RefreshToken.Reset();
 	AccessToken.Reset();
 	AccessExpiresAt = 0.0;
-	Store->Delete(RefreshAccount);
-	Store->Delete(ClientAccount);
+	AccountId.Reset();
+	AccountEmail.Reset();
+	FString Saved;
+	const bool bReplaced = bKeepNewer && Store->Read(RefreshAccount, Saved) && !Saved.IsEmpty() && Saved != StoredRefreshToken;
+	StoredRefreshToken.Reset();
+	if (!bReplaced)
+	{
+		Store->Delete(RefreshAccount);
+		Store->Delete(ClientAccount);
+	}
 }
