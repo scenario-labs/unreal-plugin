@@ -267,8 +267,8 @@ $Stage = Join-Path $StageRoot "Scenario\SB-$Stamp"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Stage) | Out-Null
 Step ('Compiling Scenario {0} for Unreal {1}. This takes a few minutes.' -f $PluginVersion, $Engine.Version)
 Say "Full log: $Log"
-# cmd /s keeps the quotes around each path: RunUAT.bat is a batch file, and the paths can hold spaces.
-$Arguments = '/d /s /c ""{0}" BuildPlugin "-Plugin={1}" "-Package={2}" -TargetPlatforms=Win64 > "{3}" 2>&1"' -f $Engine.RunUat, $PluginFile, $Stage, $Log
+# cmd /s keeps the quotes around each argument: RunUAT.bat is a batch file, the paths can hold spaces, and cmd splits words at "=".
+$Arguments = '/d /s /c ""{0}" BuildPlugin "-Plugin={1}" "-Package={2}" "-TargetPlatforms=Win64" > "{3}" 2>&1"' -f $Engine.RunUat, $PluginFile, $Stage, $Log
 $Process = Start-Process -FilePath $env:ComSpec -ArgumentList $Arguments -NoNewWindow -PassThru
 $null = $Process.Handle
 $Position = 0
