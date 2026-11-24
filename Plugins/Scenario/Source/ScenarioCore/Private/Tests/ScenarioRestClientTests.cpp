@@ -659,8 +659,10 @@ bool FScenarioApiUploadTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("an upload is sent once"), Backend->Calls.Last().Call, EScenarioCall::Paid);
 
 	// The complete races the upload's own state: a refusal saying so is harmless, the read decides.
-	Backend->On(TEXT("POST /uploads/*/action"), [](const FScenarioRequest&)
+	int32 Completes = 0;
+	Backend->On(TEXT("POST /uploads/*/action"), [&Completes](const FScenarioRequest&)
 	{
+		++Completes;
 		FScenarioReply Race = FScenarioReply::Fail(EScenarioErrorKind::Invalid, TEXT("Scenario refused the settings."), TEXT("Unable to complete upload with status: complete"));
 		Race.Error.bNotSent = true;
 		return Race;
@@ -672,8 +674,9 @@ bool FScenarioApiUploadTest::RunTest(const FString& Parameters)
 	});
 	const TScenarioResult<FString> Pending = Run<FString>([&Api](auto Done) { Api.UploadComplete(TEXT("upload_1"), Done); });
 	TestEqual(TEXT("complete is not the end: still importing"), Pending.Error.Kind, EScenarioErrorKind::Timeout);
-	const TScenarioResult<FString> Imported = Run<FString>([&Api](auto Done) { Api.UploadComplete(TEXT("upload_1"), Done); });
+	const TScenarioResult<FString> Imported = Run<FString>([&Api](auto Done) { Api.UploadStatus(TEXT("upload_1"), Done); });
 	TestTrue(TEXT("the asset once imported"), Imported.bOk && Imported.Value == TEXT("asset_new"));
+	TestEqual(TEXT("the complete is sent once, the upload is read again"), Completes, 1);
 
 	Backend->OnJson(TEXT("GET /uploads/*"), TEXT("{\"upload\":{\"status\":\"failed\",\"errorMessage\":\"Unsupported file\"}}"));
 	const TScenarioResult<FString> Failed = Run<FString>([&Api](auto Done) { Api.UploadComplete(TEXT("upload_1"), Done); });

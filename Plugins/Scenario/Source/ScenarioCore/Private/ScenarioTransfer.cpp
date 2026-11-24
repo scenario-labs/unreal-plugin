@@ -470,7 +470,7 @@ void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 		State->CompleteDeadline = ScenarioNow() + 90.0;
 	}
 	TWeakPtr<FScenarioUploader> WeakThis = AsShared();
-	Api->UploadComplete(State->Ticket.UploadId, [WeakThis, State, Attempt](const TScenarioResult<FString>& Completed)
+	auto OnRead = [WeakThis, State, Attempt](const TScenarioResult<FString>& Completed)
 	{
 		const TSharedPtr<FScenarioUploader> This = WeakThis.Pin();
 		if (!This.IsValid())
@@ -485,8 +485,8 @@ void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 			State->OnDone(Result);
 			return;
 		}
-		// Completing again resumes the same upload (Scenario's documented recovery); it never creates a second asset.
-		// About a minute and a half in all, however long each request takes: a large 3D file takes that long to import.
+		// The complete is sent once; only the upload is read again. About a minute and a half in all, however long
+		// each request takes: a large 3D file takes that long to import.
 		if (Completed.Error.Kind == EScenarioErrorKind::Timeout && Attempt < 20 && ScenarioNow() < State->CompleteDeadline)
 		{
 			This->Transport->Delay(3.0f, [WeakThis, State, Attempt]()
@@ -501,5 +501,13 @@ void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 		FScenarioUploadResult Result;
 		Result.Error = Completed.Error;
 		State->OnDone(Result);
-	});
+	};
+	if (Attempt == 0)
+	{
+		Api->UploadComplete(State->Ticket.UploadId, OnRead);
+	}
+	else
+	{
+		Api->UploadStatus(State->Ticket.UploadId, OnRead);
+	}
 }
