@@ -125,12 +125,17 @@ def price_params(model, lane, presets):
     return params, missing_files
 
 
-def check(report, name, run):
-    """A read the plugin depends on: reported, without failing the run."""
+def check(report, failures, name, run):
+    """A read the plugin depends on: an error, or False from a presence probe, fails the run. A count of 0 passes."""
     try:
-        report["checks"][name] = run()
+        value = run()
     except Exception as error:  # noqa: BLE001 - every failure is reported, the run continues
         report["checks"][name] = "error: " + str(error)[:200]
+        failures.append(False)
+        return
+    report["checks"][name] = value
+    if value is False:
+        failures.append(False)
 
 
 def main():
@@ -238,17 +243,19 @@ def main():
         status, reply = api.request("POST", "/generate/prompt", {"dryRun": "true"}, body)
         # A job or a reply without the dry-run status (269) fails the run, as the plugin refuses both.
         if job_id_in(reply) or status != 269:
-            failures.append(False)
             raise RuntimeError("ALARM: a dry run returned a job" if job_id_in(reply) else f"dry run answered HTTP {status}, not 269")
-        return {"status": status, "creativeUnitsCost": reply.get("creativeUnitsCost")}
+        cost = reply.get("creativeUnitsCost")
+        if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+            raise RuntimeError("the dry run gave no price")
+        return {"status": status, "creativeUnitsCost": cost}
 
-    check(report, "prompt_spark_dry_run", spark)
-    check(report, "search_assets_kind_exists", lambda: len(api.request("POST", "/search/assets", None, {"filter": "kind EXISTS", "sortBy": ["createdAt:desc"], "limit": 2})[1].get("hits", [])))
-    check(report, "assets_list", lambda: len(api.get("/assets", pageSize=2, sortBy="createdAt", sortDirection="desc").get("assets", [])))
-    check(report, "workflows_featured", lambda: len(api.get("/workflows", privacy="public", tags="featured", pageSize=5, full="false").get("workflows", [])))
-    check(report, "workflows_ready", lambda: len(api.get("/workflows", status="ready", pageSize=5, full="false").get("workflows", [])))
-    check(report, "jobs_list", lambda: "jobs" in api.get("/jobs", pageSize=2))
-    check(report, "usage_consumption_present", lambda: "consumption" in api.get("/usages", projectIds=project.get("id", ""), type="consumption", timeRange="last-thirty-one-days"))
+    check(report, failures, "prompt_spark_dry_run", spark)
+    check(report, failures, "search_assets_kind_exists", lambda: len(api.request("POST", "/search/assets", None, {"filter": "kind EXISTS", "sortBy": ["createdAt:desc"], "limit": 2})[1].get("hits", [])))
+    check(report, failures, "assets_list", lambda: len(api.get("/assets", pageSize=2, sortBy="createdAt", sortDirection="desc").get("assets", [])))
+    check(report, failures, "workflows_featured", lambda: len(api.get("/workflows", privacy="public", tags="featured", pageSize=5, full="false").get("workflows", [])))
+    check(report, failures, "workflows_ready", lambda: len(api.get("/workflows", status="ready", pageSize=5, full="false").get("workflows", [])))
+    check(report, failures, "jobs_list", lambda: "jobs" in api.get("/jobs", pageSize=2))
+    check(report, failures, "usage_consumption_present", lambda: "consumption" in api.get("/usages", projectIds=project.get("id", ""), type="consumption", timeRange="last-thirty-one-days"))
 
     ok = not failures
     report["seconds"] = round(time.time() - started, 1)

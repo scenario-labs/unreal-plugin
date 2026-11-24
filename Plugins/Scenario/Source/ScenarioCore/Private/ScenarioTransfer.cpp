@@ -291,6 +291,8 @@ struct FScenarioUploader::FState
 	int64 Size = 0;
 	FScenarioUploadTicket Ticket;
 	int64 Sent = 0;
+	/** When completion stops asking again (ScenarioNow seconds); set by the first completion. */
+	double CompleteDeadline = 0.0;
 	FScenarioTransferProgress OnProgress;
 	FScenarioUploadCallback OnDone;
 };
@@ -463,6 +465,10 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 
 void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 {
+	if (Attempt == 0)
+	{
+		State->CompleteDeadline = ScenarioNow() + 90.0;
+	}
 	TWeakPtr<FScenarioUploader> WeakThis = AsShared();
 	Api->UploadComplete(State->Ticket.UploadId, [WeakThis, State, Attempt](const TScenarioResult<FString>& Completed)
 	{
@@ -480,8 +486,8 @@ void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 			return;
 		}
 		// Completing again resumes the same upload (Scenario's documented recovery); it never creates a second asset.
-		// About a minute in all: a large 3D file takes that long to import.
-		if (Completed.Error.Kind == EScenarioErrorKind::Timeout && Attempt < 20)
+		// About a minute and a half in all, however long each request takes: a large 3D file takes that long to import.
+		if (Completed.Error.Kind == EScenarioErrorKind::Timeout && Attempt < 20 && ScenarioNow() < State->CompleteDeadline)
 		{
 			This->Transport->Delay(3.0f, [WeakThis, State, Attempt]()
 			{

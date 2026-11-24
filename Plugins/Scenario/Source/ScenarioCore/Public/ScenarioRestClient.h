@@ -89,6 +89,8 @@ public:
 	virtual bool NeedsWorkspaceArguments() const = 0;
 	/** One silent refresh after the credentials were refused. OnDone(true) when a new token is ready. */
 	virtual void Refresh(TFunction<void(bool bRefreshed)> OnDone) { OnDone(false); }
+	/** Changes when the person signs in or out, never on a silent refresh: a refused request is resent only for the sign-in that sent it. */
+	virtual uint32 GetSignInGeneration() const { return 0; }
 };
 
 /** API key and secret, sent as HTTP Basic. */
@@ -116,7 +118,8 @@ private:
  * (Scenario may have started the job); a price check that returns a job id is
  * an alarm. Credentials the API's gateway refuses (401, or 403 with
  * x-amzn-errortype AccessDeniedException) never reached a handler, so they are
- * renewed and the request resent once, paid or not.
+ * renewed and the request resent once, paid or not, for the same sign-in and
+ * workspace only. A read is retried only while its workspace is unchanged.
  */
 class SCENARIOCORE_API FScenarioRestClient : public IScenarioBackend, public TSharedFromThis<FScenarioRestClient>
 {
@@ -159,7 +162,7 @@ public:
 	static FScenarioReply ReadReply(const FScenarioRequest& Request, const FScenarioHttpResponse& Response);
 
 private:
-	void Attempt(const FScenarioRequest& Request, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone);
+	void Attempt(const FScenarioRequest& Request, const FString& BoundUrl, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone);
 	void SendOnce(const FScenarioRequest& Request, bool bAllowRefresh, FScenarioReplyCallback OnDone);
 
 	TSharedRef<IScenarioHttpTransport> Transport;
