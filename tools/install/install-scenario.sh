@@ -171,7 +171,7 @@ echo "Full log: $log"
   | tee "$log" | grep --line-buffered -E '^\[[0-9]+/[0-9]+\]' | sed -u 's/^/  /'
 status="${PIPESTATUS[0]}"
 if [ "$status" != 0 ] || [ ! -f "$stage/Scenario.uplugin" ]; then
-  errors="$(grep -E '(^|[[:space:]])(error|ERROR)[[:space:]:]|fatal error' "$log" | head -10)"
+  errors="$(grep -E '(^|[[:space:]])(error|ERROR)[[:space:]:]|fatal error|^Unable to instantiate module' "$log" | head -10)"
   if [ -n "$errors" ]; then
     printf '\nThe first errors:\n'
     printf '%s\n' "$errors" | sed 's/^/  /'

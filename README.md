@@ -66,7 +66,7 @@ The [Scenario MCP guide](docs/MCP_GUIDE.md) lists every tool and the permissions
 
 **Windows, or Unreal 5.6 and 5.7:** the installer compiles the plugin for your Unreal version and installs it into your project.
 
-1. Install what Unreal compiles with: on Windows, [Visual Studio](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine) with the **Game development with C++** workload; on macOS, Xcode.
+1. Install what Unreal compiles with: on Windows, [Visual Studio](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine) with the **.NET desktop development**, **Desktop development with C++** and **Game development with C++** workloads; on macOS, Xcode.
 2. Download **Source code (zip)** from the [latest release](https://github.com/scenario-labs/unreal-plugin/releases/latest) and unzip it.
 3. Double-click `Install-Windows.bat` (on macOS, `Install-macOS.command`) and choose your project's `.uproject` file.
 

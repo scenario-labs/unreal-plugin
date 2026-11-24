@@ -134,6 +134,17 @@ function Test-CppTools {
     return [bool]$found
 }
 
+# The .NET Framework SDK, found through the registry keys Unreal's build tool reads.
+function Test-NetFxSdk {
+    foreach ($root in 'HKCU:\SOFTWARE', 'HKLM:\SOFTWARE', 'HKCU:\SOFTWARE\Wow6432Node', 'HKLM:\SOFTWARE\Wow6432Node') {
+        foreach ($key in @(Get-ChildItem -Path "$root\Microsoft\Microsoft SDKs\NETFXSDK" -ErrorAction SilentlyContinue)) {
+            $folder = [string](Get-Field (Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue) 'KitsInstallationFolder')
+            if ($folder -and (Test-Path -LiteralPath $folder)) { return $true }
+        }
+    }
+    return $false
+}
+
 function Select-ProjectFile {
     Add-Type -AssemblyName System.Windows.Forms
     $owner = New-Object System.Windows.Forms.Form
@@ -191,18 +202,22 @@ if (-not (Test-Path -LiteralPath $PluginFile -PathType Leaf)) {
 }
 $PluginVersion = [string](Get-Field (Read-Json $PluginFile) 'VersionName')
 
-# 1. The C++ tools Unreal compiles plugins with.
-if (-not (Test-CppTools)) {
+# 1. What Unreal compiles plugins with: Visual Studio's C++ tools and the .NET Framework SDK.
+$Missing = @()
+if (-not (Test-CppTools)) { $Missing += "Visual Studio's C++ tools" }
+if (-not (Test-NetFxSdk)) { $Missing += 'the .NET Framework SDK' }
+if ($Missing.Count -gt 0) {
     Write-Host ''
-    Write-Host "Unreal compiles plugins with Visual Studio's C++ tools, and they are not installed." -ForegroundColor Red
-    Say 'Install Visual Studio Community (free) with the "Game development with C++" workload,'
+    Write-Host ('Unreal compiles plugins with Visual Studio. Missing: {0}.' -f ($Missing -join ', ')) -ForegroundColor Red
+    Say 'Install Visual Studio Community (free) with the ".NET desktop development",'
+    Say '"Desktop development with C++" and "Game development with C++" workloads,'
     Say 'then run this installer again. Epic lists what each Unreal version needs:'
     Say "  $VisualStudioGuide"
     if (-not $Yes) {
         $answer = Read-Host 'Open that page in your browser? (Y/n)'
         if ($answer -notmatch '^[Nn]') { Start-Process $VisualStudioGuide }
     }
-    Fail 'Install the C++ tools first.'
+    Fail 'Install these Visual Studio workloads first.'
 }
 
 # 2. The project.
@@ -278,7 +293,7 @@ while ($true) {
     foreach ($line in (Read-NewLog $Log ([ref]$Position))) {
         if ($line -match '^\[\d+/\d+\]') {
             Say ('  ' + $line)
-        } elseif ($line -match '(^|\s)(error|ERROR)\b|: fatal error') {
+        } elseif ($line -match '(^|\s)(error|ERROR)\b|: fatal error|^Unable to instantiate module') {
             $Problems.Add($line)
         }
     }
