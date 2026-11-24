@@ -97,6 +97,24 @@ namespace ScenarioAuthTests
 		return TEXT("200:") + Body + TEXT("}");
 	}
 
+	/** A saved session record, as the plugin writes it. */
+	FString SessionRecord(const FString& Refresh, const FString& Sub, const FString& Issuer = TEXT("https://auth.example.test"))
+	{
+		FString Record = FString::Printf(TEXT("{\"refresh_token\":\"%s\",\"client_id\":\"client_test\",\"issuer\":\"%s\""), *Refresh, *Issuer);
+		if (!Sub.IsEmpty())
+		{
+			Record += FString::Printf(TEXT(",\"sub\":\"%s\""), *Sub);
+		}
+		return Record + TEXT("}");
+	}
+
+	/** The refresh token of the saved session record, or empty. */
+	FString SavedToken(const IScenarioCredentialStore& Store)
+	{
+		FString Saved;
+		return Store.Read(TEXT("oauth-refresh"), Saved) ? ScenarioJson::GetString(ScenarioJson::ParseObject(Saved), TEXT("refresh_token")) : FString();
+	}
+
 	/** A memory store that refuses writes to one account. */
 	class FRefusingStore : public FScenarioMemoryCredentialStore
 	{
@@ -200,8 +218,7 @@ bool FScenarioOAuthOtherAppTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("old client deleted"), Store->Read(TEXT("oauth-client"), Saved));
 
 	// Same client id from another provider (a development instance).
-	Store->Write(TEXT("oauth-refresh"), TEXT("rt_dev"));
-	Store->Write(TEXT("oauth-client"), TEXT("{\"client_id\":\"client_test\",\"issuer\":\"https://dev.example.test\"}"));
+	Store->Write(TEXT("oauth-refresh"), SessionRecord(TEXT("rt_dev"), TEXT("user_1"), TEXT("https://dev.example.test")));
 	TestFalse(TEXT("other provider not resumed"), OAuth->Restore());
 	TestFalse(TEXT("other provider token deleted"), Store->Read(TEXT("oauth-refresh"), Saved));
 	TestEqual(TEXT("nothing sent"), Transport->Requests.Num(), 0);
@@ -234,9 +251,14 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("bearer"), OAuth->AuthorizationHeader(), FString(TEXT("Bearer at_1")));
 	TestEqual(TEXT("account email"), OAuth->GetAccountEmail(), FString(TEXT("person@example.test")));
 	FString Saved;
-	TestTrue(TEXT("refresh token stored"), Store->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_1"));
-	TestTrue(TEXT("client stored"), Store->Read(TEXT("oauth-client"), Saved) && Saved.Contains(TEXT("client_test")) && Saved.Contains(TEXT("https://auth.example.test")));
-	TestTrue(TEXT("account stored"), Saved.Contains(TEXT("user_1")) && Saved.Contains(TEXT("person@example.test")));
+	TestTrue(TEXT("session stored"), Store->Read(TEXT("oauth-refresh"), Saved));
+	const TSharedPtr<FJsonObject> Record = ScenarioJson::ParseObject(Saved);
+	TestEqual(TEXT("refresh token in the record"), ScenarioJson::GetString(Record, TEXT("refresh_token")), FString(TEXT("rt_1")));
+	TestEqual(TEXT("client in the record"), ScenarioJson::GetString(Record, TEXT("client_id")), FString(TEXT("client_test")));
+	TestEqual(TEXT("issuer in the record"), ScenarioJson::GetString(Record, TEXT("issuer")), FString(TEXT("https://auth.example.test")));
+	TestEqual(TEXT("account in the record"), ScenarioJson::GetString(Record, TEXT("sub")), FString(TEXT("user_1")));
+	TestEqual(TEXT("email in the record"), ScenarioJson::GetString(Record, TEXT("email")), FString(TEXT("person@example.test")));
+	TestFalse(TEXT("no separate client entry"), Store->Read(TEXT("oauth-client"), Saved));
 	TestTrue(TEXT("device grant used"), Server->TokenBodies.Num() > 0 && Server->TokenBodies[0].Contains(TEXT("device_code")));
 	bool bRegistered = false;
 	bool bResource = false;
@@ -269,13 +291,10 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("refresh grant"), Server->TokenBodies.Last().Contains(TEXT("grant_type=refresh_token")));
 	TestTrue(TEXT("refresh names the app"), Server->TokenBodies.Last().Contains(TEXT("client_id=client_test")));
 
-	// A rotated refresh token is saved even when its identity cannot be written.
-	FString ClientJson;
-	Store->Read(TEXT("oauth-client"), ClientJson);
+	// A store that refuses the write: the rotated token still works in this session, and the saved record is not half updated.
 	TSharedRef<FRefusingStore> Refusing = MakeShared<FRefusingStore>();
-	Refusing->Write(TEXT("oauth-refresh"), TEXT("rt_1"));
-	Refusing->Write(TEXT("oauth-client"), ClientJson);
-	Refusing->RefusedAccount = TEXT("oauth-client");
+	Refusing->Write(TEXT("oauth-refresh"), SessionRecord(TEXT("rt_1"), TEXT("user_1")));
+	Refusing->RefusedAccount = TEXT("oauth-refresh");
 	Server->TokenCalls = 0;
 	Server->TokenReplies = { TEXT("200:{\"access_token\":\"at_3\",\"refresh_token\":\"rt_3\",\"expires_in\":3600}") };
 	TSharedRef<FScenarioOAuth> Rotating = MakeShared<FScenarioOAuth>(Transport, Refusing);
@@ -283,7 +302,8 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("restored before rotation"), Rotating->Restore());
 	bool bRotated = false;
 	Rotating->Refresh([&bRotated](bool bOk) { bRotated = bOk; });
-	TestTrue(TEXT("rotated token saved without its identity"), bRotated && Refusing->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_3"));
+	TestTrue(TEXT("rotated in this session"), bRotated && Rotating->AuthorizationHeader() == TEXT("Bearer at_3"));
+	TestEqual(TEXT("saved record unchanged"), SavedToken(*Refusing), FString(TEXT("rt_1")));
 
 	// Revoked session: invalid_grant clears the stored token.
 	Server->TokenCalls = 0;
@@ -332,7 +352,7 @@ bool FScenarioOAuthSharedSessionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("first refreshed"), RefreshOf(First));
 	TestTrue(TEXT("second refreshed"), RefreshOf(Second));
 	TestTrue(TEXT("second sent the newest token"), Server->TokenBodies.Last().Contains(TEXT("refresh_token=rt_2")));
-	TestTrue(TEXT("newest token saved"), Store->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_3"));
+	TestEqual(TEXT("newest token saved"), SavedToken(*Store), FString(TEXT("rt_3")));
 
 	// Both send the same token; the provider refuses the later one, which retries once with the token the other saved.
 	Server->TokenCalls = 0;
@@ -342,7 +362,7 @@ bool FScenarioOAuthSharedSessionTest::RunTest(const FString& Parameters)
 	{
 		if (Request.Url.EndsWith(TEXT("/oauth/token")) && Server->TokenCalls == 0)
 		{
-			Store->Write(TEXT("oauth-refresh"), TEXT("rt_4"));
+			Store->Write(TEXT("oauth-refresh"), SessionRecord(TEXT("rt_4"), TEXT("user_1")));
 		}
 		return Server->Handle(Request);
 	};
@@ -353,15 +373,28 @@ bool FScenarioOAuthSharedSessionTest::RunTest(const FString& Parameters)
 	Transport->Responder = [Server](const FScenarioFakeRequest& Request) { return Server->Handle(Request); };
 
 	// Another account signed in from the other editor: its session is neither taken nor deleted.
-	Store->Write(TEXT("oauth-refresh"), TEXT("rt_other"));
-	Store->Write(TEXT("oauth-client"), TEXT("{\"client_id\":\"client_test\",\"issuer\":\"https://auth.example.test\",\"sub\":\"user_2\"}"));
+	Store->Write(TEXT("oauth-refresh"), SessionRecord(TEXT("rt_other"), TEXT("user_2")));
 	Server->TokenCalls = 0;
 	Server->TokenBodies.Reset();
 	Server->TokenReplies = { TEXT("400:{\"error\":\"invalid_grant\"}") };
 	TestFalse(TEXT("own session refused"), RefreshOf(First));
 	TestTrue(TEXT("own token sent"), Server->TokenBodies.Num() == 1 && Server->TokenBodies[0].Contains(TEXT("refresh_token=rt_5")));
 	TestFalse(TEXT("signed out"), First->HasCredentials());
-	TestTrue(TEXT("other account's session kept"), Store->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_other"));
+	TestEqual(TEXT("other account's session kept"), SavedToken(*Store), FString(TEXT("rt_other")));
+
+	// A session saved without its account never takes another saved session, whoever it belongs to.
+	Store->Write(TEXT("oauth-refresh"), SessionRecord(TEXT("rt_unknown"), FString()));
+	TSharedRef<FScenarioOAuth> Unknown = Editor();
+	TestTrue(TEXT("restored without an account"), Unknown->Restore());
+	Store->Write(TEXT("oauth-refresh"), SessionRecord(TEXT("rt_someone"), TEXT("user_2")));
+	Server->TokenCalls = 0;
+	Server->TokenBodies.Reset();
+	Server->TokenReplies = { TEXT("400:{\"error\":\"invalid_grant\"}") };
+	TestFalse(TEXT("unknown account refused"), RefreshOf(Unknown));
+	TestEqual(TEXT("one token call"), Server->TokenCalls, 1);
+	TestTrue(TEXT("its own token sent"), Server->TokenBodies.Num() == 1 && Server->TokenBodies[0].Contains(TEXT("refresh_token=rt_unknown")));
+	TestFalse(TEXT("unknown account signed out"), Unknown->HasCredentials());
+	TestEqual(TEXT("the saved session kept"), SavedToken(*Store), FString(TEXT("rt_someone")));
 	return true;
 }
 
