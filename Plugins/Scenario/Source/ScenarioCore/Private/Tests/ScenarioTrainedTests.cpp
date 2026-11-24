@@ -288,6 +288,12 @@ bool FScenarioTrainedTriggerTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("put in front"), WithTriggerWords(TEXT("a red barn"), TEXT("FAKESTYLE")), FString(TEXT("FAKESTYLE, a red barn")));
 	TestEqual(TEXT("once: already in the prompt, any case"), WithTriggerWords(TEXT("a fakestyle barn"), TEXT("FAKESTYLE")), FString(TEXT("a fakestyle barn")));
+	TestEqual(TEXT("at either end"), WithTriggerWords(TEXT("a red barn, FAKESTYLE"), TEXT("FAKESTYLE")), FString(TEXT("a red barn, FAKESTYLE")));
+	TestEqual(TEXT("a longer word does not hold them"), WithTriggerWords(TEXT("a FAKESTYLES barn"), TEXT("FAKESTYLE")), FString(TEXT("FAKESTYLE, a FAKESTYLES barn")));
+	TestEqual(TEXT("nor one glued in front"), WithTriggerWords(TEXT("a NOFAKESTYLE barn"), TEXT("FAKESTYLE")), FString(TEXT("FAKESTYLE, a NOFAKESTYLE barn")));
+	TestEqual(TEXT("a later whole word does"), WithTriggerWords(TEXT("FAKESTYLES and FAKESTYLE"), TEXT("FAKESTYLE")), FString(TEXT("FAKESTYLES and FAKESTYLE")));
+	TestEqual(TEXT("a phrase, whole"), WithTriggerWords(TEXT("the test scene words here"), TEXT("test scene words")), FString(TEXT("the test scene words here")));
+	TestEqual(TEXT("a phrase, cut"), WithTriggerWords(TEXT("the test scene wordsmith"), TEXT("test scene words")), FString(TEXT("test scene words, the test scene wordsmith")));
 	TestEqual(TEXT("an empty prompt stays empty"), WithTriggerWords(FString(), TEXT("FAKESTYLE")), FString());
 	TestEqual(TEXT("no trigger words, no change"), WithTriggerWords(TEXT("a red barn"), FString()), FString(TEXT("a red barn")));
 	return true;
@@ -389,7 +395,7 @@ bool FScenarioTrainedCatalogTest::RunTest(const FString& Parameters)
 	}
 	Catalog->SetModels(Rows);
 	TestTrue(TEXT("a trained row waits to be read"), Catalog->NeedsResolve(Lora));
-	TestFalse(TEXT("an unlisted model does not"), Catalog->NeedsResolve(Flux1));
+	TestTrue(TEXT("so does a model the catalog does not list"), Catalog->NeedsResolve(Flux1));
 
 	FScenarioReply Reply = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("no answer"));
 	Catalog->GetSchema(Lora, [&Reply](const FScenarioReply& In) { Reply = In; });
@@ -417,6 +423,7 @@ bool FScenarioTrainedCatalogTest::RunTest(const FString& Parameters)
 
 	Catalog->GetSchema(Flux1, [&Reply](const FScenarioReply& In) { Reply = In; });
 	TestTrue(TEXT("a base model has its own form"), Reply.bOk && !Reply.Value->HasField(TEXT("trained")));
+	TestFalse(TEXT("read: it runs as itself"), Catalog->NeedsResolve(Flux1));
 
 	// The picker's label comes from the rows and the bases, with no request.
 	const FScenarioCatalogModel* Row = Catalog->Find(Flux2Lora);
@@ -570,6 +577,163 @@ bool FScenarioTrainedSessionTest::RunTest(const FString& Parameters)
 	const TScenarioResult<FString> Blocked = Off.Submit(FRig::Run(Lora));
 	TestFalse(TEXT("refused with spending off"), Blocked.bOk);
 	TestEqual(TEXT("no paid call with spending off"), Off.Calls(EScenarioCall::Paid), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioTrainedBasesTest, "Scenario.Core.Trained.Bases", SCENARIO_TEST_FLAGS)
+bool FScenarioTrainedBasesTest::RunTest(const FString& Parameters)
+{
+	const TSharedPtr<FJsonObject> Json = Fixture(*this);
+	if (!Json.IsValid())
+	{
+		return true;
+	}
+	TSharedRef<FScenarioFakeBackend> Backend = MakeShared<FScenarioFakeBackend>();
+	Serve(*Backend, Json);
+	// Each recorded base answers, does not answer, or is gone, as the test says.
+	enum class EAnswer : uint8 { Ok, None, Gone };
+	TSharedRef<TMap<FString, EAnswer>> Answers = MakeShared<TMap<FString, EAnswer>>();
+	for (const TCHAR* Id : { Flux2, Flux1 })
+	{
+		const TSharedPtr<FJsonObject> Reply = ScenarioJson::GetObject(ScenarioJson::GetObject(Json, TEXT("bases")), Id);
+		const FString BaseId = Id;
+		Backend->On(TEXT("GET /models/") + BaseId, [Answers, BaseId, Reply](const FScenarioRequest&)
+		{
+			switch (Answers->FindRef(BaseId))
+			{
+			case EAnswer::None: return FScenarioReply::Fail(EScenarioErrorKind::Transport, TEXT("No connection."));
+			case EAnswer::Gone: return FScenarioReply::Fail(EScenarioErrorKind::NotFound, TEXT("Model not found."));
+			default: return FScenarioReply::Ok(Reply);
+			}
+		});
+	}
+	const FString Path = FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("Scenario"), FGuid::NewGuid().ToString() + TEXT("_catalog.json"));
+	TSharedRef<FScenarioCatalog> Catalog = MakeShared<FScenarioCatalog>(MakeShared<FScenarioApi>(Backend), Path);
+	FScenarioCatalogModel Row;
+	if (FScenarioCatalog::ParseRow(Record(Json, TEXT("trained"), Lora), true, Row))
+	{
+		Catalog->SetModels({ Row });
+	}
+
+	// FLUX 2 does not answer: FLUX.1 is read, and the list is read again next time.
+	Answers->Add(FString(Flux2), EAnswer::None);
+	Catalog->LoadBases();
+	TestEqual(TEXT("the base that answered"), Catalog->Bases().Num(), 1);
+	TestFalse(TEXT("not fresh while a base did not answer"), Catalog->HasFreshBases());
+	FScenarioReply Reply = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("no answer"));
+	Catalog->GetSchema(Lora, [&Reply](const FScenarioReply& In) { Reply = In; });
+	const FScenarioTrainedInfo* Info = Catalog->FindTrained(Lora);
+	TestTrue(TEXT("the LoRA runs on FLUX.1"), Reply.bOk && Info && Info->BaseId() == Flux1);
+
+	// FLUX 2 answers, FLUX.1 does not: FLUX.1 keeps its last reading, and the LoRA its base.
+	Answers->Add(FString(Flux2), EAnswer::Ok);
+	Answers->Add(FString(Flux1), EAnswer::None);
+	Catalog->LoadBases();
+	TestTrue(TEXT("a base with no answer is kept"), Catalog->Bases().Num() == 2 && Catalog->Bases()[1].Id == Flux1);
+	TestFalse(TEXT("still not fresh"), Catalog->HasFreshBases());
+	TestNotNull(TEXT("the LoRA keeps its base"), Catalog->FindTrained(Lora));
+
+	// Scenario says FLUX.1 is gone: it leaves the list, and the LoRA it ran is read again.
+	Answers->Add(FString(Flux1), EAnswer::Gone);
+	Catalog->LoadBases();
+	TestTrue(TEXT("a base Scenario no longer has is left out"), Catalog->Bases().Num() == 1 && Catalog->Bases()[0].Id == Flux2);
+	TestTrue(TEXT("fresh once every base answered"), Catalog->HasFreshBases());
+	TestNull(TEXT("a trained model whose base left is forgotten"), Catalog->FindTrained(Lora));
+	TestTrue(TEXT("and waits to be read again"), Catalog->NeedsResolve(Lora));
+	IFileManager::Get().Delete(*Path);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioTrainedResolveTest, "Scenario.Core.Trained.Resolve", SCENARIO_TEST_FLAGS)
+bool FScenarioTrainedResolveTest::RunTest(const FString& Parameters)
+{
+	const TSharedPtr<FJsonObject> Json = Fixture(*this);
+	if (!Json.IsValid())
+	{
+		return true;
+	}
+
+	// A model the catalog does not list yet (first launch) is read before its price check: never priced as itself when trained.
+	{
+		FRig Rig(Json);
+		Rig.Session->Catalog().SetModels({});
+		const TScenarioResult<FScenarioQuote> Unlisted = Rig.Price(FRig::Run(Composition));
+		TestTrue(TEXT("an unlisted composition is priced"), Unlisted.bOk);
+		TestEqual(TEXT("on its base"), Unlisted.Value.TargetId, FString(Flux1));
+		TestEqual(TEXT("in modelId"), ScenarioJson::GetString(Rig.LastRun()->Body, TEXT("modelId")), FString(Composition));
+		TestEqual(TEXT("never as the model called"), Rig.Backend->CountOf(TEXT("POST /generate/custom/model_test_scene_composition")), 0);
+		const int32 Reads = Rig.Backend->CountOf(TEXT("GET /models/model_bfl-flux-1-dev"));
+		TestTrue(TEXT("an unlisted model with inputs of its own is priced"), Rig.Price(FRig::Run(Flux1)).bOk);
+		TestEqual(TEXT("as itself"), Rig.LastRun()->Path, FString(TEXT("/generate/custom/model_bfl-flux-1-dev")));
+		TestTrue(TEXT("priced again"), Rig.Price(FRig::Run(Flux1, TEXT("{\"prompt\":\"a blue barn\"}"))).bOk);
+		TestEqual(TEXT("read once"), Rig.Backend->CountOf(TEXT("GET /models/model_bfl-flux-1-dev")), Reads + 1);
+	}
+
+	// The project changes while the trained model is read: never priced unresolved. (The fake backend signs in like an API key,
+	// whose quote scope ignores the project, so the read that the switch made stale is what refuses here.)
+	{
+		FRig Rig(Json);
+		FScenarioSession& Session = *Rig.Session;
+		FScenarioWorkspace Other = Session.GetWorkspace();
+		Other.ProjectId = TEXT("proj_test_other");
+		const TSharedPtr<FJsonObject> Reply = ScenarioJson::GetObject(ScenarioJson::GetObject(Json, TEXT("trained")), Lora);
+		bool bSwitched = false;
+		Rig.Backend->On(FString(TEXT("GET /models/")) + Lora, [&Session, &bSwitched, Other, Reply](const FScenarioRequest&)
+		{
+			if (!bSwitched)
+			{
+				bSwitched = true;
+				Session.SetWorkspace(Other);
+			}
+			return FScenarioReply::Ok(Reply);
+		});
+		const TScenarioResult<FScenarioQuote> Moved = Rig.Price(FRig::Run(Lora));
+		TestTrue(TEXT("switched during the read"), bSwitched);
+		TestFalse(TEXT("not priced"), Moved.bOk);
+		TestTrue(TEXT("says why"), Moved.Error.Message.Contains(TEXT("Pick the model again")));
+		TestEqual(TEXT("no price check sent"), Rig.Calls(EScenarioCall::DryRun), 0);
+		TestTrue(TEXT("priced when asked again"), Rig.Price(FRig::Run(Lora)).bOk);
+		TestEqual(TEXT("on its base"), Rig.LastRun()->Path, FString(TEXT("/generate/custom/model_bfl-flux-1-dev")));
+	}
+
+	// The base takes 2048 characters of prompt: the trigger words count.
+	{
+		FRig Rig(Json);
+		const FString Long = FString::ChrN(2048, TEXT('a'));
+		const TScenarioResult<FScenarioQuote> TooLong = Rig.Price(FRig::Run(Lora, FString::Printf(TEXT("{\"prompt\":\"%s\"}"), *Long)));
+		TestFalse(TEXT("too long with the trigger words"), TooLong.bOk);
+		TestTrue(TEXT("says why"), TooLong.Error.Message.Contains(TEXT("2048")));
+		TestEqual(TEXT("no price check sent"), Rig.Calls(EScenarioCall::DryRun), 0);
+		TestTrue(TEXT("the full length without them"), Rig.Price(FRig::Run(Lora, FString::Printf(TEXT("{\"prompt\":\"%s\",\"addTriggerWords\":false}"), *Long))).bOk);
+		const FString Held = TEXT("FAKESTYLE ") + FString::ChrN(2038, TEXT('a'));
+		TestTrue(TEXT("or with them already in the prompt"), Rig.Price(FRig::Run(Lora, FString::Printf(TEXT("{\"prompt\":\"%s\"}"), *Held))).bOk);
+	}
+
+	// A base request with the trained model in its loras is the same call as the trained model's: each pays with a quote that names what it runs.
+	{
+		FRig Rig(Json);
+		FScenarioSession& Session = *Rig.Session;
+		const TScenarioResult<FScenarioQuote> First = Rig.Price(FRig::Run(Lora));
+		if (!TestTrue(TEXT("priced"), First.bOk))
+		{
+			return false;
+		}
+		const FScenarioRunRequest Base = FRig::Run(Flux1, ScenarioJson::Write(First.Value.Parameters));
+		TestEqual(TEXT("the same call"), Session.Fingerprint(Base), First.Value.Fingerprint);
+		const TScenarioResult<FScenarioQuote> BaseQuote = Rig.Price(Base);
+		TestTrue(TEXT("the base request gets its own quote"), BaseQuote.bOk && BaseQuote.Value.Id != First.Value.Id && BaseQuote.Value.TrainedModelId.IsEmpty());
+		TestNull(TEXT("which replaces the other"), Session.Quotes().FindById(First.Value.Id, Rig.Time));
+		const TScenarioResult<FScenarioQuote> Again = Rig.Price(FRig::Run(Lora));
+		TestTrue(TEXT("the trained model's quote names it again"), Again.bOk && Again.Value.TrainedModelId == Lora);
+		const TScenarioResult<FString> Sent = Rig.Submit(FRig::Run(Lora));
+		const FScenarioJobRow* Row = Sent.bOk ? Session.Ledger().Find(Sent.Value) : nullptr;
+		TestTrue(TEXT("sent, recorded with the trained model"), Row && Row->TrainedModelId == Lora);
+		TestTrue(TEXT("the base request prices again"), Rig.Price(Base).bOk);
+		const TScenarioResult<FString> BaseSent = Rig.Submit(Base);
+		const FScenarioJobRow* BaseRow = BaseSent.bOk ? Session.Ledger().Find(BaseSent.Value) : nullptr;
+		TestTrue(TEXT("sent as the base request"), BaseRow && BaseRow->ModelId == Flux1 && BaseRow->TrainedModelId.IsEmpty());
+		TestEqual(TEXT("two paid calls"), Rig.Calls(EScenarioCall::Paid), 2);
+	}
 	return true;
 }
 

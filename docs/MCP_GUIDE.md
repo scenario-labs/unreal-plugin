@@ -82,7 +82,7 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | Tool | Does |
 |---|---|
 | `list_models` | Models for a lane (`image`, `video`, `3d`, `material`, `audio`, `environment`, `render`); the lane's picks first |
-| `model_schema` | Parameters, options, defaults, which change the price, and the Unreal-ready prompt for 3D. For a trained model (LoRA or composition): its base's parameters plus `lorasScale` (its weight) and `addTriggerWords`, and `runs_on`, the base it runs on; `estimate_cost` and `generate` take its id |
+| `model_schema` | Parameters, options, defaults, which change the price, and the Unreal-ready prompt for 3D. For a trained model (LoRA or composition): its base's parameters plus `lorasScale` (its weight) and `addTriggerWords`, and `runs_on`, the base it runs on; `estimate_cost` takes its id, and `generate` the quote it returns (`quote_id`, `approved_cost`) |
 | `estimate_cost` | Free price check; returns the quote |
 | `generate` | SPENDS: runs the quoted request; returns `job_id` |
 | `job_status`, `wait_for_job` | State and files of a job; `wait_for_job` returns `still_running` after 45 seconds by default, call it again. Both also take an `approval_id` (a spend waiting for you, see section 8) |

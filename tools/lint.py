@@ -20,6 +20,7 @@ Usage: python3 tools/lint.py [--root DIR]
 """
 import argparse
 import json
+import math
 import pathlib
 import re
 import subprocess
@@ -38,6 +39,7 @@ UPLUGIN = "Plugins/Scenario/Scenario.uplugin"
 LANES = "Plugins/Scenario/Resources/Lanes.json"
 TRAINED = "Plugins/Scenario/Resources/Trained.json"
 SKILL = "Plugins/Scenario/Resources/AgentSkill/SKILL.md"
+REQUIRED = (UPLUGIN, LANES, TRAINED, SKILL)
 # The one runtime module: actors that games made with the kit use. No network code, no Scenario data.
 RUNTIME_MODULES = {"ScenarioGameplay"}
 UPLUGIN_KEYS = ("FileVersion", "Version", "VersionName", "FriendlyName", "Description", "Category", "CreatedBy", "Modules")
@@ -166,6 +168,8 @@ def check_trained(text: str) -> list[tuple[int, str]]:
         data = json.loads(text)
     except ValueError as error:
         return [(getattr(error, "lineno", 1), f"invalid JSON: {error}")]
+    if not isinstance(data, dict):
+        return [(1, "must be a JSON object")]
     problems = [(1, f"missing key {key}") for key in ("version", "base_probes", "base_names", "default_scale") if key not in data]
     probes = data.get("base_probes", [])
     if not isinstance(probes, list) or not probes:
@@ -184,8 +188,8 @@ def check_trained(text: str) -> list[tuple[int, str]]:
         if model_id not in probes:
             problems.append((1, f"base_names: {name} maps to {model_id}, which base_probes does not list"))
     scale = data.get("default_scale", 0.75)
-    if not isinstance(scale, (int, float)) or isinstance(scale, bool) or scale < 0:
-        problems.append((1, "default_scale must be a number of 0 or more"))
+    if not isinstance(scale, (int, float)) or isinstance(scale, bool) or (isinstance(scale, float) and not math.isfinite(scale)) or scale < 0:
+        problems.append((1, "default_scale must be a finite number of 0 or more"))
     return problems
 
 
@@ -207,6 +211,8 @@ def lint(root: pathlib.Path) -> list[str]:
             continue
         text = read_text(root / name)
         if text is None:
+            if name in REQUIRED:
+                problems.append(f"{name}:1: not UTF-8 text")
             continue
         found = check_header(name, text) + check_text(name, text)
         if name == UPLUGIN:
@@ -218,7 +224,7 @@ def lint(root: pathlib.Path) -> list[str]:
         elif name == SKILL:
             found += check_skill(text)
         problems += [f"{name}:{line}: {message}" for line, message in found]
-    for required in (UPLUGIN, LANES, TRAINED, SKILL):
+    for required in REQUIRED:
         if required not in names:
             problems.append(f"{required}:1: file is missing")
     return problems

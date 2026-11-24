@@ -96,10 +96,20 @@ class ResourceTests(unittest.TestCase):
         self.assertIn("base_probes: b does not start with model_", messages)
         self.assertIn("base_probes: duplicate id", messages)
         self.assertIn("base_names: c-1 maps to model_c, which base_probes does not list", messages)
-        self.assertIn("default_scale must be a number of 0 or more", messages)
+        self.assertIn("default_scale must be a finite number of 0 or more", messages)
         self.assertEqual(lint.check_trained(json.dumps({"version": 1})), [
             (1, "missing key base_probes"), (1, "missing key base_names"), (1, "missing key default_scale"),
             (1, "base_probes must be a non-empty list")])
+
+    def test_trained_root_and_scale(self):
+        for root in ("null", "[]", "\"x\""):
+            self.assertEqual(lint.check_trained(root), [(1, "must be a JSON object")])
+        for scale in ("1e309", "NaN", "-Infinity", "-1"):
+            text = '{"version": 1, "base_probes": ["model_a"], "base_names": {}, "default_scale": %s}' % scale
+            self.assertEqual(lint.check_trained(text), [(1, "default_scale must be a finite number of 0 or more")], scale)
+        for scale in ("0", "1" + "0" * 400):
+            text = '{"version": 1, "base_probes": ["model_a"], "base_names": {}, "default_scale": %s}' % scale
+            self.assertEqual(lint.check_trained(text), [], scale[:8])
 
     def test_uplugin_modules_are_editor_only(self):
         plugin = {key: "x" for key in lint.UPLUGIN_KEYS}
@@ -123,6 +133,19 @@ class RepositoryTests(unittest.TestCase):
             problems = lint.lint(root)
         self.assertIn(".env:1: .env files must not be committed", problems)
         self.assertIn(lint.UPLUGIN + ":1: file is missing", problems)
+
+    def test_unreadable_required_resource(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            trained = root / lint.TRAINED
+            trained.parent.mkdir(parents=True)
+            trained.write_bytes(b'{"version": 1}\xff')
+            (root / "notes.bin").write_bytes(b"\0\xff")
+            problems = lint.lint(root)
+        self.assertIn(lint.TRAINED + ":1: not UTF-8 text", problems)
+        self.assertNotIn(lint.TRAINED + ":1: file is missing", problems)
+        self.assertFalse([p for p in problems if p.startswith("notes.bin")])
 
 
 if __name__ == "__main__":

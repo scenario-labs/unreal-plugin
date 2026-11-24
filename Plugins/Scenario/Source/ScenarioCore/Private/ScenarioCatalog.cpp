@@ -649,14 +649,17 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 	struct FProbe
 	{
 		TArray<TOptional<FScenarioTrainedBase>> Found;
+		/** No answer (offline, timeout, server error), as opposed to Scenario saying the model is gone or takes no trained model. */
+		TArray<bool> Unanswered;
 		int32 Pending = 0;
 		FScenarioError LastError;
 	};
 	TSharedRef<FProbe> Probe = MakeShared<FProbe>();
 	Probe->Found.SetNum(Probes.Num());
+	Probe->Unanswered.Init(false, Probes.Num());
 	Probe->Pending = Probes.Num();
 	TWeakPtr<FScenarioCatalog> WeakSelf = AsShared();
-	auto Finish = [WeakSelf, Probe]()
+	auto Finish = [WeakSelf, Probe, Probes]()
 	{
 		const TSharedPtr<FScenarioCatalog> Self = WeakSelf.Pin();
 		if (!Self.IsValid())
@@ -664,11 +667,22 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 			return;
 		}
 		TArray<FScenarioTrainedBase> Read;
-		for (const TOptional<FScenarioTrainedBase>& Base : Probe->Found)
+		bool bAllAnswered = true;
+		for (int32 Index = 0; Index < Probe->Found.Num(); ++Index)
 		{
-			if (Base.IsSet())
+			if (Probe->Found[Index].IsSet())
 			{
-				Read.Add(Base.GetValue());
+				Read.Add(Probe->Found[Index].GetValue());
+			}
+			else if (Probe->Unanswered[Index])
+			{
+				// A base that did not answer keeps its last reading; it is read again next time.
+				bAllAnswered = false;
+				const FString& Id = Probes[Index];
+				if (const FScenarioTrainedBase* Known = Self->BaseModels.FindByPredicate([&Id](const FScenarioTrainedBase& Base) { return Base.Id == Id; }))
+				{
+					Read.Add(*Known);
+				}
 			}
 		}
 		Self->bLoadingBases = false;
@@ -676,7 +690,21 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 		if (Read.Num() > 0)
 		{
 			Self->BaseModels = MoveTemp(Read);
-			Self->BasesFetchedAt = ScenarioNow();
+			// Fresh for a day only once every listed base answered.
+			if (bAllAnswered)
+			{
+				Self->BasesFetchedAt = ScenarioNow();
+			}
+			// A trained model read before keeps its base only while that base still takes its type.
+			for (auto It = Self->Trained.CreateIterator(); It; ++It)
+			{
+				const FScenarioTrainedInfo& Info = It.Value().Info;
+				const FScenarioTrainedBase* Base = Self->BaseModels.FindByPredicate([&Info](const FScenarioTrainedBase& Candidate) { return Candidate.Id == Info.BaseId(); });
+				if (!Base || !(Info.Kind == EScenarioTrainedKind::Lora ? Base->LoraTypes : Base->ModelIdTypes).Contains(Info.Type))
+				{
+					It.RemoveCurrent();
+				}
+			}
 			if (Self->Models.Num() > 0)
 			{
 				Self->SaveCache();
@@ -684,7 +712,7 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 		}
 		else
 		{
-			// Nothing read (offline, or no list): the bases kept from before still serve; asked again next time.
+			// Nothing read (offline with nothing read before, or no list): asked again next time.
 			Error = Probe->LastError.Kind != EScenarioErrorKind::None ? Probe->LastError : FScenarioError();
 			if (Error.Kind == EScenarioErrorKind::None)
 			{
@@ -717,6 +745,7 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 			else if (!Reply.bOk)
 			{
 				Probe->LastError = Reply.Error;
+				Probe->Unanswered[Index] = Reply.Error.Kind != EScenarioErrorKind::NotFound;
 			}
 			if (--Probe->Pending == 0)
 			{
@@ -747,8 +776,9 @@ bool FScenarioCatalog::NeedsResolve(const FString& ModelId) const
 	{
 		return false;
 	}
+	// A model the catalog does not list (not fetched yet, or another workspace's) may be a trained model: its record says.
 	const FScenarioCatalogModel* Model = Find(ModelId);
-	return Model && Model->bTrained && ScenarioTrained::IsTrainedType(Model->Summary.Type);
+	return !Model || (Model->bTrained && ScenarioTrained::IsTrainedType(Model->Summary.Type));
 }
 
 void FScenarioCatalog::GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone)

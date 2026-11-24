@@ -48,6 +48,8 @@ struct SCENARIOCORE_API FScenarioTrainedBase
 	double ScaleMax = 2.0;
 	double ScaleStep = 0.05;
 	FString PromptField = TEXT("prompt");
+	/** The prompt input's maxLength, 0 when it has none. */
+	int32 PromptMaxLength = 0;
 
 	/** From a model record (GET /models/{id}). False when it takes no trained model. */
 	static bool FromModel(const TSharedPtr<FJsonObject>& Model, FScenarioTrainedBase& Out);
@@ -72,6 +74,8 @@ struct SCENARIOCORE_API FScenarioTrainedInfo
 	double ScaleMax = 2.0;
 	double ScaleStep = 0.05;
 	FString PromptField = TEXT("prompt");
+	/** The base's prompt maxLength, 0 when it has none. */
+	int32 PromptMaxLength = 0;
 	/** Words that call the trained look up, empty when the record has none. */
 	FString TriggerWords;
 
@@ -105,8 +109,10 @@ namespace ScenarioTrained
 	SCENARIOCORE_API FString TriggerWords(const TSharedPtr<FJsonObject>& Record);
 	/** The weight concepts[] gives the record's own id, or -1. */
 	SCENARIOCORE_API double OwnScale(const TSharedPtr<FJsonObject>& Record);
-	/** The prompt with the trigger words in front, once, unless it already holds them (any case). */
+	/** The prompt with the trigger words in front, once, unless it already holds them as whole words (any case). */
 	SCENARIOCORE_API FString WithTriggerWords(const FString& Prompt, const FString& Words);
+	/** Why the base's parameters cannot be sent: a prompt longer than the base takes once the trigger words are in. Empty when they fit. */
+	SCENARIOCORE_API FString PromptProblem(const FScenarioTrainedInfo& Info, const TSharedPtr<FJsonObject>& Parameters);
 
 	/**
 	 * The trained model's form: the base's schema without its own trained

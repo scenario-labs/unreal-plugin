@@ -94,7 +94,12 @@ public:
 	/** The base models read from Resources/Trained.json's list, in its order. */
 	const TArray<FScenarioTrainedBase>& Bases() const { return BaseModels; }
 	bool HasFreshBases() const;
-	/** Reads the listed base models' schemas when they are older than a day (free reads). A base that cannot be read is left out. */
+	/**
+	 * Reads the listed base models' schemas when they are older than a day (free reads).
+	 * A base Scenario no longer has, or that takes no trained model, is left out; one
+	 * that does not answer keeps its last reading and the list is read again next time.
+	 * A trained model read before is forgotten when its base no longer takes it.
+	 */
 	void LoadBases(TFunction<void(const FScenarioError& Error)> OnDone = nullptr);
 	/** How a trained row runs, from its type and the bases read so far (no request). */
 	FScenarioTrainedInfo TrainedInfo(const FScenarioCatalogModel& Model) const;
@@ -106,7 +111,7 @@ public:
 	void GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone);
 	/** How a trained model runs, once GetSchema read it in this workspace; null otherwise. */
 	const FScenarioTrainedInfo* FindTrained(const FString& ModelId) const;
-	/** True for a trained row GetSchema has not read yet in this workspace. */
+	/** True for a model GetSchema has not read yet in this workspace that may be a trained model: a trained row, or a model the catalog does not list. */
 	bool NeedsResolve(const FString& ModelId) const;
 
 	DECLARE_MULTICAST_DELEGATE(FOnChanged);

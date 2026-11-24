@@ -343,12 +343,9 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 		if (Subsystem->Session().IsReady())
 		{
 			Cat.RefreshIfNeeded(Subsystem->Session().Scope());
-			if (!Cat.HasFreshBases() && Cat.All().ContainsByPredicate([](const FScenarioCatalogModel& Model) { return IsTrainedRow(Model); }))
-			{
-				Cat.LoadBases();
-			}
 		}
-		CatalogHandle = Cat.OnChanged.AddSP(this, &SScenarioModelPicker::Refresh);
+		LoadBasesForTrainedRows();
+		CatalogHandle = Cat.OnChanged.AddSP(this, &SScenarioModelPicker::OnCatalogChanged);
 	}
 
 	ChildSlot
@@ -737,6 +734,29 @@ void SScenarioModelPicker::Select(const FItem& Item)
 	}
 	Selected = Item;
 	ScheduleEstimate();
+}
+
+void SScenarioModelPicker::OnCatalogChanged()
+{
+	// On a first launch the trained rows arrive after the picker opened.
+	LoadBasesForTrainedRows();
+	Refresh();
+}
+
+void SScenarioModelPicker::LoadBasesForTrainedRows()
+{
+	UScenarioSubsystem* Subsystem = UScenarioSubsystem::Get();
+	if (bBasesAsked || !Subsystem || !Subsystem->Session().IsReady())
+	{
+		return;
+	}
+	FScenarioCatalog& Cat = Subsystem->Session().Catalog();
+	if (!Cat.HasFreshBases() && Cat.All().ContainsByPredicate([](const FScenarioCatalogModel& Model) { return IsTrainedRow(Model); }))
+	{
+		// Once: a base that does not answer leaves the bases stale, and their load broadcasts OnChanged again.
+		bBasesAsked = true;
+		Cat.LoadBases();
+	}
 }
 
 void SScenarioModelPicker::Refresh()

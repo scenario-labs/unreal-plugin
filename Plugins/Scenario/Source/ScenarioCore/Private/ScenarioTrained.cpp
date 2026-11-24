@@ -88,6 +88,23 @@ namespace
 		TArray<FString> Types = ScenarioJson::GetStringArray(Input, TEXT("modelTypes"));
 		return Types.Num() > 0 ? Types : ScenarioJson::GetStringArray(Input, TEXT("model_types"));
 	}
+
+	/** True when Text holds Words (any case) with no letter or digit glued to either end: FAKESTYLE is not in FAKESTYLES. */
+	bool HoldsWords(const FString& Text, const FString& Words)
+	{
+		auto IsInner = [](TCHAR Char) { return FChar::IsAlnum(Char) || Char == TEXT('_'); };
+		for (int32 Start = Text.Find(Words, ESearchCase::IgnoreCase); Start != INDEX_NONE; Start = Text.Find(Words, ESearchCase::IgnoreCase, ESearchDir::FromStart, Start + 1))
+		{
+			const int32 End = Start + Words.Len();
+			const bool bOpen = Start == 0 || !IsInner(Words[0]) || !IsInner(Text[Start - 1]);
+			const bool bClose = End >= Text.Len() || !IsInner(Words[Words.Len() - 1]) || !IsInner(Text[End]);
+			if (bOpen && bClose)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 // Data
@@ -163,6 +180,7 @@ bool FScenarioTrainedBase::FromModel(const TSharedPtr<FJsonObject>& Model, FScen
 		else if (!bPrompt && !Name.IsEmpty() && (Name == TEXT("prompt") || ScenarioJson::Truthy(Input->TryGetField(TEXT("prompt")))))
 		{
 			Out.PromptField = Name;
+			Out.PromptMaxLength = static_cast<int32>(ScenarioJson::GetNumber(Input, TEXT("maxLength"), ScenarioJson::GetNumber(Input, TEXT("max_length"), 0.0)));
 			bPrompt = true;
 		}
 	}
@@ -181,6 +199,7 @@ TSharedRef<FJsonObject> FScenarioTrainedBase::ToJson() const
 	Json->SetNumberField(TEXT("scale_max"), ScaleMax);
 	Json->SetNumberField(TEXT("scale_step"), ScaleStep);
 	Json->SetStringField(TEXT("prompt_field"), PromptField);
+	Json->SetNumberField(TEXT("prompt_max_length"), PromptMaxLength);
 	return Json;
 }
 
@@ -196,6 +215,7 @@ bool FScenarioTrainedBase::FromJson(const TSharedPtr<FJsonObject>& Json, FScenar
 	Out.ScaleMax = ScenarioJson::GetNumber(Json, TEXT("scale_max"), Out.ScaleMax);
 	Out.ScaleStep = ScenarioJson::GetNumber(Json, TEXT("scale_step"), Out.ScaleStep);
 	Out.PromptField = ScenarioJson::GetString(Json, TEXT("prompt_field"), Out.PromptField);
+	Out.PromptMaxLength = static_cast<int32>(ScenarioJson::GetNumber(Json, TEXT("prompt_max_length")));
 	return !Out.Id.IsEmpty() && (Out.LoraTypes.Num() > 0 || Out.ModelIdTypes.Num() > 0);
 }
 
@@ -316,6 +336,7 @@ FScenarioTrainedInfo ScenarioTrained::Derive(const FScenarioModelSummary& Model,
 		Info.ScaleMax = FMath::Max(Candidates[0].ScaleMin, Candidates[0].ScaleMax);
 		Info.ScaleStep = Candidates[0].ScaleStep;
 		Info.PromptField = Candidates[0].PromptField;
+		Info.PromptMaxLength = Candidates[0].PromptMaxLength;
 	}
 	Info.Scale = FMath::Clamp(Model.OwnScale >= 0.0 ? Model.OwnScale : Data.DefaultScale, Info.ScaleMin, Info.ScaleMax);
 	return Info;
@@ -380,11 +401,23 @@ double ScenarioTrained::OwnScale(const TSharedPtr<FJsonObject>& Record)
 FString ScenarioTrained::WithTriggerWords(const FString& Prompt, const FString& Words)
 {
 	const FString Clean = Words.TrimStartAndEnd();
-	if (Clean.IsEmpty() || Prompt.TrimStartAndEnd().IsEmpty() || Prompt.Contains(Clean, ESearchCase::IgnoreCase))
+	if (Clean.IsEmpty() || Prompt.TrimStartAndEnd().IsEmpty() || HoldsWords(Prompt, Clean))
 	{
 		return Prompt;
 	}
 	return Clean + TEXT(", ") + Prompt.TrimStart();
+}
+
+FString ScenarioTrained::PromptProblem(const FScenarioTrainedInfo& Info, const TSharedPtr<FJsonObject>& Parameters)
+{
+	const int32 Length = ScenarioJson::GetString(Parameters, Info.PromptField).Len();
+	if (Info.PromptMaxLength <= 0 || Length <= Info.PromptMaxLength)
+	{
+		return FString();
+	}
+	return Info.TriggerWords.IsEmpty()
+		? FString::Printf(TEXT("The prompt is longer than %d characters."), Info.PromptMaxLength)
+		: FString::Printf(TEXT("With its trigger words the prompt is longer than %d characters. Shorten it, or turn Trigger words off."), Info.PromptMaxLength);
 }
 
 // Forms and requests

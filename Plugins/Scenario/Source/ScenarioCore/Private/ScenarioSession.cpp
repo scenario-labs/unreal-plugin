@@ -771,9 +771,11 @@ void FScenarioSession::Price(const FScenarioRunRequest& Request, bool bAutomatic
 		&& (CatalogPtr->NeedsResolve(Request.TargetId) || ScenarioTrained::HasFormFields(Request.Parameters));
 	if (Request.Kind == EScenarioQuoteKind::Model && bUnread)
 	{
-		// A trained model priced before its form was read (or read in another project): read how it runs first, then price its base.
+		// A model not read in this project yet (a trained row, a model the catalog does not list, or a trained form's payload):
+		// read how it runs first, so a trained model is priced on its base.
 		TWeakPtr<FScenarioSession> WeakThis = AsShared();
-		CatalogPtr->GetSchema(Request.TargetId, [WeakThis, Request, OnDone](const FScenarioReply& Reply)
+		const FString ReadScope = Scope();
+		CatalogPtr->GetSchema(Request.TargetId, [WeakThis, Request, ReadScope, OnDone](const FScenarioReply& Reply)
 		{
 			const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
 			if (!This.IsValid())
@@ -787,9 +789,16 @@ void FScenarioSession::Price(const FScenarioRunRequest& Request, bool bAutomatic
 				OnDone(FResult::Fail(Error));
 				return;
 			}
-			if (!This->CatalogPtr->FindTrained(Request.TargetId) && ScenarioTrained::HasFormFields(Request.Parameters))
+			if (This->Scope() != ReadScope)
 			{
-				OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("This request was made for a trained model that is not read in this project. Pick the model again."))));
+				OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("The project changed while the price was checked. Check the price again."))));
+				return;
+			}
+			// Never priced unresolved: once read here, a trained model is known and anything else runs as itself.
+			if (!This->CatalogPtr->FindTrained(Request.TargetId)
+				&& (ScenarioTrained::HasFormFields(Request.Parameters) || This->CatalogPtr->NeedsResolve(Request.TargetId)))
+			{
+				OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("This request was made for a model that is not read in this project. Pick the model again."))));
 				return;
 			}
 			This->PriceResolved(Request, OnDone);
@@ -803,7 +812,19 @@ void FScenarioSession::PriceResolved(const FScenarioRunRequest& Request, TFuncti
 {
 	using FResult = TScenarioResult<FScenarioQuote>;
 	const FScenarioRunRequest Run = Resolve(Request);
-	if (const FScenarioQuote* Existing = QuoteFor(Run))
+	if (!Run.TrainedModelId.IsEmpty())
+	{
+		const FScenarioTrainedInfo* Info = CatalogPtr->FindTrained(Run.TrainedModelId);
+		const FString Problem = Info ? ScenarioTrained::PromptProblem(*Info, Run.Parameters) : FString();
+		if (!Problem.IsEmpty())
+		{
+			OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, Problem)));
+			return;
+		}
+	}
+	// A base request and a trained model's can be the same call: a quote is reused only with the same trained model.
+	const FScenarioQuote* Existing = QuoteFor(Run);
+	if (Existing && Existing->TrainedModelId == Run.TrainedModelId)
 	{
 		OnDone(FResult::Ok(*Existing));
 		return;
