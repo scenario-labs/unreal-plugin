@@ -687,7 +687,9 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 		}
 		Self->bLoadingBases = false;
 		FScenarioError Error;
-		if (Read.Num() > 0)
+		const bool bNoneRead = Read.Num() == 0;
+		// Applied when a base was read, or when every base answered: then Scenario says none of the old ones runs trained models.
+		if (!bNoneRead || (bAllAnswered && Probe->Found.Num() > 0))
 		{
 			Self->BaseModels = MoveTemp(Read);
 			// Fresh for a day only once every listed base answered.
@@ -710,9 +712,9 @@ void FScenarioCatalog::LoadBases(TFunction<void(const FScenarioError& Error)> On
 				Self->SaveCache();
 			}
 		}
-		else
+		if (bNoneRead)
 		{
-			// Nothing read (offline with nothing read before, or no list): asked again next time.
+			// No base to run trained models on (offline with nothing read before, no list, or none left): asked again next time.
 			Error = Probe->LastError.Kind != EScenarioErrorKind::None ? Probe->LastError : FScenarioError();
 			if (Error.Kind == EScenarioErrorKind::None)
 			{

@@ -641,6 +641,24 @@ bool FScenarioTrainedBasesTest::RunTest(const FString& Parameters)
 	TestNull(TEXT("a trained model whose base left is forgotten"), Catalog->FindTrained(Lora));
 	TestTrue(TEXT("and waits to be read again"), Catalog->NeedsResolve(Lora));
 	IFileManager::Get().Delete(*Path);
+
+	// Scenario says every base is gone: the empty list is applied, and the LoRA read on the last one is forgotten.
+	const FString EmptiedPath = FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("Scenario"), FGuid::NewGuid().ToString() + TEXT("_catalog.json"));
+	TSharedRef<FScenarioCatalog> Emptied = MakeShared<FScenarioCatalog>(MakeShared<FScenarioApi>(Backend), EmptiedPath);
+	Emptied->SetModels({ Row });
+	Answers->Add(FString(Flux2), EAnswer::None);
+	Answers->Add(FString(Flux1), EAnswer::Ok);
+	Emptied->LoadBases();
+	Emptied->GetSchema(Lora, [](const FScenarioReply&) {});
+	TestNotNull(TEXT("the LoRA runs on FLUX.1 first"), Emptied->FindTrained(Lora));
+	Answers->Add(FString(Flux2), EAnswer::Gone);
+	Answers->Add(FString(Flux1), EAnswer::Gone);
+	FScenarioError Loaded;
+	Emptied->LoadBases([&Loaded](const FScenarioError& Error) { Loaded = Error; });
+	TestEqual(TEXT("no base left"), Emptied->Bases().Num(), 0);
+	TestNull(TEXT("the LoRA on a base that left is forgotten"), Emptied->FindTrained(Lora));
+	TestTrue(TEXT("loading says there is no base"), Loaded.Kind != EScenarioErrorKind::None);
+	IFileManager::Get().Delete(*EmptiedPath);
 	return true;
 }
 
