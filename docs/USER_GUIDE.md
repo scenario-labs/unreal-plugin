@@ -261,7 +261,7 @@ Prompts and the files you choose as inputs go to Scenario. Only the three gamepl
 
 ## 15. Limits in version 0.1
 
-- macOS is the only tested platform. Windows and Linux builds are compiled but not tested yet.
+- macOS with Unreal 5.8 is the only tested setup. On Windows, and for Unreal 5.6 and 5.7, the installer compiles the plugin on your computer; those builds are not tested yet. Linux is not tested.
 - The Restyle lane captures the active level viewport only. Films made by the kit use cameras and Movie Render Queue.
 - Audio from the Studio is placed as an Ambient Sound; the kit's films put it in a Level Sequence.
 - Kit worlds are flat ground with props; there is no landscape sculpting.

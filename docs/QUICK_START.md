@@ -5,8 +5,8 @@ From install to a first generated asset in your level in about two minutes. You 
 ## 1. Install
 
 1. Close the editor.
-2. Unzip the plugin into your project so the folder reads `<Project>/Plugins/Scenario/Scenario.uplugin`.
-3. Open the project. If Unreal asks to rebuild the Scenario modules, answer **Yes** (source copies only; release zips are prebuilt).
+2. Unzip the plugin into your project so the folder reads `<Project>/Plugins/Scenario/Scenario.uplugin`. Release zips are built for macOS and Unreal 5.8; on Windows, or for Unreal 5.6 and 5.7, double-click the installer in the source zip instead (see [Install](../README.md#install)).
+3. Open the project.
 4. On macOS, if the editor reports that the plugin's libraries cannot be opened, the zip was quarantined by Gatekeeper. Release zips are not signed yet in version 0.2. Run this once, then reopen the project:
 
    ```sh

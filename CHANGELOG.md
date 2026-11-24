@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Installers for Windows and macOS: double-click `Install-Windows.bat` or `Install-macOS.command` in the source zip to compile the plugin for the Unreal version a project uses and install it there, Blueprint-only projects included. They cover Windows and Unreal 5.6 and 5.7, which have no release zip.
 - The docs site takes the layout of the other Scenario plugin handbooks: each page's contents (sections and their subsections) in a left column, the handbook pages in the header, and one reading column.
 
 ## 0.2.1 (2026-10-22)

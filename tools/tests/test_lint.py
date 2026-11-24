@@ -69,6 +69,15 @@ class TextTests(unittest.TestCase):
         self.assertEqual(len(lint.check_text("a.md", "/Users/" + "jdoe/Project\n")), 1)
 
 
+class AsciiTests(unittest.TestCase):
+    def test_windows_scripts_must_be_ascii(self):
+        self.assertEqual(lint.check_ascii("tools/install/Install-Scenario.ps1", "Write-Host 'ok'\nWrite-Host 'caf" + chr(0xE9) + "'\n")[0][0], 2)
+        self.assertEqual(lint.check_ascii("Install-Windows.bat", "@echo off\n"), [])
+
+    def test_other_files_may_hold_any_text(self):
+        self.assertEqual(lint.check_ascii("README.md", "caf" + chr(0xE9) + "\n"), [])
+
+
 class ResourceTests(unittest.TestCase):
     def test_valid_lanes(self):
         self.assertEqual(lint.check_lanes(lanes()), [])
