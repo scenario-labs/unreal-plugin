@@ -245,7 +245,7 @@ namespace
 			Props->SetObjectField(TEXT("parameters"), Prop(TEXT("object"), TEXT("The tool's arguments, matching its inputSchema.")));
 			const bool bRead = FCString::Strcmp(Lane.Lane, TEXT("read")) == 0;
 			Tools.Add(MakeShared<FJsonValueObject>(CatalogTool(FString(ExecutePrefix) + Lane.Lane, Lane.Title, Lane.Description, Props, { TEXT("name") },
-				Annotations(Lane.Title, bRead, Lane.bDestructive, bRead, !bRead))));
+				Annotations(Lane.Title, bRead, Lane.bDestructive, bRead, true))));
 		}
 		return Tools;
 	}

@@ -663,7 +663,7 @@ void FScenarioActions::RegisterScenarioActions()
 				{ TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") },
 				{ TEXT("destination"), TEXT("string"), TEXT("Content folder for the import, for example /Game/Props. Default: the plugin's folder.") },
 				{ TEXT("lane"), TEXT("string"), TEXT("Where the results land in Unreal: image, 3d, material, environment, audio, video or render. Inferred from the model when omitted."), FString(), Lanes },
-			}, { TEXT("quote_id"), TEXT("approved_cost"), TEXT("quote_id from estimate_cost: single use, valid 120 s.") }),
+			}, { TEXT("quote_id"), TEXT("approved_cost") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{
 				SpendQuote(EScenarioQuoteKind::Model, Args, Caller, Done);
@@ -674,7 +674,7 @@ void FScenarioActions::RegisterScenarioActions()
 
 	// job_status
 	Register(Make(TEXT("job_status"), TEXT("Get Job Status"), EScenarioActionKind::Read,
-		TEXT("State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too.\nReturns: { jobs: [{ job_id, state, progress, quoted_cu, charged_cu, files: [{ index, asset_id, role, downloaded, imported_objects }], error, next }] }."),
+		TEXT("State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too.\nReturns: for one id, the job { job_id, state, progress, quoted_cu, charged_cu, files: [{ index, asset_id, role, downloaded, imported_objects }], error, next }, or { approval_id, state, cu_cost_exact } for a spend still waiting; for several, { jobs: [...] } of those."),
 		Object({ { TEXT("job_id"), TEXT("string"), TEXT("Job id from generate, run_workflow or list_local_jobs, or an approval_id.") }, { TEXT("job_ids"), TEXT("array"), TEXT("Several job ids at once.") } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -721,7 +721,7 @@ void FScenarioActions::RegisterScenarioActions()
 	// wait_for_job
 	{
 		FScenarioAction Action = Make(TEXT("wait_for_job"), TEXT("Wait for Job"), EScenarioActionKind::Read,
-			TEXT("Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s).\nReturns: what job_status returns, with still_running and next when it is not done yet."),
+			TEXT("Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s).\nReturns: the one job (or approval) as job_status returns it for one id, with still_running and next when it is not done yet."),
 			Object({ { TEXT("job_id"), TEXT("string"), TEXT("Job id from generate or run_workflow.") }, { TEXT("timeout_seconds"), TEXT("integer"), TEXT("Seconds to wait. Default 45, max 160.") } }, { TEXT("job_id") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 			{
@@ -1040,7 +1040,7 @@ void FScenarioActions::RegisterScenarioActions()
 				{ TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") },
 				{ TEXT("destination"), TEXT("string"), TEXT("Content folder for the import, for example /Game/Props. Default: the plugin's folder.") },
 				{ TEXT("workflow_name"), TEXT("string"), TEXT("For the job list.") },
-			}, { TEXT("quote_id"), TEXT("approved_cost"), TEXT("quote_id from estimate_workflow: single use, valid 120 s.") }),
+			}, { TEXT("quote_id"), TEXT("approved_cost") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{
 				SpendQuote(EScenarioQuoteKind::Workflow, Args, Caller, Done);
@@ -1133,7 +1133,7 @@ void FScenarioActions::RegisterScenarioActions()
 	{
 		FScenarioAction Action = Make(TEXT("approve_prompt"), TEXT("Run Prompt Spark"), EScenarioActionKind::Spend,
 			TEXT("SPENDS Creative Units. Runs the Prompt Spark call priced by estimate_prompt, with its quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried.\nReturns: { job_id, next } for read_prompt_result, or { approval_id, state: pending_approval } while the person approves the spend."),
-			Object({ { TEXT("quote_id"), TEXT("string"), TEXT("quote_id from estimate_prompt: single use, valid 120 s.") }, { TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") } }, { TEXT("quote_id"), TEXT("approved_cost"), TEXT("quote_id from estimate_prompt: single use, valid 120 s.") }),
+			Object({ { TEXT("quote_id"), TEXT("string"), TEXT("quote_id from estimate_prompt: single use, valid 120 s.") }, { TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") } }, { TEXT("quote_id"), TEXT("approved_cost") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{
 				SpendQuote(EScenarioQuoteKind::PromptSpark, Args, Caller, Done);

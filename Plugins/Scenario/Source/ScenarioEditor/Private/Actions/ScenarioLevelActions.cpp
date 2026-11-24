@@ -357,7 +357,7 @@ void FScenarioActions::RegisterLevelActions()
 
 	// object_detail
 	Register(Make(TEXT("object_detail"), TEXT("Get Actor Details"), EScenarioActionKind::Read,
-		TEXT("One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance.\nReturns: { label, id, class, folder, location, rotation, scale, bounds_center, bounds_size, mesh, materials, components, placed_by_scenario, scenario }."),
+		TEXT("One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance.\nReturns: { label, id, class, folder, location, rotation, scale, bounds_center, bounds_size, components: [{ name, class, mesh, materials }], placed_by_scenario, scenario }."),
 		Object({ { TEXT("actor_id"), TEXT("string"), TEXT("Actor id or label, from scene_summary.") } }, { TEXT("actor_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -647,10 +647,10 @@ void FScenarioActions::RegisterLevelActions()
 
 	// prepare_result_application
 	Register(Make(TEXT("prepare_result_application"), TEXT("Prepare Result"), EScenarioActionKind::Read,
-		TEXT("Describes how a finished job will land: purpose import, place, material, environment, media_plate, mesh_edit or sequencer_audio, with targets. Changes nothing; apply_result_application applies it.\nReturns: { application_id, review, next }."),
+		TEXT("Describes how a finished job will land: purpose import, place, material, environment, media_plate or mesh_edit, with targets. Changes nothing; apply_result_application applies it.\nReturns: { application_id, review, next }."),
 		Object({
 			{ TEXT("job_id"), TEXT("string"), TEXT("Finished job id from job_status.") },
-			{ TEXT("purpose"), TEXT("string"), TEXT("How the result lands: import, place (default), material, environment, media_plate, mesh_edit or sequencer_audio."), FString(), { TEXT("import"), TEXT("place"), TEXT("material"), TEXT("environment"), TEXT("media_plate"), TEXT("mesh_edit"), TEXT("sequencer_audio") } },
+			{ TEXT("purpose"), TEXT("string"), TEXT("How the result lands: import, place (default), material, environment, media_plate or mesh_edit."), FString(), { TEXT("import"), TEXT("place"), TEXT("material"), TEXT("environment"), TEXT("media_plate"), TEXT("mesh_edit") } },
 			{ TEXT("actor_ids"), TEXT("array"), TEXT("Targets (material, media_plate, mesh_edit, at_pivot); default the selection.") },
 			{ TEXT("placement"), TEXT("string"), TEXT("For place."), FString(), { TEXT("auto"), TEXT("in_front_of_camera"), TEXT("at_pivot"), TEXT("at_location"), TEXT("on_selection") } },
 			{ TEXT("location"), TEXT("array"), TEXT("[x, y, z] in cm for at_location."), TEXT("number") },
@@ -769,7 +769,7 @@ void FScenarioActions::RegisterLevelActions()
 	// apply_result_application
 	{
 		FScenarioAction Action = Make(TEXT("apply_result_application"), TEXT("Apply Result"), EScenarioActionKind::Change,
-			TEXT("Applies a prepared application once, in one undo step. When agent changes are off, the person gets a proposal instead.\nReturns: { state, review, next } with what changed and the import checks, or state pending_approval while the person decides."),
+			TEXT("Applies a prepared application once, in one undo step. When agent changes are off, the person gets a proposal instead.\nReturns: once applied, { ok, created_assets, spawned_actors, modified_actors, checks, warnings, job_id, undo }; while the person decides, { state: pending_approval, review, next }."),
 			Object({ { TEXT("application_id"), TEXT("string"), TEXT("application_id from prepare_result_application.") } }, { TEXT("application_id") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{

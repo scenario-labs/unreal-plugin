@@ -127,8 +127,8 @@ Measured on Unreal 5.8.3 with the Scenario plugin and Epic's Model Context Proto
 
 | What | Bytes | About tokens |
 |---|---|---|
-| Scenario MCP server, `tools/list` (29 core tools and the catalog's 5) | 25,323 | 6,330 |
-| Scenario MCP server, `tools/list` with **List every tool** (47 tools and the catalog's 5) | 47,222 | 11,800 |
+| Scenario MCP server, `tools/list` (29 core tools and the catalog's 5) | 25,381 | 6,340 |
+| Scenario MCP server, `tools/list` with **List every tool** (47 tools and the catalog's 5) | 47,401 | 11,850 |
 | Epic's server, `tools/list` (3 meta tools) | 1,719 | 430 |
 | Epic's server, `list_toolsets` | 13,366 | 3,340 |
 | Epic's server, `describe_toolset` for the Scenario toolset (18 tools) | about 11,600 | 2,900 |

@@ -136,6 +136,10 @@ bool FScenarioAgentToolBudgetTest::RunTest(const FString& Parameters)
 				TestFalse(FString::Printf(TEXT("%s.%s is described"), *Name, *Property.Key), ScenarioJson::GetString(Field, TEXT("description")).TrimStartAndEnd().IsEmpty());
 			}
 		}
+		for (const FString& Required : ScenarioJson::GetStringArray(Schema, TEXT("required")))
+		{
+			TestTrue(FString::Printf(TEXT("%s requires %s, one of its parameters"), *Name, *Required), Properties.IsValid() && Properties->HasField(Required));
+		}
 		TArray<FString> Texts;
 		Descriptions(MakeShared<FJsonValueObject>(Schema), Texts);
 		for (const FString& Text : Texts)
@@ -329,7 +333,9 @@ bool FScenarioAgentCatalogTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The read lane refuses a paid tool, naming the write lane"), ScenarioJson::GetBool(Wrong, TEXT("isError")) && Text(Wrong).Contains(TEXT("unreal_tool_execute_write")));
 	TestTrue(TEXT("Unknown tools are refused"), ScenarioJson::GetBool(Call(7, TEXT("unreal_tool_execute_read"), TEXT("{\"name\":\"format_disk\"}")), TEXT("isError")));
 
-	// Paid tools keep their rules through the catalog: no valid quote, nothing sent.
+	// Paid tools keep their rules through the catalog: no valid quote, nothing sent. With "Approve each spend
+	// here" on, the call would wait for the person and answer after Send returns: keep it off for this check.
+	TGuardValue<bool> NoSpendApproval(UScenarioEditorSettings::GetMutable().bApproveAgentSpend, false);
 	const TSharedPtr<FJsonObject> Paid = Call(8, TEXT("unreal_tool_execute_write"), TEXT("{\"name\":\"generate\",\"parameters\":{\"quote_id\":\"q_none\",\"approved_cost\":\"1\"}}"));
 	TestTrue(TEXT("The write lane keeps the money rules"), ScenarioJson::GetBool(Paid, TEXT("isError")));
 
@@ -364,7 +370,11 @@ bool FScenarioAgentPermissionsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("scripts never run agent python"), Call(TEXT("execute_python"), FScenarioCaller::Script(TEXT("test")), TEXT("{\"code\":\"print(1)\"}")).Error.StartsWith(TEXT("Permission")));
 
 	TestTrue(TEXT("apply reaches its own check (proposal path)"), Call(TEXT("apply_result_application"), Agent, TEXT("{\"application_id\":\"app_missing\"}")).Error.StartsWith(TEXT("NotFound")));
-	TestTrue(TEXT("generate needs a quote"), Call(TEXT("generate"), Agent, TEXT("{}")).Error.Len() > 0);
+	{
+		// Synchronous only while spends do not wait for the person's approval.
+		TGuardValue<bool> NoSpendApproval(UScenarioEditorSettings::GetMutable().bApproveAgentSpend, false);
+		TestTrue(TEXT("generate needs a quote"), Call(TEXT("generate"), Agent, TEXT("{}")).Error.Len() > 0);
+	}
 	TestTrue(TEXT("not_sent is the person's call"), Call(TEXT("recover_local_job"), Changer, TEXT("{\"action\":\"not_sent\",\"job_id\":\"x\"}")).Error.Len() > 0);
 	TestTrue(TEXT("unknown action"), Call(TEXT("format_disk"), Changer, TEXT("{}")).Error.StartsWith(TEXT("NotFound")));
 	return true;

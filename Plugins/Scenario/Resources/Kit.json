@@ -29,7 +29,7 @@
       "kind": "change",
       "undo": true,
       "time_limit": 300,
-      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.\nReturns: { level, size_m, props: [{ actor, mesh, at_m, height_m, yaw, on_path }], placed, asked, warnings, note }.",
+      "description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.\nReturns: { level, size_m, landmark, path, props: [{ mesh, placed, asked, area, note }] (one entry per mesh), total_props, prop_lights, sun, warnings, next }.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -140,7 +140,7 @@
       "kind": "change",
       "undo": false,
       "time_limit": 240,
-      "description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.\nReturns: { level, template, materials_replaced, swapped: [{ replace, with, count }], placed, asked }.",
+      "description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.\nReturns: { level, template, materials_replaced, swapped: [{ replace, with, count }], props: [{ mesh, placed, asked }], game_mode, next }.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -228,7 +228,7 @@
       "kind": "read",
       "undo": false,
       "time_limit": 20,
-      "description": "Where a film render is: rendering (frames_done of frames), encoding, done (mp4 path) or failed (error).\nReturns: { film, state, next } with frames_done and frames while rendering, the mp4 path when done, or error.",
+      "description": "Where a film render is: rendering (frames_done of frames), encoding, done, failed (error), or interrupted or not_rendered (call render_film).\nReturns: { film, state, output_dir, frames, frames_done, mp4, note, error }. When done, the film is mp4, or without ffmpeg the image sequence in output_dir (note says so).",
       "input_schema": { "type": "object", "properties": { "film": { "type": "string", "description": "Film name or sequence path. Default: the newest film." } } }
     },
     {

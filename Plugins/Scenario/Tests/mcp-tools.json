@@ -212,8 +212,7 @@
 				},
 				"required": [
 					"quote_id",
-					"approved_cost",
-					"quote_id from estimate_cost: single use, valid 120 s."
+					"approved_cost"
 				]
 			},
 			"annotations":
@@ -228,7 +227,7 @@
 		{
 			"name": "job_status",
 			"title": "Get Job Status",
-			"description": "State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too.\nReturns: { jobs: [{ job_id, state, progress, quoted_cu, charged_cu, files: [{ index, asset_id, role, downloaded, imported_objects }], error, next }] }.",
+			"description": "State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too.\nReturns: for one id, the job { job_id, state, progress, quoted_cu, charged_cu, files: [{ index, asset_id, role, downloaded, imported_objects }], error, next }, or { approval_id, state, cu_cost_exact } for a spend still waiting; for several, { jobs: [...] } of those.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -262,7 +261,7 @@
 		{
 			"name": "wait_for_job",
 			"title": "Wait for Job",
-			"description": "Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s).\nReturns: what job_status returns, with still_running and next when it is not done yet.",
+			"description": "Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s).\nReturns: the one job (or approval) as job_status returns it for one id, with still_running and next when it is not done yet.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -485,8 +484,7 @@
 				},
 				"required": [
 					"quote_id",
-					"approved_cost",
-					"quote_id from estimate_workflow: single use, valid 120 s."
+					"approved_cost"
 				]
 			},
 			"annotations":
@@ -694,8 +692,7 @@
 				},
 				"required": [
 					"quote_id",
-					"approved_cost",
-					"quote_id from estimate_prompt: single use, valid 120 s."
+					"approved_cost"
 				]
 			},
 			"annotations":
@@ -995,7 +992,7 @@
 		{
 			"name": "object_detail",
 			"title": "Get Actor Details",
-			"description": "One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance.\nReturns: { label, id, class, folder, location, rotation, scale, bounds_center, bounds_size, mesh, materials, components, placed_by_scenario, scenario }.",
+			"description": "One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance.\nReturns: { label, id, class, folder, location, rotation, scale, bounds_center, bounds_size, components: [{ name, class, mesh, materials }], placed_by_scenario, scenario }.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -1185,7 +1182,7 @@
 		{
 			"name": "prepare_result_application",
 			"title": "Prepare Result",
-			"description": "Describes how a finished job will land: purpose import, place, material, environment, media_plate, mesh_edit or sequencer_audio, with targets. Changes nothing; apply_result_application applies it.\nReturns: { application_id, review, next }.",
+			"description": "Describes how a finished job will land: purpose import, place, material, environment, media_plate or mesh_edit, with targets. Changes nothing; apply_result_application applies it.\nReturns: { application_id, review, next }.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -1199,15 +1196,14 @@
 					"purpose":
 					{
 						"type": "string",
-						"description": "How the result lands: import, place (default), material, environment, media_plate, mesh_edit or sequencer_audio.",
+						"description": "How the result lands: import, place (default), material, environment, media_plate or mesh_edit.",
 						"enum": [
 							"import",
 							"place",
 							"material",
 							"environment",
 							"media_plate",
-							"mesh_edit",
-							"sequencer_audio"
+							"mesh_edit"
 						]
 					},
 					"actor_ids":
@@ -1271,7 +1267,7 @@
 		{
 			"name": "apply_result_application",
 			"title": "Apply Result",
-			"description": "Applies a prepared application once, in one undo step. When agent changes are off, the person gets a proposal instead.\nReturns: { state, review, next } with what changed and the import checks, or state pending_approval while the person decides.",
+			"description": "Applies a prepared application once, in one undo step. When agent changes are off, the person gets a proposal instead.\nReturns: once applied, { ok, created_assets, spawned_actors, modified_actors, checks, warnings, job_id, undo }; while the person decides, { state: pending_approval, review, next }.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -1527,7 +1523,7 @@
 		{
 			"name": "dress_world",
 			"title": "Dress World",
-			"description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.\nReturns: { level, size_m, props: [{ actor, mesh, at_m, height_m, yaw, on_path }], placed, asked, warnings, note }.",
+			"description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.\nReturns: { level, size_m, landmark, path, props: [{ mesh, placed, asked, area, note }] (one entry per mesh), total_props, prop_lights, sun, warnings, next }.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -1929,7 +1925,7 @@
 		{
 			"name": "dress_template",
 			"title": "Dress Template",
-			"description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.\nReturns: { level, template, materials_replaced, swapped: [{ replace, with, count }], placed, asked }.",
+			"description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.\nReturns: { level, template, materials_replaced, swapped: [{ replace, with, count }], props: [{ mesh, placed, asked }], game_mode, next }.",
 			"inputSchema":
 			{
 				"type": "object",
@@ -2249,7 +2245,7 @@
 		{
 			"name": "film_status",
 			"title": "Get Film Status",
-			"description": "Where a film render is: rendering (frames_done of frames), encoding, done (mp4 path) or failed (error).\nReturns: { film, state, next } with frames_done and frames while rendering, the mp4 path when done, or error.",
+			"description": "Where a film render is: rendering (frames_done of frames), encoding, done, failed (error), or interrupted or not_rendered (call render_film).\nReturns: { film, state, output_dir, frames, frames_done, mp4, note, error }. When done, the film is mp4, or without ffmpeg the image sequence in output_dir (note says so).",
 			"inputSchema":
 			{
 				"type": "object",
@@ -2416,7 +2412,7 @@
 				"readOnlyHint": true,
 				"destructiveHint": false,
 				"idempotentHint": true,
-				"openWorldHint": false
+				"openWorldHint": true
 			}
 		},
 		{
