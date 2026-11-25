@@ -188,7 +188,8 @@ function Read-NewLog([string]$Path, [ref]$Position) {
     try {
         if ($stream.Length -le $Position.Value) { return @() }
         $null = $stream.Seek($Position.Value, 'Begin')
-        $text = (New-Object System.IO.StreamReader($stream)).ReadToEnd()
+        # The build writes in the console's code page, which keeps accents in localized compiler messages.
+        $text = (New-Object System.IO.StreamReader($stream, [Console]::OutputEncoding)).ReadToEnd()
         $Position.Value = $stream.Length
         return @($text -split "`r?`n")
     } finally {
