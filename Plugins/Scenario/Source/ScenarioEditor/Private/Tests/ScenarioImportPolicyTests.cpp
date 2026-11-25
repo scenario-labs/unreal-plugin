@@ -110,8 +110,8 @@ namespace
 		}
 		Material->ForceRecompileForRendering();
 		OutPlatform = FDataDrivenShaderPlatformInfo::GetName(GMaxRHIShaderPlatform).ToString();
-#if UE_VERSION_OLDER_THAN(5, 8, 0)
-		// Unverified on 5.6 and 5.7: those take the feature level here.
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+		// Unreal 5.6 takes the feature level here.
 		FMaterialResource* Resource = Material->GetMaterialResource(GMaxRHIFeatureLevel);
 #else
 		FMaterialResource* Resource = Material->GetMaterialResource(GMaxRHIShaderPlatform);
