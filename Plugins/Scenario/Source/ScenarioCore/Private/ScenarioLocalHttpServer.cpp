@@ -175,9 +175,11 @@ void FScenarioLocalHttpServer::Stop()
 	bStopping = true;
 	if (Thread)
 	{
-		Thread->WaitForCompletion();
-		delete Thread;
+		// Windows deletes a thread by calling the runnable's Stop() again, which is this function: clear Thread first.
+		FRunnableThread* Running = Thread;
 		Thread = nullptr;
+		Running->WaitForCompletion();
+		delete Running;
 	}
 	if (Listener)
 	{
