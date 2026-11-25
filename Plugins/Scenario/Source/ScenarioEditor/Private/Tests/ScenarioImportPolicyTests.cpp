@@ -110,8 +110,8 @@ namespace
 		}
 		Material->ForceRecompileForRendering();
 		OutPlatform = FDataDrivenShaderPlatformInfo::GetName(GMaxRHIShaderPlatform).ToString();
-#if UE_VERSION_OLDER_THAN(5, 8, 0)
-		// Unverified on 5.6 and 5.7: those take the feature level here.
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+		// Unreal 5.6 takes the feature level here.
 		FMaterialResource* Resource = Material->GetMaterialResource(GMaxRHIFeatureLevel);
 #else
 		FMaterialResource* Resource = Material->GetMaterialResource(GMaxRHIShaderPlatform);
@@ -343,6 +343,7 @@ bool FScenarioPipelinesTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("images get one texture pipeline"), ScenarioAssets::ImportPipelines(TEXT("/tmp/a.png"), Notes).Num(), 1);
 	TestEqual(TEXT("FBX gets one assets pipeline"), ScenarioAssets::ImportPipelines(TEXT("/tmp/a.fbx"), Notes).Num(), 1);
+	TestEqual(TEXT("every policy property exists for images and FBX too"), Notes.Num(), 0);
 	TestEqual(TEXT("audio keeps the project's stack"), ScenarioAssets::ImportPipelines(TEXT("/tmp/a.wav"), Notes).Num(), 0);
 	TestFalse(TEXT("an unknown property path is refused"), ScenarioAssets::SetPropertyByPath(Gltf.Num() > 0 ? Gltf[0] : nullptr, TEXT("MeshPipeline.bNoSuchThing"), TEXT("True")));
 	return true;
