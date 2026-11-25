@@ -27,6 +27,7 @@
 #include "ObjectTools.h"
 #include "Options/GLTFExportOptions.h"
 #include "ScenarioAssets.h"
+#include "ScenarioCatalog.h"
 #include "ScenarioCoreModule.h"
 #include "ScenarioCU.h"
 #include "ScenarioEditorModule.h"
@@ -286,7 +287,8 @@ void UScenarioSubsystem::GetModelFields(const FString& ModelId, TFunction<void(c
 		return;
 	}
 	TWeakObjectPtr<UScenarioSubsystem> WeakThis(this);
-	SessionPtr->Api().GetSchema(ModelId, [WeakThis, ModelId, OnDone](const FScenarioReply& Reply)
+	// Through the catalog: a trained model's form is its base's, and the session then runs the base.
+	SessionPtr->Catalog().GetSchema(ModelId, [WeakThis, ModelId, OnDone](const FScenarioReply& Reply)
 	{
 		if (!Reply.bOk)
 		{
@@ -294,7 +296,8 @@ void UScenarioSubsystem::GetModelFields(const FString& ModelId, TFunction<void(c
 			return;
 		}
 		TArray<FScenarioField> Fields = ScenarioSchema::FieldsFromSchema(Reply.Value, FScenarioLanes::Get().Restrict());
-		if (WeakThis.IsValid())
+		// A trained model's form is kept by the catalog for its workspace only.
+		if (WeakThis.IsValid() && !Reply.Value->HasField(TEXT("trained")))
 		{
 			WeakThis->FieldCache.Add(ModelId, Fields);
 		}
@@ -369,7 +372,7 @@ void UScenarioSubsystem::OnLedgerChanged(const FString& LocalId)
 void UScenarioSubsystem::Notify(const FScenarioJobRow& Row, EScenarioJobState Previous)
 {
 	const FString LocalId = Row.LocalId;
-	const FText Model = FText::FromString(Row.ModelName.IsEmpty() ? (Row.ModelId.IsEmpty() ? Row.WorkflowId : Row.ModelId) : Row.ModelName);
+	const FText Model = FText::FromString(!Row.TrainedModelName.IsEmpty() ? Row.TrainedModelName : Row.ModelName.IsEmpty() ? (Row.ModelId.IsEmpty() ? Row.WorkflowId : Row.ModelId) : Row.ModelName);
 	const FText Prompt = FText::FromString(Row.Prompt.Left(80));
 	if (Row.IsFinal())
 	{
@@ -444,7 +447,7 @@ bool UScenarioSubsystem::UpdateProgress(const FScenarioJobRow& Row)
 		{
 			return false;
 		}
-		const FString Model = Row.ModelName.IsEmpty() ? (Row.ModelId.IsEmpty() ? Row.WorkflowId : Row.ModelId) : Row.ModelName;
+		const FString Model = !Row.TrainedModelName.IsEmpty() ? Row.TrainedModelName : Row.ModelName.IsEmpty() ? (Row.ModelId.IsEmpty() ? Row.WorkflowId : Row.ModelId) : Row.ModelName;
 		const FString Cost = ScenarioCU::Format(Row.QuotedCU);
 		// Text and detail read the job list, so progress and the final state show without more calls.
 		auto Find = [LocalId]() -> const FScenarioJobRow*

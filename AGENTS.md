@@ -52,7 +52,12 @@ use. Nothing else from the plugin is compiled into a packaged game.
     the agent server.
   - `ScenarioSchema`: model schema to form fields, validation, payloads.
   - `ScenarioCatalog`, `ScenarioLanes`: the model picker's catalog (cached 24
-    hours) and the lanes read from `Resources/Lanes.json`.
+    hours) and the lanes read from `Resources/Lanes.json`. The catalog also
+    gives a trained model's form and remembers how it runs.
+  - `ScenarioTrained`: trained models (LoRAs and compositions) run on a base
+    model: kind, base, weight and trigger words from the trained model's
+    record and the schemas of the bases listed in `Resources/Trained.json`;
+    the trained form and the base's request.
   - `ScenarioFiles`, `ScenarioJson`, `ScenarioHash`, `ScenarioCU`,
     `ScenarioErrors`, `ScenarioTypes`: naming and type sniffing, defensive JSON
     and canonical JSON, SHA-256, CU formatting, error kinds and messages.
@@ -111,7 +116,8 @@ use. Nothing else from the plugin is compiled into a packaged game.
 Also in `Plugins/Scenario/`: `Content/Python/scenario_unreal/` (the kit: worlds,
 games and films from Scenario results; `recipes.py` is the entry point),
 `Resources/Kit.json` (the kit tools' names, descriptions and schemas),
-`Resources/Lanes.json` (lanes, picks, presets),
+`Resources/Lanes.json` (lanes, picks, presets), `Resources/Trained.json` (the
+base models read to run trained models),
 `Resources/AgentSkill/SKILL.md` (the agent skill the Agent page installs),
 `Tests/Fixtures/` (recorded Scenario replies), `Config/FilterPlugin.ini`.
 

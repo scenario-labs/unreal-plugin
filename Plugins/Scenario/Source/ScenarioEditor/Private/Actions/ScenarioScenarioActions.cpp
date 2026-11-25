@@ -15,6 +15,7 @@
 #include "ScenarioLanes.h"
 #include "ScenarioSchema.h"
 #include "ScenarioSettings.h"
+#include "ScenarioTrained.h"
 
 using namespace ScenarioActionHelpers;
 
@@ -90,8 +91,8 @@ namespace
 	/** Prices a request and answers with the quote, the way estimate_cost, estimate_workflow and estimate_prompt all do. */
 	void PriceAndAnswer(FScenarioSession& Session, const FScenarioRunRequest& Request, const TArray<FString>& Warnings, const FString& NextTool, FScenarioActionDone Done)
 	{
-		const TSharedPtr<FJsonObject> Sent = Request.Parameters;
-		Session.Price(Request, false, [Sent, Warnings, NextTool, Done](const TScenarioResult<FScenarioQuote>& Result)
+		TSharedRef<FScenarioSession> Shared = Session.AsShared();
+		Session.Price(Request, false, [Shared, Warnings, NextTool, Done](const TScenarioResult<FScenarioQuote>& Result)
 		{
 			if (!Result.bOk)
 			{
@@ -113,9 +114,14 @@ namespace
 				Json->SetNumberField(TEXT("discount_cu"), Quote.Discount);
 			}
 			Json->SetNumberField(TEXT("expires_in_seconds"), FMath::Max(0.0, FMath::RoundToDouble(Quote.ExpiresAt() - ScenarioNow())));
-			if (Sent.IsValid())
+			// What was priced and is sent: a trained model's request goes to its base, with the trained model in it.
+			if (Quote.Parameters.IsValid())
 			{
-				Json->SetObjectField(TEXT("priced_parameters"), Sent);
+				Json->SetObjectField(TEXT("priced_parameters"), Quote.Parameters);
+			}
+			if (!Quote.TrainedModelId.IsEmpty())
+			{
+				Json->SetStringField(TEXT("runs_on"), FString::Printf(TEXT("%s (%s)"), *ModelName(*Shared, Quote.TargetId), *Quote.TargetId));
 			}
 			if (Warnings.Num() > 0)
 			{
@@ -157,9 +163,11 @@ namespace
 			return;
 		}
 
+		// The request exactly as priced: for a trained model, its base with the trained model in the parameters.
 		FScenarioRunRequest Request;
 		Request.Kind = Kind;
 		Request.TargetId = Quote->TargetId;
+		Request.TrainedModelId = Quote->TrainedModelId;
 		Request.Parameters = ScenarioJson::CloneObject(Quote->Parameters);
 		Request.Source = Caller.Source;
 		Request.Client = Caller.Client;
@@ -201,7 +209,17 @@ namespace
 		});
 	}
 
-	TSharedRef<FJsonObject> ModelRow(const FScenarioCatalogModel& Model, bool bLanePick)
+	/** "LoRA via FLUX.1 Dev" for a trained row once the bases are read, else empty. */
+	FString TrainedLabel(const FScenarioCatalog& Catalog, const FScenarioCatalogModel& Model)
+	{
+		if (!Model.bTrained || !ScenarioTrained::IsTrainedType(Model.Summary.Type) || Catalog.Bases().Num() == 0)
+		{
+			return FString();
+		}
+		return Catalog.TrainedInfo(Model).Label();
+	}
+
+	TSharedRef<FJsonObject> ModelRow(const FScenarioCatalogModel& Model, bool bLanePick, const FString& Trained = FString())
 	{
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("id"), Model.Id());
@@ -245,6 +263,10 @@ namespace
 		if (!Model.Summary.ShortDescription.IsEmpty())
 		{
 			Json->SetStringField(TEXT("about"), Model.Summary.ShortDescription.Left(140));
+		}
+		if (!Trained.IsEmpty())
+		{
+			Json->SetStringField(TEXT("runs_as"), Trained);
 		}
 		return Json;
 	}
@@ -561,7 +583,7 @@ void FScenarioActions::RegisterScenarioActions()
 					++Matched;
 					if (Rows.Num() < Limit)
 					{
-						Rows.Add(MakeShared<FJsonValueObject>(ModelRow(Model, Picks.Contains(Model.Id()))));
+						Rows.Add(MakeShared<FJsonValueObject>(ModelRow(Model, Picks.Contains(Model.Id()), TrainedLabel(Session->Catalog(), Model))));
 					}
 				}
 				TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
@@ -592,6 +614,12 @@ void FScenarioActions::RegisterScenarioActions()
 				return;
 			}
 			Catalog.RefreshIfNeeded(Session->Scope());
+			if (Str(Args, TEXT("source")) == TEXT("trained") && !Catalog.HasFreshBases())
+			{
+				// Trained rows say which base runs them: read the bases first (free).
+				Catalog.LoadBases([Answer](const FScenarioError&) { Answer(); });
+				return;
+			}
 			Answer();
 		}));
 
@@ -609,7 +637,8 @@ void FScenarioActions::RegisterScenarioActions()
 				return;
 			}
 			const FString ModelId = Str(Args, TEXT("model_id"));
-			S->GetModelFields(ModelId, [ModelId, Done](const TArray<FScenarioField>& Fields, const FScenarioError& Error)
+			TWeakObjectPtr<UScenarioSubsystem> Weak(S);
+			S->GetModelFields(ModelId, [Weak, ModelId, Done](const TArray<FScenarioField>& Fields, const FScenarioError& Error)
 			{
 				if (Error.Kind != EScenarioErrorKind::None)
 				{
@@ -618,6 +647,22 @@ void FScenarioActions::RegisterScenarioActions()
 				}
 				TSharedRef<FJsonObject> Json = FieldsJson(Fields);
 				Json->SetStringField(TEXT("model_id"), ModelId);
+				if (const FScenarioTrainedInfo* Trained = Weak.IsValid() ? Weak->Session().Catalog().FindTrained(ModelId) : nullptr)
+				{
+					// The parameters above are its base's: the session sends the run to the base with the trained model in it.
+					Json->SetObjectField(TEXT("trained"), Trained->ToJson());
+					Json->SetStringField(TEXT("runs_on"), FString::Printf(TEXT("%s (%s)"), *Trained->BaseName(), *Trained->BaseId()));
+					FString Note = FString::Printf(TEXT("A %s, run on its base. estimate_cost takes this model_id"), Trained->Kind == EScenarioTrainedKind::Lora ? TEXT("LoRA") : TEXT("composition"));
+					if (Trained->Kind == EScenarioTrainedKind::Lora)
+					{
+						Note += FString::Printf(TEXT("; %s is its weight"), ScenarioTrained::WeightField);
+					}
+					if (!Trained->TriggerWords.IsEmpty())
+					{
+						Note += FString::Printf(TEXT("; %s false keeps its trigger words out of the prompt"), ScenarioTrained::TriggerField);
+					}
+					Json->SetStringField(TEXT("trained_note"), Note + TEXT("."));
+				}
 				if (const TSharedPtr<FJsonObject> Presets = FScenarioLanes::Get().Presets(ModelId))
 				{
 					Json->SetObjectField(TEXT("plugin_defaults"), Presets);

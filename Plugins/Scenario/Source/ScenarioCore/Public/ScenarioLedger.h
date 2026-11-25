@@ -53,8 +53,12 @@ struct SCENARIOCORE_API FScenarioJobRow
 	FString Kind = TEXT("model");
 	/** Lane id (image, 3d, material...). */
 	FString Lane;
+	/** The model called: for a trained model's run, its base. */
 	FString ModelId;
 	FString ModelName;
+	/** The trained model (LoRA or composition) run on ModelId, empty otherwise. */
+	FString TrainedModelId;
+	FString TrainedModelName;
 	FString WorkflowId;
 	FString Prompt;
 	TSharedPtr<FJsonObject> Parameters;
