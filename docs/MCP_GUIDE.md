@@ -110,9 +110,9 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | `save_changes` | Saves what the plugin created; `include_levels: true` also saves the open level (with its World Partition actors) and unsaved assets under the Scenario folder. An untitled level is not saved: the result says so |
 | `remove_scenario_items` | Removes actors the plugin placed and assets it imported, after Unreal's reference check |
 
-**Tool search** (Editor Preferences > Plugins > Scenario > **Agent tool search**, off by default). The full tool list is about 29 KB, roughly 7,300 tokens, sent once per connection. With tool search on, `tools/list` holds four tools (about 1.4 KB): `scenario_status`, `find_tools` (names, kinds and descriptions matching a query), `describe_tools` (input schemas) and `call_tool` (runs a tool by name with the same permissions and money rules). Every tool also stays callable by its own name. Turn it on for a client that loads every tool into the model's context; clients that already defer tool definitions (Claude Code, for one) do not need it. It takes effect when the server restarts (the switch on the **Agent** page).
+**Catalog.** `tools/list` holds the 29 core tools and a catalog that reaches the other 18 (the kit, Prompt Spark, the Scenario library, `recover_cloud_job` and `output_log`), about 25 KB: `unreal_tools_list` (every tool, with its lane), `unreal_tools_search` (input schemas for a query) and `unreal_tool_execute_read`, `unreal_tool_execute_write` and `unreal_tool_execute_delete` (run a tool of that lane with the same permissions and money rules; a tool of another lane is refused). The names follow the hosted Scenario MCP's own catalog. Every tool also stays callable by its own name. **List every tool** (Editor Preferences > Plugins > Scenario, off by default) lists all of them (about 47 KB), for clients that search tools themselves; it takes effect when the server restarts (the switch on the **Agent** page).
 
-**Kit: worlds, games and films** (need the **Change this project** permission; distances in meters)
+**Kit: worlds, games and films** (in the catalog; need the **Change this project** permission; distances in meters)
 
 | Tool | Does |
 |---|---|

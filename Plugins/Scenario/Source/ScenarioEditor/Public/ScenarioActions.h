@@ -67,6 +67,8 @@ struct SCENARIOEDITOR_API FScenarioAction
 {
 	/** Verb-first snake case; the MCP tool name. */
 	FString Name;
+	/** A short label in title case; the MCP tool title. */
+	FString Title;
 	/** Short: what it does and what it returns. Spending tools say so first. */
 	FString Description;
 	/** JSON Schema of the arguments. */
@@ -77,6 +79,10 @@ struct SCENARIOEDITOR_API FScenarioAction
 	bool bCosts = false;
 	/** A Change action that turns into a proposal for the person instead of failing when changes are off. */
 	bool bProposeWhenDenied = false;
+	/** Reaches Scenario over the network (the MCP openWorldHint). */
+	bool bOpenWorld = false;
+	/** The agent server lists it in its catalog (unreal_tools_list) instead of tools/list. Still callable by name. */
+	bool bCatalogOnly = false;
 	/** Seconds a caller waits before giving up. */
 	double TimeLimit = 120.0;
 	/** Runs on the game thread. Calls Done exactly once, now or later. */

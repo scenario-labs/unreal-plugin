@@ -4,6 +4,9 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Interfaces/IPluginManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "ScenarioActions.h"
 #include "ScenarioAgentClients.h"
 #include "ScenarioFakes.h"
@@ -61,13 +64,41 @@ using namespace ScenarioAgentTests;
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioAgentToolBudgetTest, "Scenario.Agent.Tools.Budget", SCENARIO_TEST_FLAGS)
 bool FScenarioAgentToolBudgetTest::RunTest(const FString& Parameters)
 {
-	const TSharedRef<FJsonObject> List = FScenarioMcpServer::ToolsList();
-	const FString Text = ScenarioJson::Write(List);
-	TestTrue(FString::Printf(TEXT("tools/list under 40,000 characters (%d)"), Text.Len()), Text.Len() < 40000);
-	const TArray<TSharedPtr<FJsonValue>> Tools = ScenarioJson::GetArray(List, TEXT("tools"));
-	// The size docs/ARCHITECTURE.md quotes ("Tool list size").
-	AddInfo(FString::Printf(TEXT("tools/list: %d tools, %d bytes"), Tools.Num(), FTCHARToUTF8(*Text).Length()));
-	TestEqual(TEXT("38 built-in tools and 9 kit tools"), Tools.Num(), 47);
+	// scenario-mcp's rules, as scenario-labs/components' mcp-check applies them: what Claude Code shows
+	// the model (2,048 characters of each description and of the instructions) holds every rule, each tool
+	// has a title, the four hints and a Returns: line, and at most 30 tools are listed besides the catalog.
+	const TSharedRef<FJsonObject> Snapshot = FScenarioMcpServer::Snapshot();
+	TestTrue(TEXT("instructions within the 2,048-character cut"), ScenarioJson::GetString(Snapshot, TEXT("instructions")).Len() <= 2048);
+	const TArray<TSharedPtr<FJsonValue>> Tools = ScenarioJson::GetArray(Snapshot, TEXT("tools"));
+	TestEqual(TEXT("38 built-in tools, 9 kit tools and the catalog's 5"), Tools.Num(), 52);
+
+	// Every description string in a schema, instance data (enum, default...) left out.
+	TFunction<void(const TSharedPtr<FJsonValue>&, TArray<FString>&)> Descriptions = [&Descriptions](const TSharedPtr<FJsonValue>& Value, TArray<FString>& Out)
+	{
+		if (Value.IsValid() && Value->Type == EJson::Array)
+		{
+			for (const TSharedPtr<FJsonValue>& Item : Value->AsArray())
+			{
+				Descriptions(Item, Out);
+			}
+		}
+		else if (Value.IsValid() && Value->Type == EJson::Object)
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Value->AsObject()->Values)
+			{
+				if (Field.Key == TEXT("description") && Field.Value->Type == EJson::String)
+				{
+					Out.Add(Field.Value->AsString());
+				}
+				else if (Field.Key != TEXT("enum") && Field.Key != TEXT("default") && Field.Key != TEXT("examples") && Field.Key != TEXT("const"))
+				{
+					Descriptions(Field.Value, Out);
+				}
+			}
+		}
+	};
+
+	int32 Listed = 0;
 	TSet<FString> Names;
 	for (const TSharedPtr<FJsonValue>& Value : Tools)
 	{
@@ -75,17 +106,78 @@ bool FScenarioAgentToolBudgetTest::RunTest(const FString& Parameters)
 		const FString Name = ScenarioJson::GetString(Tool, TEXT("name"));
 		TestFalse(FString::Printf(TEXT("%s is unique"), *Name), Names.Contains(Name));
 		Names.Add(Name);
-		TestEqual(FString::Printf(TEXT("%s is snake case"), *Name), Name, Name.ToLower());
+		TestTrue(FString::Printf(TEXT("%s is snake case, 64 characters at most"), *Name), Name.Len() <= 64 && Name == Name.ToLower() && !Name.Contains(TEXT(" ")));
+		TestFalse(FString::Printf(TEXT("%s has a title"), *Name), ScenarioJson::GetString(Tool, TEXT("title")).IsEmpty());
+		const TSharedPtr<FJsonObject> Hints = ScenarioJson::GetObject(Tool, TEXT("annotations"));
+		bool bHint = false;
+		for (const TCHAR* Hint : { TEXT("readOnlyHint"), TEXT("destructiveHint"), TEXT("idempotentHint"), TEXT("openWorldHint") })
+		{
+			TestTrue(FString::Printf(TEXT("%s sets %s"), *Name, Hint), Hints.IsValid() && Hints->TryGetBoolField(Hint, bHint));
+		}
+		TestFalse(FString::Printf(TEXT("%s is not read-only and destructive at once"), *Name),
+			ScenarioJson::GetBool(Hints, TEXT("readOnlyHint")) && ScenarioJson::GetBool(Hints, TEXT("destructiveHint")));
+
 		const FString Description = ScenarioJson::GetString(Tool, TEXT("description"));
-		TestTrue(FString::Printf(TEXT("%s description under 2,500 characters"), *Name), Description.Len() > 0 && Description.Len() < 2500);
-		TestEqual(FString::Printf(TEXT("%s schema is an object"), *Name), ScenarioJson::GetString(ScenarioJson::GetObject(Tool, TEXT("inputSchema")), TEXT("type")), FString(TEXT("object")));
+		TestTrue(FString::Printf(TEXT("%s description within the cut (%d)"), *Name, Description.Len()), Description.Len() > 0 && Description.Len() <= 2048);
+		TestTrue(FString::Printf(TEXT("%s says what it returns on a Returns: line"), *Name), Description.StartsWith(TEXT("Returns:")) || Description.Contains(TEXT("\nReturns:")));
+		TestFalse(FString::Printf(TEXT("%s has no Args: block"), *Name), Description.StartsWith(TEXT("Args:")) || Description.Contains(TEXT("\nArgs:")));
+
+		const TSharedPtr<FJsonObject> Schema = ScenarioJson::GetObject(Tool, TEXT("inputSchema"));
+		TestEqual(FString::Printf(TEXT("%s schema is an object"), *Name), ScenarioJson::GetString(Schema, TEXT("type")), FString(TEXT("object")));
+		const int32 SchemaBytes = FTCHARToUTF8(*ScenarioJson::Write(Schema)).Length();
+		TestTrue(FString::Printf(TEXT("%s schema under 4,500 bytes (%d)"), *Name, SchemaBytes), SchemaBytes <= 4500);
+		const TSharedPtr<FJsonObject> Properties = ScenarioJson::GetObject(Schema, TEXT("properties"));
+		if (Properties.IsValid())
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Property : Properties->Values)
+			{
+				TestEqual(FString::Printf(TEXT("%s.%s is snake case"), *Name, *Property.Key), Property.Key, Property.Key.ToLower());
+				const TSharedPtr<FJsonObject> Field = Property.Value->AsObject();
+				TestFalse(FString::Printf(TEXT("%s.%s is described"), *Name, *Property.Key), ScenarioJson::GetString(Field, TEXT("description")).TrimStartAndEnd().IsEmpty());
+			}
+		}
+		for (const FString& Required : ScenarioJson::GetStringArray(Schema, TEXT("required")))
+		{
+			TestTrue(FString::Printf(TEXT("%s requires %s, one of its parameters"), *Name, *Required), Properties.IsValid() && Properties->HasField(Required));
+		}
+		TArray<FString> Texts;
+		Descriptions(MakeShared<FJsonValueObject>(Schema), Texts);
+		for (const FString& Text : Texts)
+		{
+			TestTrue(FString::Printf(TEXT("%s parameter descriptions under 1,024 characters"), *Name), Text.Len() <= 1024);
+		}
+		const bool bCatalogOnly = ScenarioJson::GetString(ScenarioJson::GetObject(Tool, TEXT("_meta")), TEXT("scenario.com/listing")) == TEXT("catalog");
+		Listed += !bCatalogOnly && !Name.StartsWith(TEXT("unreal_tool")) ? 1 : 0;
 	}
+	TestTrue(FString::Printf(TEXT("At most 30 tools listed besides the catalog (%d)"), Listed), Listed <= 30);
+
+	// The sizes docs/ARCHITECTURE.md quotes ("Tool list size").
+	const FString Default = ScenarioJson::Write(FScenarioMcpServer::ToolsList());
+	const FString Every = ScenarioJson::Write(FScenarioMcpServer::ToolsList(true));
+	AddInfo(FString::Printf(TEXT("tools/list: %d tools, %d bytes; with every tool: %d tools, %d bytes"),
+		ScenarioJson::GetArray(FScenarioMcpServer::ToolsList(), TEXT("tools")).Num(), FTCHARToUTF8(*Default).Length(),
+		ScenarioJson::GetArray(FScenarioMcpServer::ToolsList(true), TEXT("tools")).Num(), FTCHARToUTF8(*Every).Length()));
+
 	for (const TCHAR* Spending : { TEXT("generate"), TEXT("run_workflow"), TEXT("approve_prompt") })
 	{
 		const FScenarioAction* Action = FScenarioActions::Get().Find(Spending);
 		TestTrue(FString::Printf(TEXT("%s says it spends first"), Spending), Action && Action->Description.StartsWith(TEXT("SPENDS")));
 		TestTrue(FString::Printf(TEXT("%s is marked as costing"), Spending), Action && Action->bCosts);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioAgentToolSnapshotTest, "Scenario.Agent.Tools.Snapshot", SCENARIO_TEST_FLAGS)
+bool FScenarioAgentToolSnapshotTest::RunTest(const FString& Parameters)
+{
+	FString Text = ScenarioJson::Write(FScenarioMcpServer::Snapshot(), true).Replace(TEXT("\r\n"), TEXT("\n")) + TEXT("\n");
+	const FString Fresh = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Scenario"), TEXT("Tests"), TEXT("mcp-tools.json"));
+	FFileHelper::SaveStringToFile(Text, *Fresh, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("Scenario"));
+	FString Committed;
+	const bool bRead = Plugin.IsValid() && FFileHelper::LoadFileToString(Committed, *FPaths::Combine(Plugin->GetBaseDir(), TEXT("Tests"), TEXT("mcp-tools.json")));
+	TestTrue(FString::Printf(TEXT("Plugins/Scenario/Tests/mcp-tools.json is current; if the change is intended, copy %s over it"), *FPaths::ConvertRelativePathToFull(Fresh)),
+		bRead && Committed.Replace(TEXT("\r\n"), TEXT("\n")) == Text);
 	return true;
 }
 
@@ -153,7 +245,7 @@ bool FScenarioAgentRpcTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("unknown session asks to initialize again"), Send(*Server, Stale).Status, 404);
 
 	const TSharedPtr<FJsonObject> List = Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), TEXT("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"))));
-	TestEqual(TEXT("tools listed"), ScenarioJson::GetArray(ScenarioJson::GetObject(List, TEXT("result")), TEXT("tools")).Num(), 47);
+	TestEqual(TEXT("29 core tools and the catalog's 5 listed"), ScenarioJson::GetArray(ScenarioJson::GetObject(List, TEXT("result")), TEXT("tools")).Num(), 34);
 
 	const TSharedPtr<FJsonObject> Unknown = Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), TEXT("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"resources/list\"}"))));
 	TestEqual(TEXT("unknown method"), static_cast<int32>(ScenarioJson::GetNumber(ScenarioJson::GetObject(Unknown, TEXT("error")), TEXT("code"))), -32601);
@@ -175,15 +267,9 @@ bool FScenarioAgentRpcTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioAgentToolSearchTest, "Scenario.Agent.Server.ToolSearch", SCENARIO_TEST_FLAGS)
-bool FScenarioAgentToolSearchTest::RunTest(const FString& Parameters)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioAgentCatalogTest, "Scenario.Agent.Server.Catalog", SCENARIO_TEST_FLAGS)
+bool FScenarioAgentCatalogTest::RunTest(const FString& Parameters)
 {
-	const FString Compact = ScenarioJson::Write(FScenarioMcpServer::ToolSearchList());
-	const int32 Bytes = FTCHARToUTF8(*Compact).Length();
-	TestTrue(FString::Printf(TEXT("Search list is small (%d bytes)"), Bytes), Bytes < 6000);
-	const int32 FullBytes = FTCHARToUTF8(*ScenarioJson::Write(FScenarioMcpServer::ToolsList())).Length();
-	TestTrue(TEXT("Search list is under a fifth of the full list"), Bytes * 5 < FullBytes);
-
 	TSharedRef<FScenarioMcpServer> Server = NewServer();
 	auto Call = [&Server](int32 Id, const FString& Name, const FString& Arguments)
 	{
@@ -195,40 +281,65 @@ bool FScenarioAgentToolSearchTest::RunTest(const FString& Parameters)
 		const TArray<TSharedPtr<FJsonValue>> Content = ScenarioJson::GetArray(Result, TEXT("content"));
 		return Content.Num() > 0 ? ScenarioJson::GetString(Content[0]->AsObject(), TEXT("text")) : FString();
 	};
-
-	const FString ListBody = TEXT("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}");
-	TestEqual(TEXT("Off by default: every tool listed"), ScenarioJson::GetArray(ScenarioJson::GetObject(Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), ListBody))), TEXT("result")), TEXT("tools")).Num(), FScenarioActions::Get().All().Num());
-	Server->bToolSearch = true;
-	const TArray<TSharedPtr<FJsonValue>> Listed = ScenarioJson::GetArray(ScenarioJson::GetObject(Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), ListBody))), TEXT("result")), TEXT("tools"));
-	TArray<FString> Names;
-	for (const TSharedPtr<FJsonValue>& Value : Listed)
+	auto ListedNames = [&Server]()
 	{
-		Names.Add(ScenarioJson::GetString(Value->AsObject(), TEXT("name")));
+		const FString ListBody = TEXT("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}");
+		TArray<FString> Names;
+		for (const TSharedPtr<FJsonValue>& Value : ScenarioJson::GetArray(ScenarioJson::GetObject(Rpc(Send(*Server, Make(TEXT("POST"), TEXT("/mcp"), ListBody))), TEXT("result")), TEXT("tools")))
+		{
+			Names.Add(ScenarioJson::GetString(Value->AsObject(), TEXT("name")));
+		}
+		return Names;
+	};
+
+	int32 CatalogOnly = 0;
+	for (const FScenarioAction& Action : FScenarioActions::Get().All())
+	{
+		CatalogOnly += Action.bCatalogOnly ? 1 : 0;
 	}
-	TestEqual(TEXT("Search mode lists four tools"), FString::Join(Names, TEXT(",")), FString(TEXT("scenario_status,find_tools,describe_tools,call_tool")));
+	const TArray<FString> Listed = ListedNames();
+	TestEqual(TEXT("tools/list: the core tools and the catalog's five"), Listed.Num(), FScenarioActions::Get().All().Num() - CatalogOnly + 5);
+	TestTrue(TEXT("The catalog is listed"), Listed.Contains(TEXT("unreal_tools_list")) && Listed.Contains(TEXT("unreal_tools_search")) && Listed.Contains(TEXT("unreal_tool_execute_delete")));
+	TestTrue(TEXT("The core loop is listed"), Listed.Contains(TEXT("generate")) && Listed.Contains(TEXT("apply_result_application")));
+	TestFalse(TEXT("Kit tools are in the catalog only"), Listed.Contains(TEXT("make_film")));
+	Server->bListEveryTool = true;
+	TestEqual(TEXT("With every tool listed"), ListedNames().Num(), FScenarioActions::Get().All().Num() + 5);
+	Server->bListEveryTool = false;
 
-	const TSharedPtr<FJsonObject> Found = ScenarioJson::ParseObject(Text(Call(2, TEXT("find_tools"), TEXT("{\"query\":\"workflow\"}"))));
-	const TArray<TSharedPtr<FJsonValue>> FoundRows = ScenarioJson::GetArray(Found, TEXT("tools"));
-	TestTrue(TEXT("find_tools matches workflows"), FoundRows.Num() >= 3 && FoundRows.Num() < FScenarioActions::Get().All().Num());
-	TestEqual(TEXT("find_tools with no query lists every tool"), ScenarioJson::GetArray(ScenarioJson::ParseObject(Text(Call(3, TEXT("find_tools"), TEXT("{}")))), TEXT("tools")).Num(), FScenarioActions::Get().All().Num());
+	const TArray<TSharedPtr<FJsonValue>> Rows = ScenarioJson::GetArray(ScenarioJson::ParseObject(Text(Call(2, TEXT("unreal_tools_list"), TEXT("{}")))), TEXT("tools"));
+	TestEqual(TEXT("unreal_tools_list has every tool"), Rows.Num(), FScenarioActions::Get().All().Num());
+	for (const TSharedPtr<FJsonValue>& Row : Rows)
+	{
+		if (ScenarioJson::GetString(Row->AsObject(), TEXT("name")) == TEXT("make_film"))
+		{
+			TestFalse(TEXT("make_film is not listed"), ScenarioJson::GetBool(Row->AsObject(), TEXT("listed"), true));
+			TestEqual(TEXT("make_film runs in the delete lane"), ScenarioJson::GetString(Row->AsObject(), TEXT("lane")), FString(TEXT("delete")));
+		}
+	}
 
-	const TSharedPtr<FJsonObject> Described = ScenarioJson::ParseObject(Text(Call(4, TEXT("describe_tools"), TEXT("{\"names\":[\"generate\",\"nope\"]}"))));
-	const TArray<TSharedPtr<FJsonValue>> DescribedRows = ScenarioJson::GetArray(Described, TEXT("tools"));
-	TestTrue(TEXT("describe_tools returns the schema"), DescribedRows.Num() == 1 && ScenarioJson::GetObject(DescribedRows[0]->AsObject(), TEXT("inputSchema")).IsValid());
-	TestEqual(TEXT("describe_tools names the unknown ones"), ScenarioJson::GetStringArray(Described, TEXT("unknown")).Num(), 1);
+	const TArray<TSharedPtr<FJsonValue>> Found = ScenarioJson::GetArray(ScenarioJson::ParseObject(Text(Call(3, TEXT("unreal_tools_search"), TEXT("{\"query\":\"film\"}")))), TEXT("results"));
+	bool bFilm = false;
+	for (const TSharedPtr<FJsonValue>& Row : Found)
+	{
+		bFilm |= ScenarioJson::GetString(Row->AsObject(), TEXT("name")) == TEXT("make_film") && ScenarioJson::GetObject(Row->AsObject(), TEXT("inputSchema")).IsValid();
+	}
+	TestTrue(TEXT("unreal_tools_search finds make_film with its schema"), bFilm);
+	TestTrue(TEXT("unreal_tools_search needs a query"), ScenarioJson::GetBool(Call(4, TEXT("unreal_tools_search"), TEXT("{}")), TEXT("isError")));
 
-	const TSharedPtr<FJsonObject> Status = Call(5, TEXT("call_tool"), TEXT("{\"name\":\"scenario_status\",\"arguments\":{}}"));
-	TestFalse(TEXT("call_tool runs a tool"), ScenarioJson::GetBool(Status, TEXT("isError"), true));
-	TestTrue(TEXT("call_tool returns the tool's answer"), Text(Status).Contains(TEXT("plugin_version")));
-	const TSharedPtr<FJsonObject> Missing = Call(6, TEXT("call_tool"), TEXT("{\"name\":\"format_disk\"}"));
-	TestTrue(TEXT("call_tool refuses unknown tools"), ScenarioJson::GetBool(Missing, TEXT("isError")));
+	const TSharedPtr<FJsonObject> Status = Call(5, TEXT("unreal_tool_execute_read"), TEXT("{\"name\":\"scenario_status\",\"parameters\":{}}"));
+	TestFalse(TEXT("The read lane runs a read tool"), ScenarioJson::GetBool(Status, TEXT("isError"), true));
+	TestTrue(TEXT("It returns the tool's answer"), Text(Status).Contains(TEXT("plugin_version")));
+	const TSharedPtr<FJsonObject> Wrong = Call(6, TEXT("unreal_tool_execute_read"), TEXT("{\"name\":\"generate\",\"parameters\":{}}"));
+	TestTrue(TEXT("The read lane refuses a paid tool, naming the write lane"), ScenarioJson::GetBool(Wrong, TEXT("isError")) && Text(Wrong).Contains(TEXT("unreal_tool_execute_write")));
+	TestTrue(TEXT("Unknown tools are refused"), ScenarioJson::GetBool(Call(7, TEXT("unreal_tool_execute_read"), TEXT("{\"name\":\"format_disk\"}")), TEXT("isError")));
 
-	// Paid tools keep their rules through call_tool: no quote, nothing sent.
-	const TSharedPtr<FJsonObject> Paid = Call(7, TEXT("call_tool"), TEXT("{\"name\":\"generate\",\"arguments\":{\"quote_id\":\"q_none\",\"approved_cost\":\"1\"}}"));
-	TestTrue(TEXT("call_tool keeps the money rules"), ScenarioJson::GetBool(Paid, TEXT("isError")));
+	// Paid tools keep their rules through the catalog: no valid quote, nothing sent. With "Approve each spend
+	// here" on, the call would wait for the person and answer after Send returns: keep it off for this check.
+	TGuardValue<bool> NoSpendApproval(UScenarioEditorSettings::GetMutable().bApproveAgentSpend, false);
+	const TSharedPtr<FJsonObject> Paid = Call(8, TEXT("unreal_tool_execute_write"), TEXT("{\"name\":\"generate\",\"parameters\":{\"quote_id\":\"q_none\",\"approved_cost\":\"1\"}}"));
+	TestTrue(TEXT("The write lane keeps the money rules"), ScenarioJson::GetBool(Paid, TEXT("isError")));
 
-	const TSharedPtr<FJsonObject> Direct = Call(8, TEXT("scenario_status"), TEXT("{}"));
-	TestFalse(TEXT("Tools stay callable by name in search mode"), ScenarioJson::GetBool(Direct, TEXT("isError"), true));
+	TestFalse(TEXT("Catalog-only tools stay callable by name"), ScenarioJson::GetBool(Call(9, TEXT("output_log"), TEXT("{}")), TEXT("isError"), true));
 	return true;
 }
 
@@ -259,7 +370,11 @@ bool FScenarioAgentPermissionsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("scripts never run agent python"), Call(TEXT("execute_python"), FScenarioCaller::Script(TEXT("test")), TEXT("{\"code\":\"print(1)\"}")).Error.StartsWith(TEXT("Permission")));
 
 	TestTrue(TEXT("apply reaches its own check (proposal path)"), Call(TEXT("apply_result_application"), Agent, TEXT("{\"application_id\":\"app_missing\"}")).Error.StartsWith(TEXT("NotFound")));
-	TestTrue(TEXT("generate needs a quote"), Call(TEXT("generate"), Agent, TEXT("{}")).Error.Len() > 0);
+	{
+		// Synchronous only while spends do not wait for the person's approval.
+		TGuardValue<bool> NoSpendApproval(UScenarioEditorSettings::GetMutable().bApproveAgentSpend, false);
+		TestTrue(TEXT("generate needs a quote"), Call(TEXT("generate"), Agent, TEXT("{}")).Error.Len() > 0);
+	}
 	TestTrue(TEXT("not_sent is the person's call"), Call(TEXT("recover_local_job"), Changer, TEXT("{\"action\":\"not_sent\",\"job_id\":\"x\"}")).Error.Len() > 0);
 	TestTrue(TEXT("unknown action"), Call(TEXT("format_disk"), Changer, TEXT("{}")).Error.StartsWith(TEXT("NotFound")));
 	return true;
