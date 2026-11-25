@@ -294,7 +294,7 @@ while ($true) {
     foreach ($line in (Read-NewLog $Log ([ref]$Position))) {
         if ($line -match '^\[\d+/\d+\]') {
             Say ('  ' + $line)
-        } elseif ($line -match '(^|\s)(error|ERROR)\b|: fatal error|^Unable to instantiate module') {
+        } elseif ($line -cmatch '(^|\s)(error|ERROR)\b|: fatal error|^Unable to instantiate module') {
             $Problems.Add($line)
         }
     }
