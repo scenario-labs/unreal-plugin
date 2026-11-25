@@ -167,7 +167,7 @@ Unreal 5.8 ships an Experimental Model Context Protocol plugin: an MCP server in
 
 **Turn it on**
 
-1. Unreal 5.8. The Scenario plugin enables Epic's Toolset Registry plugin (an optional dependency, with the plugins it needs: Python Editor Script Plugin, Editor Scripting Utilities and File Sandbox). On 5.6 and 5.7 there is no registry and nothing changes.
+1. Unreal 5.8. The Scenario plugin turns on Epic's Toolset Registry plugin, with the plugins it needs: Python Editor Script Plugin, Editor Scripting Utilities and File Sandbox. On 5.6 and 5.7 there is no registry and nothing changes.
 2. Enable **Model Context Protocol** in **Edit > Plugins** and start its server: its **Auto Start Server** setting (search for Model Context Protocol in the settings), or `-ModelContextProtocolStartServer` on the command line. It listens on port 8000 by default, path `/mcp`.
 3. Connect your agent to that server with Epic's own setup. The **Agent** page shows, under **Epic's Unreal MCP**, whether that server is running and on which port.
 
