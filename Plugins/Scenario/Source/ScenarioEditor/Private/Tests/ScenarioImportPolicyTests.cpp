@@ -343,6 +343,7 @@ bool FScenarioPipelinesTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("images get one texture pipeline"), ScenarioAssets::ImportPipelines(TEXT("/tmp/a.png"), Notes).Num(), 1);
 	TestEqual(TEXT("FBX gets one assets pipeline"), ScenarioAssets::ImportPipelines(TEXT("/tmp/a.fbx"), Notes).Num(), 1);
+	TestEqual(TEXT("every policy property exists for images and FBX too"), Notes.Num(), 0);
 	TestEqual(TEXT("audio keeps the project's stack"), ScenarioAssets::ImportPipelines(TEXT("/tmp/a.wav"), Notes).Num(), 0);
 	TestFalse(TEXT("an unknown property path is refused"), ScenarioAssets::SetPropertyByPath(Gltf.Num() > 0 ? Gltf[0] : nullptr, TEXT("MeshPipeline.bNoSuchThing"), TEXT("True")));
 	return true;
