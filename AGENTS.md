@@ -121,6 +121,12 @@ base models read to run trained models),
 `Resources/AgentSkill/SKILL.md` (the agent skill the Agent page installs),
 `Tests/Fixtures/` (recorded Scenario replies), `Config/FilterPlugin.ini`.
 
+At the repository root, `Install-Windows.bat` and `Install-macOS.command` start
+`tools/install/`: the installers people double-click in the source zip. They
+compile the plugin with RunUAT BuildPlugin for the Unreal version a project
+uses and install it into `<Project>/Plugins/Scenario`. Windows PowerShell 5.1
+runs the Windows one (keep it ASCII); macOS's bash 3.2 runs the other.
+
 ## Spending rules
 
 Every change keeps them. They are enforced in `FScenarioSession` and
@@ -157,6 +163,7 @@ python3 tools/lint.py          # headers, em dashes, JSON files, skill frontmatt
 python3 -m unittest discover -s tools/tests   # tests of the Python tools
 uv run --no-project --with markdown==3.10.3 python tools/build_site.py --output <dir>
 python3 tools/contract_check.py               # free live check, needs a test key
+./Install-macOS.command --project <file.uproject> --yes   # the macOS installer, without dialogs
 ```
 
 `tools/contract_check.py` sends reads and dry runs only and refuses paid tools
@@ -168,7 +175,7 @@ authorization for the project and budget first.
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `ci.yml` | pull requests, `main` | `lint`, `tools` (Python tests), `site` (docs build); `ci-ok` requires all three |
+| `ci.yml` | pull requests, `main` | `lint`, `tools` (Python tests), `site` (docs build), `installer` (`Install-Windows.bat` on Windows against a stand-in engine); `ci-ok` requires all four |
 | `contract.yml` | weekly, PRs changing `ScenarioCore/` or the tool | `tools/contract_check.py` with `SCENARIO_NO_SPEND=1`, 0 CU (test key secrets; skipped with a warning without them) |
 | `links.yml` | weekly, docs PRs | links in Markdown (except the generated `CHANGELOG.md`) |
 | `pages.yml` | `main` when docs change | builds the docs site and deploys it to GitHub Pages |

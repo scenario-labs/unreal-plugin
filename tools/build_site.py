@@ -41,12 +41,21 @@ PAGES = [
 ]
 LINK_RE = re.compile(r"(!?)\]\((?!https?://|#|mailto:)([^)\s]+)\)")
 INSTALL = """<h2 id="install">Install</h2>
+<p><strong>macOS with Unreal 5.8:</strong> the release zip.</p>
 <ol>
-  <li>Download the zip for your Unreal version from the <a href="{releases}">GitHub releases</a> and unzip it into your project, so that <code>Scenario.uplugin</code> sits at <code>&lt;Project&gt;/Plugins/Scenario/Scenario.uplugin</code>. Create the <code>Plugins</code> folder if the project has none.</li>
+  <li>Download the zip from the <a href="{releases}/latest">latest release</a> and unzip it into your project, so that <code>Scenario.uplugin</code> sits at <code>&lt;Project&gt;/Plugins/Scenario/Scenario.uplugin</code>. Create the <code>Plugins</code> folder if the project has none.</li>
   <li>Open the project. In <strong>Edit &gt; Plugins</strong>, search for Scenario, check that it is enabled, and restart the editor if Unreal asks.</li>
   <li>Click the <strong>Scenario</strong> button in the level editor toolbar and sign in.</li>
 </ol>
 <p class="note">Release zips from GitHub are not signed yet. If macOS refuses to load the plugin's libraries, run <code>xattr -dr com.apple.quarantine &lt;Project&gt;/Plugins/Scenario</code> and open the project again.</p>
+<p><strong>Windows, or Unreal 5.6 and 5.7:</strong> the installer compiles the plugin for your Unreal version and installs it into your project.</p>
+<ol>
+  <li>Install what Unreal compiles with: on Windows, <a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine">Visual Studio</a> with the <strong>.NET desktop development</strong>, <strong>Desktop development with C++</strong> and <strong>Game development with C++</strong> workloads; on macOS, Xcode.</li>
+  <li>Download <strong>Source code (zip)</strong> from the <a href="{releases}/latest">latest release</a> and unzip it.</li>
+  <li>Double-click <code>Install-Windows.bat</code> (on macOS, <code>Install-macOS.command</code>) and choose your project's <code>.uproject</code> file. The installer compiles for the Unreal version the project uses, in a few minutes, installs the plugin in <code>&lt;Project&gt;/Plugins/Scenario</code>, and moves a previous copy to <code>&lt;Project&gt;/Saved/Scenario/</code>, next to the build log.</li>
+  <li>Open the project, click the <strong>Scenario</strong> button in the level editor toolbar and sign in.</li>
+</ol>
+<p class="note">The installers are not signed yet: Windows may ask you to confirm (<strong>More info</strong>, then <strong>Run anyway</strong>), and macOS may block the first run (allow it in <strong>System Settings &gt; Privacy &amp; Security</strong>, then double-click again).</p>
 """
 
 

@@ -57,14 +57,22 @@ The [Scenario MCP guide](docs/MCP_GUIDE.md) lists every tool and the permissions
 
 ## Requirements
 
-- Unreal Engine 5.6, 5.7 or 5.8 (Editor). macOS is the tested platform in version 0.2; Windows and Linux are compiled but not tested yet.
+- Unreal Engine 5.6, 5.7 or 5.8 (Editor), on macOS or Windows. Version 0.2 is tested on macOS with Unreal 5.8; Windows and Unreal 5.6 and 5.7 are not tested yet.
 - A Scenario account: [app.scenario.com](https://app.scenario.com).
 
 ## Install
 
-Unzip the release into your project so the folder reads `<Project>/Plugins/Scenario/Scenario.uplugin`, open the project, and click the **Scenario** button in the level editor toolbar. Release zips are not signed yet: on macOS, run `xattr -dr com.apple.quarantine "<Project>/Plugins/Scenario"` once if the editor cannot load the plugin.
+**macOS with Unreal 5.8:** unzip the release zip into your project so the folder reads `<Project>/Plugins/Scenario/Scenario.uplugin`, open the project, and click the **Scenario** button in the level editor toolbar. Release zips are not signed yet: run `xattr -dr com.apple.quarantine "<Project>/Plugins/Scenario"` once if the editor cannot load the plugin.
 
-From source: clone this repository and copy `Plugins/Scenario/` into your project's `Plugins/` folder; Unreal builds it when the project opens (needs a C++ toolchain).
+**Windows, or Unreal 5.6 and 5.7:** the installer compiles the plugin for your Unreal version and installs it into your project.
+
+1. Install what Unreal compiles with: on Windows, [Visual Studio](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine) with the **.NET desktop development**, **Desktop development with C++** and **Game development with C++** workloads; on macOS, Xcode.
+2. Download **Source code (zip)** from the [latest release](https://github.com/scenario-labs/unreal-plugin/releases/latest) and unzip it.
+3. Double-click `Install-Windows.bat` (on macOS, `Install-macOS.command`) and choose your project's `.uproject` file.
+
+The installer compiles for the Unreal version your project uses, in a few minutes, and installs the plugin in `<Project>/Plugins/Scenario`. A previous copy moves to `<Project>/Saved/Scenario/`, next to the build log. The installers are not signed yet: Windows may ask you to confirm (**More info**, then **Run anyway**), and macOS may block the first run (allow it in **System Settings > Privacy & Security**, then double-click again).
+
+From source: run the same installer from a clone of this repository. Copying `Plugins/Scenario/` into a project yourself works only in a C++ project, which Unreal compiles when it opens; a Blueprint-only project stops with "module 'ScenarioCore' could not be found".
 
 ## Documentation
 
