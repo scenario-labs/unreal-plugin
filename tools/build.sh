@@ -63,4 +63,22 @@ fi
 
 run "$RUNUAT" BuildPlugin -Plugin="$PLUGIN" -Package="$out" -TargetPlatforms="$platforms" ${extra[@]+"${extra[@]}"}
 
+# Unreal turns on an optional plugin only in projects with C++ code, and Windows cannot load
+# Scenario without the Toolset Registry: where the engine has it (5.8), the package requires it.
+if [ -d "$UE_ROOT/Engine/Plugins/Experimental/ToolsetRegistry" ]; then
+  python3 - "$out/Scenario.uplugin" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8-sig") as f:
+    descriptor = json.load(f)
+for plugin in descriptor.get("Plugins", []):
+    if plugin.get("Name") == "ToolsetRegistry":
+        plugin["Optional"] = False
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(descriptor, f, indent="\t")
+    f.write("\n")
+PY
+fi
+
 echo "Plugin $version for Unreal $engine packaged in $out"

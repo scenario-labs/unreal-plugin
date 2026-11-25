@@ -15,7 +15,7 @@ Start with **Settings > Diagnostics** in the Scenario Studio. **Copy diagnostics
 | The installer says the build failed | The log is in `<Project>/Saved/Scenario/Install-<time>.log`; the installer prints its first errors. On Windows the usual cause is a missing Visual Studio component or Windows SDK; on macOS, an Xcode that was never opened once to finish its setup. |
 | No **Scenario** button in the toolbar | Check **Edit > Plugins > Scenario** is enabled, then restart. The Studio is also in **Window > Scenario Studio**. |
 | The plugin is enabled but nothing loads | The Output Log lists the failing module. The plugin needs the Interchange and glTF Exporter plugins, which ship with Unreal and are enabled with it. |
-| Unreal 5.8: Python Editor Script Plugin, Editor Scripting Utilities, File Sandbox and Toolset Registry are enabled after installing | The plugin enables Epic's Toolset Registry when the engine has it, so agents on Epic's Unreal MCP can use Scenario; the other three are the registry's own dependencies. On 5.8 the plugin's `ScenarioToolsets` module needs the registry: keep it enabled. |
+| Unreal 5.8: Python Editor Script Plugin, Editor Scripting Utilities, File Sandbox and Toolset Registry are enabled after installing | On Unreal 5.8 the plugin requires Epic's Toolset Registry, so agents on Epic's Unreal MCP can use Scenario; the other three are the registry's own dependencies. Keep them enabled. |
 
 ## Sign-in
 
