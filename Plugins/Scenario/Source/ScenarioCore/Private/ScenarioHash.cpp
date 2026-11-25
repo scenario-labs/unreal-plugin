@@ -134,6 +134,25 @@ FString ScenarioHash::Base64Url(const TArray<uint8>& Bytes)
 	return Encoded;
 }
 
+bool ScenarioHash::FromBase64Url(const FString& Text, TArray<uint8>& OutBytes)
+{
+	OutBytes.Reset();
+	FString Standard = Text.Replace(TEXT("-"), TEXT("+")).Replace(TEXT("_"), TEXT("/"));
+	while (Standard.EndsWith(TEXT("=")))
+	{
+		Standard.LeftChopInline(1);
+	}
+	if (Standard.Len() % 4 == 1)
+	{
+		return false;
+	}
+	while (Standard.Len() % 4 != 0)
+	{
+		Standard += TEXT("=");
+	}
+	return FBase64::Decode(Standard, OutBytes);
+}
+
 TArray<uint8> ScenarioHash::RandomBytes(int32 Count)
 {
 	TArray<uint8> Bytes;

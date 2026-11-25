@@ -38,7 +38,7 @@ Scenario processes these under your Scenario account terms and privacy policy. G
 
 | Data | Where | Committed to source control? |
 |---|---|---|
-| OAuth refresh token and the sign-in application it belongs to, API key id and secret, the agent server token | macOS Keychain or Windows Credential Manager; on Linux, `~/.config/scenario/unreal/credentials.json`, readable only by you | No |
+| OAuth refresh token, with the sign-in application and the account (id and email) it belongs to; API key id and secret; the agent server token | macOS Keychain or Windows Credential Manager; on Linux, `~/.config/scenario/unreal/credentials.json`, readable only by you | No |
 | OAuth access token | Memory only | No |
 | Chosen team and project (ids and names) | `<Project>/Saved/Scenario/workspace.json` | No, `Saved/` is excluded by Unreal's default ignore rules |
 | Your editor preferences, including the agent settings | Your per-user editor settings | No |
