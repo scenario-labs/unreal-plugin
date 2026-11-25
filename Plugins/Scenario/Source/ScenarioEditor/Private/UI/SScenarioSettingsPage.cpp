@@ -5,6 +5,7 @@
 #include "HAL/PlatformProcess.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/EngineVersion.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Misc/Paths.h"
 #include "ScenarioCatalog.h"
 #include "ScenarioCU.h"
@@ -213,7 +214,13 @@ namespace
 					})
 				];
 		}
-		if (FStructProperty* Struct = CastField<FStructProperty>(Property); Struct && Struct->Struct == FDirectoryPath::StaticStruct())
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+		// Unreal 5.6 reflects FDirectoryPath without StaticStruct().
+		const UScriptStruct* DirectoryPath = FindObject<UScriptStruct>(nullptr, TEXT("/Script/CoreUObject.DirectoryPath"));
+#else
+		const UScriptStruct* DirectoryPath = FDirectoryPath::StaticStruct();
+#endif
+		if (FStructProperty* Struct = CastField<FStructProperty>(Property); Struct && Struct->Struct == DirectoryPath)
 		{
 			return SNew(SBox)
 				.WidthOverride(200.0f)

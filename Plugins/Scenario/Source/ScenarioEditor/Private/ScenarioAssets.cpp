@@ -877,11 +877,20 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh, TArray<FString>* OutChec
 		}
 	}
 	const bool bWantNanite = Settings.bNanite && Translucent.IsEmpty();
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+	// Unreal 5.6 has no Nanite accessors: the settings are a public member.
+	FMeshNaniteSettings Nanite = StaticMesh->NaniteSettings;
+#else
 	FMeshNaniteSettings Nanite = StaticMesh->GetNaniteSettings();
+#endif
 	if (Nanite.bEnabled != bWantNanite)
 	{
 		Nanite.bEnabled = bWantNanite;
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+		StaticMesh->NaniteSettings = Nanite;
+#else
 		StaticMesh->SetNaniteSettings(Nanite);
+#endif
 	}
 	bool bLightmapUvs = false;
 	if (StaticMesh->GetNumSourceModels() > 0)
