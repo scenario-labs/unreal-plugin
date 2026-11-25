@@ -286,9 +286,9 @@ void UScenarioSubsystem::GetModelFields(const FString& ModelId, TFunction<void(c
 		OnDone(*Cached, FScenarioError());
 		return;
 	}
-	TWeakObjectPtr<UScenarioSubsystem> WeakThis(this);
+	TWeakObjectPtr<UScenarioSubsystem> WeakSelf(this);
 	// Through the catalog: a trained model's form is its base's, and the session then runs the base.
-	SessionPtr->Catalog().GetSchema(ModelId, [WeakThis, ModelId, OnDone](const FScenarioReply& Reply)
+	SessionPtr->Catalog().GetSchema(ModelId, [WeakSelf, ModelId, OnDone](const FScenarioReply& Reply)
 	{
 		if (!Reply.bOk)
 		{
@@ -297,9 +297,9 @@ void UScenarioSubsystem::GetModelFields(const FString& ModelId, TFunction<void(c
 		}
 		TArray<FScenarioField> Fields = ScenarioSchema::FieldsFromSchema(Reply.Value, FScenarioLanes::Get().Restrict());
 		// A trained model's form is kept by the catalog for its workspace only.
-		if (WeakThis.IsValid() && !Reply.Value->HasField(TEXT("trained")))
+		if (WeakSelf.IsValid() && !Reply.Value->HasField(TEXT("trained")))
 		{
-			WeakThis->FieldCache.Add(ModelId, Fields);
+			WeakSelf->FieldCache.Add(ModelId, Fields);
 		}
 		OnDone(Fields, FScenarioError());
 	});
@@ -643,11 +643,11 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 	};
 	TSharedRef<FPending> Pending = MakeShared<FPending>();
 	Importing.Add(LocalId);
-	TWeakObjectPtr<UScenarioSubsystem> WeakThis(this);
+	TWeakObjectPtr<UScenarioSubsystem> WeakSelf(this);
 
-	auto Complete = [WeakThis, LocalId, Options, OnDone, Pending, Importer, Destination, Indices]()
+	auto Complete = [WeakSelf, LocalId, Options, OnDone, Pending, Importer, Destination, Indices]()
 	{
-		UScenarioSubsystem* Self = WeakThis.Get();
+		UScenarioSubsystem* Self = WeakSelf.Get();
 		if (!Self)
 		{
 			return;

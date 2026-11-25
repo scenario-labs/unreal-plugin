@@ -133,9 +133,9 @@ void FScenarioCreateModel::Subscribe()
 	if (FScenarioSession* Session = SessionOrNull())
 	{
 		SessionHandle = Session->OnChanged.AddSP(this, &FScenarioCreateModel::OnSessionChanged);
-		CatalogHandle = Session->Catalog().OnChanged.AddLambda([WeakThis = TWeakPtr<FScenarioCreateModel>(AsShared())]()
+		CatalogHandle = Session->Catalog().OnChanged.AddLambda([WeakSelf = TWeakPtr<FScenarioCreateModel>(AsShared())]()
 		{
-			if (const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin())
+			if (const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin())
 			{
 				This->OnChanged.Broadcast();
 			}
@@ -428,10 +428,10 @@ void FScenarioCreateModel::LoadWorkflows(bool bForce)
 			Out.Add(Item);
 		}
 	};
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Api().ListWorkflows(TEXT("private"), TEXT("ready"), 50, FString(), {}, [WeakThis, Parse](const FScenarioReply& Team)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Api().ListWorkflows(TEXT("private"), TEXT("ready"), 50, FString(), {}, [WeakSelf, Parse](const FScenarioReply& Team)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		FScenarioSession* S = SessionOrNull();
 		if (!This.IsValid() || !S)
 		{
@@ -440,9 +440,9 @@ void FScenarioCreateModel::LoadWorkflows(bool bForce)
 		TArray<FScenarioWorkflowItem> Found;
 		Parse(Team, true, Found);
 		const FString TeamError = Team.bOk ? FString() : Team.Error.Message;
-		S->Api().ListWorkflows(TEXT("public"), TEXT("ready"), 30, FString(), { TEXT("featured") }, [WeakThis, Parse, TeamError, Found](const FScenarioReply& Featured) mutable
+		S->Api().ListWorkflows(TEXT("public"), TEXT("ready"), 30, FString(), { TEXT("featured") }, [WeakSelf, Parse, TeamError, Found](const FScenarioReply& Featured) mutable
 		{
-			const TSharedPtr<FScenarioCreateModel> Later = WeakThis.Pin();
+			const TSharedPtr<FScenarioCreateModel> Later = WeakSelf.Pin();
 			if (!Later.IsValid())
 			{
 				return;
@@ -525,10 +525,10 @@ void FScenarioCreateModel::LoadSchema()
 	}
 	bLoadingSchema = true;
 	Changed(false);
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	auto Loaded = [WeakThis, Generation](const TArray<FScenarioField>& NewFields, const FScenarioError& Error)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	auto Loaded = [WeakSelf, Generation](const TArray<FScenarioField>& NewFields, const FScenarioError& Error)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid() || Generation != This->SchemaGeneration)
 		{
 			return;
@@ -946,11 +946,11 @@ FString FScenarioCreateModel::AddReferenceFile(const FString& FieldName, const F
 	Changed(true);
 
 	const int32 Id = Reference.Id;
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
 	Subsystem->Session().Upload(Path,
-		[WeakThis, Id](const TScenarioResult<FString>& Result)
+		[WeakSelf, Id](const TScenarioResult<FString>& Result)
 		{
-			const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 			FScenarioReference* Found = This.IsValid() ? This->FindReference(Id) : nullptr;
 			if (!Found)
 			{
@@ -969,9 +969,9 @@ FString FScenarioCreateModel::AddReferenceFile(const FString& FieldName, const F
 			}
 			This->Changed(true);
 		},
-		[WeakThis, Id](float Progress)
+		[WeakSelf, Id](float Progress)
 		{
-			const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 			if (FScenarioReference* Found = This.IsValid() ? This->FindReference(Id) : nullptr)
 			{
 				Found->Progress = Progress;
@@ -1579,10 +1579,10 @@ void FScenarioCreateModel::Submit()
 	bSubmitting = true;
 	LastError.Reset();
 	OnChanged.Broadcast();
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Submit(BuildRequest(), FString(), FString(), [WeakThis](const TScenarioResult<FString>& Result)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Submit(BuildRequest(), FString(), FString(), [WeakSelf](const TScenarioResult<FString>& Result)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -1594,9 +1594,9 @@ void FScenarioCreateModel::Submit()
 		if (Result.bOk)
 		{
 			This->WaitingUntil = ScenarioNow() + 2.0;
-			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis](float)
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf](float)
 			{
-				if (const TSharedPtr<FScenarioCreateModel> Later = WeakThis.Pin())
+				if (const TSharedPtr<FScenarioCreateModel> Later = WeakSelf.Pin())
 				{
 					Later->OnChanged.Broadcast();
 				}
@@ -1655,10 +1655,10 @@ void FScenarioCreateModel::Estimate()
 	Request.Parameters->SetStringField(Missing->Name, Example);
 	bEstimating = true;
 	const FString For = ModelId;
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Price(Request, true, [WeakThis, For](const TScenarioResult<FScenarioQuote>& Result)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Price(Request, true, [WeakSelf, For](const TScenarioResult<FScenarioQuote>& Result)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -1700,10 +1700,10 @@ void FScenarioCreateModel::PriceNow(bool bAutomatic)
 	bPricing = true;
 	OnChanged.Broadcast();
 
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Price(Request, bAutomatic, [WeakThis, Generation, Fp](const TScenarioResult<FScenarioQuote>& Result)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Price(Request, bAutomatic, [WeakSelf, Generation, Fp](const TScenarioResult<FScenarioQuote>& Result)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid() || Generation != This->PriceGeneration)
 		{
 			// The form changed while the price was checked: this answer is for another request.
