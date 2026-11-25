@@ -645,10 +645,10 @@ void SScenarioForm::PriceSpark(bool bRunAfter, const FString& ShownPrice)
 {
 	const FString Prompt = Model->GetPrompt();
 	bSparkPricing = true;
-	TWeakPtr<SScenarioForm> WeakThis = StaticCastSharedRef<SScenarioForm>(AsShared());
-	Model->PriceSpark([WeakThis, Prompt, bRunAfter, ShownPrice](const FString& Price, const FString& Error)
+	TWeakPtr<SScenarioForm> WeakSelf = StaticCastSharedRef<SScenarioForm>(AsShared());
+	Model->PriceSpark([WeakSelf, Prompt, bRunAfter, ShownPrice](const FString& Price, const FString& Error)
 	{
-		const TSharedPtr<SScenarioForm> This = WeakThis.Pin();
+		const TSharedPtr<SScenarioForm> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -688,10 +688,10 @@ void SScenarioForm::RunSpark()
 	bSparkRunning = true;
 	SparkMessage.Reset();
 	const FString Price = SparkPrice;
-	TWeakPtr<SScenarioForm> WeakThis = StaticCastSharedRef<SScenarioForm>(AsShared());
-	Model->RunSpark([WeakThis, Price](const TArray<FString>& Variants, const FString& Error, const FString& LocalId)
+	TWeakPtr<SScenarioForm> WeakSelf = StaticCastSharedRef<SScenarioForm>(AsShared());
+	Model->RunSpark([WeakSelf, Price](const TArray<FString>& Variants, const FString& Error, const FString& LocalId)
 	{
-		const TSharedPtr<SScenarioForm> This = WeakThis.Pin();
+		const TSharedPtr<SScenarioForm> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;

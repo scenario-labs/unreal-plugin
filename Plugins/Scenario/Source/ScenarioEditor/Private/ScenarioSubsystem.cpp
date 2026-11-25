@@ -285,8 +285,8 @@ void UScenarioSubsystem::GetModelFields(const FString& ModelId, TFunction<void(c
 		OnDone(*Cached, FScenarioError());
 		return;
 	}
-	TWeakObjectPtr<UScenarioSubsystem> WeakThis(this);
-	SessionPtr->Api().GetSchema(ModelId, [WeakThis, ModelId, OnDone](const FScenarioReply& Reply)
+	TWeakObjectPtr<UScenarioSubsystem> WeakSelf(this);
+	SessionPtr->Api().GetSchema(ModelId, [WeakSelf, ModelId, OnDone](const FScenarioReply& Reply)
 	{
 		if (!Reply.bOk)
 		{
@@ -294,9 +294,9 @@ void UScenarioSubsystem::GetModelFields(const FString& ModelId, TFunction<void(c
 			return;
 		}
 		TArray<FScenarioField> Fields = ScenarioSchema::FieldsFromSchema(Reply.Value, FScenarioLanes::Get().Restrict());
-		if (WeakThis.IsValid())
+		if (WeakSelf.IsValid())
 		{
-			WeakThis->FieldCache.Add(ModelId, Fields);
+			WeakSelf->FieldCache.Add(ModelId, Fields);
 		}
 		OnDone(Fields, FScenarioError());
 	});
@@ -640,11 +640,11 @@ void UScenarioSubsystem::ImportJob(const FString& LocalId, const FScenarioPlaceO
 	};
 	TSharedRef<FPending> Pending = MakeShared<FPending>();
 	Importing.Add(LocalId);
-	TWeakObjectPtr<UScenarioSubsystem> WeakThis(this);
+	TWeakObjectPtr<UScenarioSubsystem> WeakSelf(this);
 
-	auto Complete = [WeakThis, LocalId, Options, OnDone, Pending, Importer, Destination, Indices]()
+	auto Complete = [WeakSelf, LocalId, Options, OnDone, Pending, Importer, Destination, Indices]()
 	{
-		UScenarioSubsystem* Self = WeakThis.Get();
+		UScenarioSubsystem* Self = WeakSelf.Get();
 		if (!Self)
 		{
 			return;

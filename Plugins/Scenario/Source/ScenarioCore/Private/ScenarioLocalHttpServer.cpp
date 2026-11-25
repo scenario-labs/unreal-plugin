@@ -207,11 +207,11 @@ uint32 FScenarioLocalHttpServer::Run()
 			if (Connection)
 			{
 				OpenConnections.Increment();
-				TWeakPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> WeakThis = WeakSelf;
+				TWeakPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> WeakServer = WeakSelf;
 				// One short-lived task per connection, so a slow tool never blocks accepting.
-				Async(EAsyncExecution::Thread, [WeakThis, Connection]()
+				Async(EAsyncExecution::Thread, [WeakServer, Connection]()
 				{
-					if (const TSharedPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> This = WeakThis.Pin())
+					if (const TSharedPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> This = WeakServer.Pin())
 					{
 						This->ServeConnection(Connection);
 						This->OpenConnections.Decrement();
@@ -445,10 +445,10 @@ void FScenarioLocalHttpServer::ServeConnection(FSocket* Connection)
 	};
 	TSharedRef<FReplySlot, ESPMode::ThreadSafe> Slot = MakeShared<FReplySlot, ESPMode::ThreadSafe>();
 	Slot->Done = FPlatformProcess::GetSynchEventFromPool(true);
-	TWeakPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> WeakThis = WeakSelf;
-	AsyncTask(ENamedThreads::GameThread, [WeakThis, Request, Slot]()
+	TWeakPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> WeakServer = WeakSelf;
+	AsyncTask(ENamedThreads::GameThread, [WeakServer, Request, Slot]()
 	{
-		const TSharedPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> This = WeakServer.Pin();
 		FScenarioLocalRespond Respond = [Slot](const FScenarioLocalResponse& Response)
 		{
 			FScopeLock Guard(&Slot->Lock);

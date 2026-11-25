@@ -136,11 +136,11 @@ void FScenarioDownloader::NextChunk(TSharedRef<FState> State)
 	TMap<FString, FString> Headers;
 	Headers.Add(TEXT("Range"), FString::Printf(TEXT("bytes=%lld-%lld"), static_cast<long long>(State->Received), static_cast<long long>(State->Received + ChunkBytes - 1)));
 	Headers.Add(TEXT("User-Agent"), ScenarioVersion::UserAgent());
-	TWeakPtr<FScenarioDownloader> WeakThis = AsShared();
+	TWeakPtr<FScenarioDownloader> WeakSelf = AsShared();
 	const int64 Base = State->Received;
-	Transport->Send(TEXT("GET"), State->Url, Headers, TArray<uint8>(), 120.0f, [WeakThis, State, Base](const FScenarioHttpResponse& Response)
+	Transport->Send(TEXT("GET"), State->Url, Headers, TArray<uint8>(), 120.0f, [WeakSelf, State, Base](const FScenarioHttpResponse& Response)
 	{
-		const TSharedPtr<FScenarioDownloader> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioDownloader> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -154,9 +154,9 @@ void FScenarioDownloader::NextChunk(TSharedRef<FState> State)
 			if (State->TransportRetries < 2)
 			{
 				++State->TransportRetries;
-				This->Transport->Delay(1.0f + State->TransportRetries, [WeakThis, State]()
+				This->Transport->Delay(1.0f + State->TransportRetries, [WeakSelf, State]()
 				{
-					if (const TSharedPtr<FScenarioDownloader> Again = WeakThis.Pin())
+					if (const TSharedPtr<FScenarioDownloader> Again = WeakSelf.Pin())
 					{
 						Again->NextChunk(State);
 					}
@@ -219,13 +219,13 @@ void FScenarioDownloader::NextChunk(TSharedRef<FState> State)
 		}
 		TArray<uint8> Bytes = Response.Body;
 		const FString PartPath = State->PartPath;
-		Async(EAsyncExecution::ThreadPool, [WeakThis, State, Bytes = MoveTemp(Bytes), PartPath, bWhole, Base]()
+		Async(EAsyncExecution::ThreadPool, [WeakSelf, State, Bytes = MoveTemp(Bytes), PartPath, bWhole, Base]()
 		{
 			const bool bWritten = AppendBytes(PartPath, Bytes, bWhole || Base == 0);
 			const int64 NewSize = bWritten ? FileSize(PartPath) : -1;
-			AsyncTask(ENamedThreads::GameThread, [WeakThis, State, bWritten, NewSize, Count = Bytes.Num(), bWhole]()
+			AsyncTask(ENamedThreads::GameThread, [WeakSelf, State, bWritten, NewSize, Count = Bytes.Num(), bWhole]()
 			{
-				const TSharedPtr<FScenarioDownloader> This = WeakThis.Pin();
+				const TSharedPtr<FScenarioDownloader> This = WeakSelf.Pin();
 				if (!This.IsValid())
 				{
 					return;
@@ -329,10 +329,10 @@ void FScenarioUploader::Upload(const FString& FilePath, const FString& Kind, con
 		State->OnDone(Result);
 		return;
 	}
-	TWeakPtr<FScenarioUploader> WeakThis = AsShared();
-	Api->UploadStart(State->FileName, ContentType, Kind, State->Size, [WeakThis, State](const TScenarioResult<FScenarioUploadTicket>& Started)
+	TWeakPtr<FScenarioUploader> WeakSelf = AsShared();
+	Api->UploadStart(State->FileName, ContentType, Kind, State->Size, [WeakSelf, State](const TScenarioResult<FScenarioUploadTicket>& Started)
 	{
-		const TSharedPtr<FScenarioUploader> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioUploader> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -386,9 +386,9 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 		PutPart(State, PartIndex + 1, 0);
 		return;
 	}
-	TWeakPtr<FScenarioUploader> WeakThis = AsShared();
+	TWeakPtr<FScenarioUploader> WeakSelf = AsShared();
 	const FString Path = State->FilePath;
-	Async(EAsyncExecution::ThreadPool, [WeakThis, State, PartIndex, Attempt, Path, Offset, Length]()
+	Async(EAsyncExecution::ThreadPool, [WeakSelf, State, PartIndex, Attempt, Path, Offset, Length]()
 	{
 		TArray<uint8> Bytes;
 		bool bRead = false;
@@ -399,9 +399,9 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 			Reader->Serialize(Bytes.GetData(), Length);
 			bRead = Reader->Close();
 		}
-		AsyncTask(ENamedThreads::GameThread, [WeakThis, State, PartIndex, Attempt, bRead, Bytes = MoveTemp(Bytes)]()
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf, State, PartIndex, Attempt, bRead, Bytes = MoveTemp(Bytes)]()
 		{
-			const TSharedPtr<FScenarioUploader> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioUploader> This = WeakSelf.Pin();
 			if (!This.IsValid())
 			{
 				return;
@@ -420,9 +420,9 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 			Headers.Add(TEXT("User-Agent"), ScenarioVersion::UserAgent());
 			const int64 PartBytes = Bytes.Num();
 			This->Transport->Send(TEXT("PUT"), State->Ticket.Parts[PartIndex].Value, Headers, Bytes, 300.0f,
-				[WeakThis, State, PartIndex, Attempt, PartBytes](const FScenarioHttpResponse& Response)
+				[WeakSelf, State, PartIndex, Attempt, PartBytes](const FScenarioHttpResponse& Response)
 			{
-				const TSharedPtr<FScenarioUploader> Self = WeakThis.Pin();
+				const TSharedPtr<FScenarioUploader> Self = WeakSelf.Pin();
 				if (!Self.IsValid())
 				{
 					return;
@@ -440,9 +440,9 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 				const bool bRetryable = Response.Status == 0 || Response.Status >= 500 || Response.Status == 429;
 				if (bRetryable && Attempt < 2)
 				{
-					Self->Transport->Delay(1.0f + 2.0f * Attempt, [WeakThis, State, PartIndex, Attempt]()
+					Self->Transport->Delay(1.0f + 2.0f * Attempt, [WeakSelf, State, PartIndex, Attempt]()
 					{
-						if (const TSharedPtr<FScenarioUploader> Again = WeakThis.Pin())
+						if (const TSharedPtr<FScenarioUploader> Again = WeakSelf.Pin())
 						{
 							Again->PutPart(State, PartIndex, Attempt + 1);
 						}
@@ -463,10 +463,10 @@ void FScenarioUploader::PutPart(TSharedRef<FState> State, int32 PartIndex, int32
 
 void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 {
-	TWeakPtr<FScenarioUploader> WeakThis = AsShared();
-	Api->UploadComplete(State->Ticket.UploadId, [WeakThis, State, Attempt](const TScenarioResult<FString>& Completed)
+	TWeakPtr<FScenarioUploader> WeakSelf = AsShared();
+	Api->UploadComplete(State->Ticket.UploadId, [WeakSelf, State, Attempt](const TScenarioResult<FString>& Completed)
 	{
-		const TSharedPtr<FScenarioUploader> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioUploader> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -482,9 +482,9 @@ void FScenarioUploader::Complete(TSharedRef<FState> State, int32 Attempt)
 		// Completing again resumes the same upload (Scenario's documented recovery); it never creates a second asset.
 		if (Completed.Error.Kind == EScenarioErrorKind::Timeout && Attempt < 3)
 		{
-			This->Transport->Delay(3.0f, [WeakThis, State, Attempt]()
+			This->Transport->Delay(3.0f, [WeakSelf, State, Attempt]()
 			{
-				if (const TSharedPtr<FScenarioUploader> Again = WeakThis.Pin())
+				if (const TSharedPtr<FScenarioUploader> Again = WeakSelf.Pin())
 				{
 					Again->Complete(State, Attempt + 1);
 				}

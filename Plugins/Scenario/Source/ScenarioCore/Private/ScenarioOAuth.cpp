@@ -196,10 +196,10 @@ void FScenarioOAuth::Discover(TFunction<void(const FScenarioReply&)> OnDone)
 	TMap<FString, FString> Headers;
 	Headers.Add(TEXT("Accept"), TEXT("application/json"));
 	Headers.Add(TEXT("User-Agent"), ScenarioVersion::UserAgent());
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	Transport->Send(TEXT("GET"), MetadataUrl, Headers, TArray<uint8>(), 20.0f, [WeakThis, OnDone](const FScenarioHttpResponse& Response)
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
+	Transport->Send(TEXT("GET"), MetadataUrl, Headers, TArray<uint8>(), 20.0f, [WeakSelf, OnDone](const FScenarioHttpResponse& Response)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -261,11 +261,11 @@ void FScenarioOAuth::EnsureClient(TFunction<void(const FScenarioReply&, const FS
 	Headers.Add(TEXT("Content-Type"), TEXT("application/json"));
 	Headers.Add(TEXT("Accept"), TEXT("application/json"));
 	Headers.Add(TEXT("User-Agent"), ScenarioVersion::UserAgent());
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
 	Transport->Send(TEXT("POST"), Metadata.RegistrationEndpoint, Headers, TArray<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()), 20.0f,
-		[WeakThis, OnDone](const FScenarioHttpResponse& Response)
+		[WeakSelf, OnDone](const FScenarioHttpResponse& Response)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -352,10 +352,10 @@ void FScenarioOAuth::BeginBrowserSignIn(TFunction<void(const FString&)> OnUrl, F
 	bSigningIn = true;
 	const uint32 Generation = ++SignInGeneration;
 	PendingDone = MoveTemp(OnDone);
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	Discover([WeakThis, Generation, OnUrl](const FScenarioReply& Discovered)
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
+	Discover([WeakSelf, Generation, OnUrl](const FScenarioReply& Discovered)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->SignInGeneration != Generation)
 		{
 			return;
@@ -365,9 +365,9 @@ void FScenarioOAuth::BeginBrowserSignIn(TFunction<void(const FString&)> OnUrl, F
 			This->FinishSignIn(Discovered);
 			return;
 		}
-		This->EnsureClient([WeakThis, Generation, OnUrl](const FScenarioReply& Registered, const FString& InClientId)
+		This->EnsureClient([WeakSelf, Generation, OnUrl](const FScenarioReply& Registered, const FString& InClientId)
 		{
-			const TSharedPtr<FScenarioOAuth> Self = WeakThis.Pin();
+			const TSharedPtr<FScenarioOAuth> Self = WeakSelf.Pin();
 			if (!Self.IsValid() || Self->SignInGeneration != Generation)
 			{
 				return;
@@ -380,9 +380,9 @@ void FScenarioOAuth::BeginBrowserSignIn(TFunction<void(const FString&)> OnUrl, F
 			Self->PendingVerifier = ScenarioHash::RandomToken(48);
 			Self->PendingState = ScenarioHash::RandomToken(24);
 			TSharedPtr<FScenarioLocalHttpServer, ESPMode::ThreadSafe> Server = MakeShared<FScenarioLocalHttpServer, ESPMode::ThreadSafe>(TEXT("SignIn"),
-				[WeakThis, Generation](const FScenarioLocalRequest& Request, FScenarioLocalRespond Respond)
+				[WeakSelf, Generation](const FScenarioLocalRequest& Request, FScenarioLocalRespond Respond)
 			{
-				const TSharedPtr<FScenarioOAuth> Owner = WeakThis.Pin();
+				const TSharedPtr<FScenarioOAuth> Owner = WeakSelf.Pin();
 				if (Request.Path != TEXT("/callback") || Request.Method != TEXT("GET"))
 				{
 					Respond(FScenarioLocalResponse::Text(404, TEXT("Not found.")));
@@ -401,10 +401,10 @@ void FScenarioOAuth::BeginBrowserSignIn(TFunction<void(const FString&)> OnUrl, F
 					Owner->FinishSignIn(FScenarioReply::Fail(EScenarioErrorKind::Auth, Problem));
 					return;
 				}
-				Owner->ExchangeCode(Code, Owner->PendingRedirectUri, [WeakThis, Respond](const FScenarioReply& Exchanged)
+				Owner->ExchangeCode(Code, Owner->PendingRedirectUri, [WeakSelf, Respond](const FScenarioReply& Exchanged)
 				{
 					Respond(FScenarioLocalResponse::Text(200, CallbackPage(Exchanged.bOk, Exchanged.Error.Message), TEXT("text/html; charset=utf-8")));
-					if (const TSharedPtr<FScenarioOAuth> Final = WeakThis.Pin())
+					if (const TSharedPtr<FScenarioOAuth> Final = WeakSelf.Pin())
 					{
 						Final->FinishSignIn(Exchanged);
 					}
@@ -428,9 +428,9 @@ void FScenarioOAuth::BeginBrowserSignIn(TFunction<void(const FString&)> OnUrl, F
 			Self->PendingRedirectUri = FString::Printf(TEXT("http://127.0.0.1:%d/callback"), Server->GetPort());
 			const FString Url = BuildAuthorizeUrl(Self->Metadata, InClientId, Self->PendingRedirectUri, MakeCodeChallenge(Self->PendingVerifier),
 				Self->PendingState, Self->Resource, Self->Scope);
-			Self->Transport->Delay(static_cast<float>(BrowserTimeoutSeconds), [WeakThis, Generation]()
+			Self->Transport->Delay(static_cast<float>(BrowserTimeoutSeconds), [WeakSelf, Generation]()
 			{
-				const TSharedPtr<FScenarioOAuth> Late = WeakThis.Pin();
+				const TSharedPtr<FScenarioOAuth> Late = WeakSelf.Pin();
 				if (Late.IsValid() && Late->SignInGeneration == Generation && Late->bSigningIn)
 				{
 					Late->FinishSignIn(FScenarioReply::Fail(EScenarioErrorKind::Timeout, TEXT("Sign-in timed out. Start it again, or use \"Sign in on another device\".")));
@@ -454,10 +454,10 @@ void FScenarioOAuth::ExchangeCode(const FString& Code, const FString& RedirectUr
 	{
 		Fields.Emplace(TEXT("resource"), Resource);
 	}
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	PostForm(Metadata.TokenEndpoint, Fields, [WeakThis, OnDone](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
+	PostForm(Metadata.TokenEndpoint, Fields, [WeakSelf, OnDone](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -482,10 +482,10 @@ void FScenarioOAuth::BeginDeviceSignIn(TFunction<void(const FScenarioDeviceCode&
 	bSigningIn = true;
 	const uint32 Generation = ++SignInGeneration;
 	PendingDone = MoveTemp(OnDone);
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	Discover([WeakThis, Generation, OnCode](const FScenarioReply& Discovered)
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
+	Discover([WeakSelf, Generation, OnCode](const FScenarioReply& Discovered)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->SignInGeneration != Generation)
 		{
 			return;
@@ -500,9 +500,9 @@ void FScenarioOAuth::BeginDeviceSignIn(TFunction<void(const FScenarioDeviceCode&
 			This->FinishSignIn(FScenarioReply::Fail(EScenarioErrorKind::Protocol, TEXT("Scenario does not offer sign-in on another device. Use an API key instead.")));
 			return;
 		}
-		This->EnsureClient([WeakThis, Generation, OnCode](const FScenarioReply& Registered, const FString& InClientId)
+		This->EnsureClient([WeakSelf, Generation, OnCode](const FScenarioReply& Registered, const FString& InClientId)
 		{
-			const TSharedPtr<FScenarioOAuth> Self = WeakThis.Pin();
+			const TSharedPtr<FScenarioOAuth> Self = WeakSelf.Pin();
 			if (!Self.IsValid() || Self->SignInGeneration != Generation)
 			{
 				return;
@@ -521,9 +521,9 @@ void FScenarioOAuth::BeginDeviceSignIn(TFunction<void(const FScenarioDeviceCode&
 			{
 				Fields.Emplace(TEXT("resource"), Self->Resource);
 			}
-			Self->PostForm(Self->Metadata.DeviceAuthorizationEndpoint, Fields, [WeakThis, Generation, OnCode](const FScenarioReply& Reply)
+			Self->PostForm(Self->Metadata.DeviceAuthorizationEndpoint, Fields, [WeakSelf, Generation, OnCode](const FScenarioReply& Reply)
 			{
-				const TSharedPtr<FScenarioOAuth> Owner = WeakThis.Pin();
+				const TSharedPtr<FScenarioOAuth> Owner = WeakSelf.Pin();
 				if (!Owner.IsValid() || Owner->SignInGeneration != Generation)
 				{
 					return;
@@ -556,10 +556,10 @@ void FScenarioOAuth::BeginDeviceSignIn(TFunction<void(const FScenarioDeviceCode&
 void FScenarioOAuth::PollDevice(const FString& DeviceCode, double Interval, double ExpiresAt, uint32 Attempt)
 {
 	const uint32 Generation = SignInGeneration;
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	Transport->Delay(static_cast<float>(Interval), [WeakThis, Generation, DeviceCode, Interval, ExpiresAt, Attempt]()
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
+	Transport->Delay(static_cast<float>(Interval), [WeakSelf, Generation, DeviceCode, Interval, ExpiresAt, Attempt]()
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->SignInGeneration != Generation || !This->bSigningIn)
 		{
 			return;
@@ -578,9 +578,9 @@ void FScenarioOAuth::PollDevice(const FString& DeviceCode, double Interval, doub
 		{
 			Fields.Emplace(TEXT("resource"), This->Resource);
 		}
-		This->PostForm(This->Metadata.TokenEndpoint, Fields, [WeakThis, Generation, DeviceCode, Interval, ExpiresAt, Attempt](const FScenarioReply& Reply)
+		This->PostForm(This->Metadata.TokenEndpoint, Fields, [WeakSelf, Generation, DeviceCode, Interval, ExpiresAt, Attempt](const FScenarioReply& Reply)
 		{
-			const TSharedPtr<FScenarioOAuth> Self = WeakThis.Pin();
+			const TSharedPtr<FScenarioOAuth> Self = WeakSelf.Pin();
 			if (!Self.IsValid() || Self->SignInGeneration != Generation || !Self->bSigningIn)
 			{
 				return;
@@ -640,10 +640,10 @@ void FScenarioOAuth::Refresh(TFunction<void(bool)> OnDone)
 		return;
 	}
 	bRefreshing = true;
-	TWeakPtr<FScenarioOAuth> WeakThis = AsShared();
-	auto Finish = [WeakThis](bool bOk)
+	TWeakPtr<FScenarioOAuth> WeakSelf = AsShared();
+	auto Finish = [WeakSelf](bool bOk)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -657,9 +657,9 @@ void FScenarioOAuth::Refresh(TFunction<void(bool)> OnDone)
 			Waiter(bOk);
 		}
 	};
-	Discover([WeakThis, Finish](const FScenarioReply& Discovered)
+	Discover([WeakSelf, Finish](const FScenarioReply& Discovered)
 	{
-		const TSharedPtr<FScenarioOAuth> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioOAuth> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -678,9 +678,9 @@ void FScenarioOAuth::Refresh(TFunction<void(bool)> OnDone)
 		{
 			Fields.Emplace(TEXT("resource"), This->Resource);
 		}
-		This->PostForm(This->Metadata.TokenEndpoint, Fields, [WeakThis, Finish](const FScenarioReply& Reply)
+		This->PostForm(This->Metadata.TokenEndpoint, Fields, [WeakSelf, Finish](const FScenarioReply& Reply)
 		{
-			const TSharedPtr<FScenarioOAuth> Self = WeakThis.Pin();
+			const TSharedPtr<FScenarioOAuth> Self = WeakSelf.Pin();
 			if (!Self.IsValid())
 			{
 				return;

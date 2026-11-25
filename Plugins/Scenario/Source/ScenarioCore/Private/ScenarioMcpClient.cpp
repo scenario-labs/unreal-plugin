@@ -199,10 +199,10 @@ void FScenarioMcpClient::CallTool(const FString& Tool, const TSharedPtr<FJsonObj
 
 void FScenarioMcpClient::Attempt(const FString& Tool, TSharedPtr<FJsonObject> Arguments, float TimeoutSeconds, bool bSubmit, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone)
 {
-	TWeakPtr<FScenarioMcpClient> WeakThis = AsShared();
-	CallOnce(Tool, Arguments, TimeoutSeconds, bSubmit, [WeakThis, Tool, Arguments, TimeoutSeconds, bSubmit, AttemptIndex, Attempts, OnDone](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioMcpClient> WeakSelf = AsShared();
+	CallOnce(Tool, Arguments, TimeoutSeconds, bSubmit, [WeakSelf, Tool, Arguments, TimeoutSeconds, bSubmit, AttemptIndex, Attempts, OnDone](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioMcpClient> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioMcpClient> This = WeakSelf.Pin();
 		if (Reply.bOk)
 		{
 			if (IsDryRun(Tool, Arguments))
@@ -231,9 +231,9 @@ void FScenarioMcpClient::Attempt(const FString& Tool, TSharedPtr<FJsonObject> Ar
 			if (Delay >= 0.0)
 			{
 				UE_LOG(LogScenario, Verbose, TEXT("Retrying %s in %.1f s (%s)."), *Tool, Delay, LexToString(Reply.Error.Kind));
-				This->Transport->Delay(static_cast<float>(Delay), [WeakThis, Tool, Arguments, TimeoutSeconds, bSubmit, AttemptIndex, Attempts, OnDone]()
+				This->Transport->Delay(static_cast<float>(Delay), [WeakSelf, Tool, Arguments, TimeoutSeconds, bSubmit, AttemptIndex, Attempts, OnDone]()
 				{
-					if (const TSharedPtr<FScenarioMcpClient> Again = WeakThis.Pin())
+					if (const TSharedPtr<FScenarioMcpClient> Again = WeakSelf.Pin())
 					{
 						Again->Attempt(Tool, Arguments, TimeoutSeconds, bSubmit, AttemptIndex + 1, Attempts, OnDone);
 					}
@@ -346,10 +346,10 @@ void FScenarioMcpClient::CallOnce(const FString& Tool, TSharedPtr<FJsonObject> A
 
 void FScenarioMcpClient::Rpc(const FString& Method, TSharedPtr<FJsonObject> Params, float TimeoutSeconds, FScenarioReplyCallback OnDone)
 {
-	TWeakPtr<FScenarioMcpClient> WeakThis = AsShared();
-	EnsureInitialized(TimeoutSeconds, [WeakThis, Method, Params, TimeoutSeconds, OnDone](const FScenarioReply& Init)
+	TWeakPtr<FScenarioMcpClient> WeakSelf = AsShared();
+	EnsureInitialized(TimeoutSeconds, [WeakSelf, Method, Params, TimeoutSeconds, OnDone](const FScenarioReply& Init)
 	{
-		const TSharedPtr<FScenarioMcpClient> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioMcpClient> This = WeakSelf.Pin();
 		if (!Init.bOk || !This.IsValid())
 		{
 			FScenarioReply Out = Init.bOk ? FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The Scenario client was closed.")) : Init;
@@ -381,9 +381,9 @@ void FScenarioMcpClient::Rpc(const FString& Method, TSharedPtr<FJsonObject> Para
 			}
 			OnDone(FScenarioReply::Ok(Result));
 		};
-		This->Post(Method, Params, RequestId, TimeoutSeconds, true, true, [WeakThis, Method, Params, RequestId, TimeoutSeconds, HandleEnvelope](const FScenarioReply& Reply)
+		This->Post(Method, Params, RequestId, TimeoutSeconds, true, true, [WeakSelf, Method, Params, RequestId, TimeoutSeconds, HandleEnvelope](const FScenarioReply& Reply)
 		{
-			const TSharedPtr<FScenarioMcpClient> Self = WeakThis.Pin();
+			const TSharedPtr<FScenarioMcpClient> Self = WeakSelf.Pin();
 			if (Reply.bOk || !Reply.Error.bSessionExpired || !Self.IsValid())
 			{
 				HandleEnvelope(Reply);
@@ -392,9 +392,9 @@ void FScenarioMcpClient::Rpc(const FString& Method, TSharedPtr<FJsonObject> Para
 			// The server did not dispatch the request: renew the session and send it again.
 			UE_LOG(LogScenario, Log, TEXT("Scenario MCP session expired; starting a new one."));
 			Self->ResetSession();
-			Self->EnsureInitialized(TimeoutSeconds, [WeakThis, Method, Params, RequestId, TimeoutSeconds, HandleEnvelope](const FScenarioReply& Again)
+			Self->EnsureInitialized(TimeoutSeconds, [WeakSelf, Method, Params, RequestId, TimeoutSeconds, HandleEnvelope](const FScenarioReply& Again)
 			{
-				const TSharedPtr<FScenarioMcpClient> Renewed = WeakThis.Pin();
+				const TSharedPtr<FScenarioMcpClient> Renewed = WeakSelf.Pin();
 				if (!Again.bOk || !Renewed.IsValid())
 				{
 					FScenarioReply Out = Again.bOk ? FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The Scenario client was closed.")) : Again;
@@ -429,10 +429,10 @@ void FScenarioMcpClient::EnsureInitialized(float TimeoutSeconds, FInitWaiter OnR
 	Params->SetStringField(TEXT("protocolVersion"), ProtocolVersion);
 	Params->SetObjectField(TEXT("capabilities"), MakeShared<FJsonObject>());
 	Params->SetObjectField(TEXT("clientInfo"), ClientInfo);
-	TWeakPtr<FScenarioMcpClient> WeakThis = AsShared();
-	Post(TEXT("initialize"), Params, TakeId(), TimeoutSeconds, false, true, [WeakThis, Generation, TimeoutSeconds](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioMcpClient> WeakSelf = AsShared();
+	Post(TEXT("initialize"), Params, TakeId(), TimeoutSeconds, false, true, [WeakSelf, Generation, TimeoutSeconds](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioMcpClient> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioMcpClient> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->SessionGeneration != Generation)
 		{
 			return;
@@ -448,9 +448,9 @@ void FScenarioMcpClient::EnsureInitialized(float TimeoutSeconds, FInitWaiter OnR
 			This->FinishInitialize(ErrorFromDetail(Detail));
 			return;
 		}
-		This->Post(TEXT("notifications/initialized"), nullptr, -1, TimeoutSeconds, false, false, [WeakThis, Generation](const FScenarioReply& Notified)
+		This->Post(TEXT("notifications/initialized"), nullptr, -1, TimeoutSeconds, false, false, [WeakSelf, Generation](const FScenarioReply& Notified)
 		{
-			const TSharedPtr<FScenarioMcpClient> Self = WeakThis.Pin();
+			const TSharedPtr<FScenarioMcpClient> Self = WeakSelf.Pin();
 			if (!Self.IsValid() || Self->SessionGeneration != Generation)
 			{
 				return;
@@ -508,11 +508,11 @@ void FScenarioMcpClient::Post(const FString& Method, TSharedPtr<FJsonObject> Par
 		Headers.Add(TEXT("Mcp-Session-Id"), SessionUsed);
 	}
 
-	TWeakPtr<FScenarioMcpClient> WeakThis = AsShared();
+	TWeakPtr<FScenarioMcpClient> WeakSelf = AsShared();
 	Transport->Send(TEXT("POST"), Endpoint, Headers, Body, FMath::Clamp(TimeoutSeconds, 1.0f, 180.0f),
-		[WeakThis, Method, Params, RequestId, TimeoutSeconds, bAllowSessionSignal, bAllowRefresh, SessionUsed, OnDone](const FScenarioHttpResponse& Response)
+		[WeakSelf, Method, Params, RequestId, TimeoutSeconds, bAllowSessionSignal, bAllowRefresh, SessionUsed, OnDone](const FScenarioHttpResponse& Response)
 	{
-		const TSharedPtr<FScenarioMcpClient> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioMcpClient> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -521,9 +521,9 @@ void FScenarioMcpClient::Post(const FString& Method, TSharedPtr<FJsonObject> Par
 		if (Response.Status == 401 && bAllowRefresh && This->Auth.IsValid())
 		{
 			const TSharedPtr<IScenarioAuthProvider> UsedAuth = This->Auth;
-			UsedAuth->Refresh([WeakThis, Method, Params, RequestId, TimeoutSeconds, bAllowSessionSignal, SessionUsed, Response, OnDone](bool bRefreshed)
+			UsedAuth->Refresh([WeakSelf, Method, Params, RequestId, TimeoutSeconds, bAllowSessionSignal, SessionUsed, Response, OnDone](bool bRefreshed)
 			{
-				const TSharedPtr<FScenarioMcpClient> Self = WeakThis.Pin();
+				const TSharedPtr<FScenarioMcpClient> Self = WeakSelf.Pin();
 				if (!Self.IsValid())
 				{
 					return;
