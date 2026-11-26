@@ -200,13 +200,13 @@ void FScenarioRestClient::Send(const FScenarioRequest& Request, FScenarioReplyCa
 		OnDone(Reply);
 		return;
 	}
-	Attempt(Request, 0, Request.IsRetryable() ? ReadAttempts : 1, MoveTemp(OnDone));
+	Attempt(Request, UrlFor(Request), 0, Request.IsRetryable() ? ReadAttempts : 1, MoveTemp(OnDone));
 }
 
-void FScenarioRestClient::Attempt(const FScenarioRequest& Request, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone)
+void FScenarioRestClient::Attempt(const FScenarioRequest& Request, const FString& BoundUrl, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone)
 {
 	TWeakPtr<FScenarioRestClient> WeakThis = AsShared();
-	SendOnce(Request, true, [WeakThis, Request, AttemptIndex, Attempts, OnDone](const FScenarioReply& Reply)
+	SendOnce(Request, true, [WeakThis, Request, BoundUrl, AttemptIndex, Attempts, OnDone](const FScenarioReply& Reply)
 	{
 		const TSharedPtr<FScenarioRestClient> This = WeakThis.Pin();
 		if (Reply.bOk)
@@ -237,11 +237,19 @@ void FScenarioRestClient::Attempt(const FScenarioRequest& Request, int32 Attempt
 			if (Delay >= 0.0)
 			{
 				UE_LOG(LogScenario, Verbose, TEXT("Retrying %s %s in %.1f s (%s)."), *Request.Verb, *Request.Path, Delay, LexToString(Reply.Error.Kind));
-				This->Transport->Delay(static_cast<float>(Delay), [WeakThis, Request, AttemptIndex, Attempts, OnDone]()
+				This->Transport->Delay(static_cast<float>(Delay), [WeakThis, Request, BoundUrl, AttemptIndex, Attempts, OnDone]()
 				{
 					if (const TSharedPtr<FScenarioRestClient> Again = WeakThis.Pin())
 					{
-						Again->Attempt(Request, AttemptIndex + 1, Attempts, OnDone);
+						if (!Again->UrlFor(Request).Equals(BoundUrl, ESearchCase::CaseSensitive))
+						{
+							// The team or project changed during the back-off: the answer would belong to the new one.
+							FScenarioReply Moved = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The team or project changed while the request was retried, so it was stopped."));
+							Moved.Error.bNotSent = true;
+							OnDone(Moved);
+							return;
+						}
+						Again->Attempt(Request, BoundUrl, AttemptIndex + 1, Attempts, OnDone);
 					}
 				});
 				return;
@@ -274,24 +282,39 @@ void FScenarioRestClient::SendOnce(const FScenarioRequest& Request, bool bAllowR
 
 	TWeakPtr<FScenarioRestClient> WeakThis = AsShared();
 	const FString Url = UrlFor(Request);
+	// The sign-in that sends the request: a renewal resends it only for that one.
+	const TWeakPtr<IScenarioAuthProvider> SentAuth = Auth;
+	const uint32 SentGeneration = Auth->GetSignInGeneration();
+	auto SameSignIn = [SentAuth, SentGeneration](const FScenarioRestClient& Client)
+	{
+		return Client.Auth.IsValid() && Client.Auth == SentAuth.Pin() && Client.Auth->GetSignInGeneration() == SentGeneration;
+	};
 	Transport->Send(Request.Verb, Url, Headers, Body, FMath::Clamp(Request.TimeoutSeconds, 1.0f, 180.0f),
-		[WeakThis, Request, Url, bAllowRefresh, OnDone](const FScenarioHttpResponse& Response)
+		[WeakThis, Request, Url, bAllowRefresh, SameSignIn, OnDone](const FScenarioHttpResponse& Response)
 	{
 		const TSharedPtr<FScenarioRestClient> This = WeakThis.Pin();
 		if (!This.IsValid())
 		{
 			return;
 		}
-		if (bAllowRefresh && IsGatewayRefusal(Response) && This->Auth.IsValid())
+		if (bAllowRefresh && IsGatewayRefusal(Response) && SameSignIn(*This))
 		{
-			This->Auth->Refresh([WeakThis, Request, Url, Response, OnDone](bool bRefreshed)
+			This->Auth->Refresh([WeakThis, Request, Url, Response, SameSignIn, OnDone](bool bRefreshed)
 			{
 				const TSharedPtr<FScenarioRestClient> Self = WeakThis.Pin();
 				if (!Self.IsValid())
 				{
 					return;
 				}
-				if (bRefreshed && Self->UrlFor(Request) != Url)
+				if (bRefreshed && !SameSignIn(*Self))
+				{
+					// Someone signed in or out during the renewal: the request was approved under the earlier sign-in.
+					FScenarioReply Switched = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The Scenario sign-in changed while the session was renewed, so nothing was sent."));
+					Switched.Error.bNotSent = true;
+					OnDone(Switched);
+					return;
+				}
+				if (bRefreshed && !Self->UrlFor(Request).Equals(Url, ESearchCase::CaseSensitive))
 				{
 					// The team or project changed during the renewal: the request was priced and approved for the old one.
 					FScenarioReply Moved = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("The team or project changed while the session was renewed, so nothing was sent."));
