@@ -248,11 +248,37 @@ FString FScenarioCreateModel::GetModelName() const
 	return ModelId;
 }
 
+const FScenarioTrainedInfo* FScenarioCreateModel::GetTrained() const
+{
+	FScenarioSession* Session = SessionOrNull();
+	return Session && !bWorkflow && !ModelId.IsEmpty() ? Session->Catalog().FindTrained(ModelId) : nullptr;
+}
+
 FString FScenarioCreateModel::GetModelNote() const
 {
 	if (bWorkflow)
 	{
 		return WorkflowDescription;
+	}
+	// A trained model runs on its base: "LoRA via FLUX.1 Dev", then its description.
+	FString Trained;
+	if (const FScenarioTrainedInfo* Info = GetTrained())
+	{
+		Trained = Info->Label();
+	}
+	else if (FScenarioSession* Session = SessionOrNull())
+	{
+		const FScenarioCatalogModel* Model = Session->Catalog().Find(ModelId);
+		if (Model && Model->bTrained && ScenarioTrained::IsTrainedType(Model->Summary.Type) && Session->Catalog().Bases().Num() > 0)
+		{
+			Trained = Session->Catalog().TrainedInfo(*Model).Label();
+		}
+	}
+	if (!Trained.IsEmpty())
+	{
+		const FScenarioCatalogModel* Model = SessionOrNull() ? SessionOrNull()->Catalog().Find(ModelId) : nullptr;
+		const FString About = Model ? Model->Summary.ShortDescription : FString();
+		return About.IsEmpty() ? Trained : Trained + TEXT(" · ") + About;
 	}
 	if (const FScenarioLane* Lane = FScenarioLanes::Get().LaneForModel(ModelId))
 	{
@@ -511,6 +537,7 @@ void FScenarioCreateModel::LoadSchema()
 		if (Error.Kind != EScenarioErrorKind::None)
 		{
 			This->Fields.Reset();
+			This->bTrainedForm = false;
 			This->SchemaError = Error.Kind == EScenarioErrorKind::NotFound
 				? (This->bWorkflow ? TEXT("Scenario has no workflow with this id any more.") : TEXT("Scenario has no model with this id any more. Pick another one."))
 				: Error.Message;
@@ -539,6 +566,7 @@ void FScenarioCreateModel::SchemaLoaded(const TArray<FScenarioField>& NewFields)
 	const FString OldPrompt = GetPrompt();
 
 	Fields = NewFields;
+	bTrainedForm = GetTrained() != nullptr;
 	if (!bWorkflow)
 	{
 		FScenarioLanes::Get().ApplyFieldLabels(LaneId, ModelId, Fields);
@@ -1481,7 +1509,7 @@ FText FScenarioCreateModel::GetSentJobText() const
 	{
 		return FText::GetEmpty();
 	}
-	const FText Model = FText::FromString(Row->ModelName.IsEmpty() ? (Row->ModelId.IsEmpty() ? Row->WorkflowId : Row->ModelId) : Row->ModelName);
+	const FText Model = FText::FromString(!Row->TrainedModelName.IsEmpty() ? Row->TrainedModelName : Row->ModelName.IsEmpty() ? (Row->ModelId.IsEmpty() ? Row->WorkflowId : Row->ModelId) : Row->ModelName);
 	const FText Cost = FText::FromString(ScenarioCU::Format(Row->QuotedCU));
 	switch (Row->State)
 	{
@@ -1731,7 +1759,9 @@ void FScenarioCreateModel::OnSessionChanged()
 	}
 	const bool bWasSignedOut = SessionKey.IsEmpty() || Fields.Num() == 0;
 	SessionKey = Key;
-	if (Session->IsSignedIn() && bWasSignedOut && !bLoadingSchema)
+	// A trained model's form is its base's: in another project it is read again (or says the model is not there).
+	const bool bTrainedFormLost = bTrainedForm && !GetTrained();
+	if (Session->IsSignedIn() && (bWasSignedOut || bTrainedFormLost) && !bLoadingSchema)
 	{
 		LoadSchema();
 		return;
@@ -1808,65 +1838,6 @@ void FScenarioCreateModel::RunSpark(TFunction<void(const TArray<FString>& Varian
 		FScenarioSession* Session = SessionOrNull();
 		const TSharedPtr<FJsonObject> Reply = Session ? Session->GetSparkResult(Result.Value) : nullptr;
 		OnDone(FScenarioApi::SparkPrompts(Reply), FString(), Result.Value);
-	});
-}
-
-void FScenarioCreateModel::Suggest(TFunction<void(const TArray<TPair<FString, FString>>& Models, const FString& Error)> OnDone)
-{
-	FScenarioSession* Session = SessionOrNull();
-	const FScenarioLane* Lane = GetLane();
-	if (!Session || !Session->IsReady() || !Lane)
-	{
-		OnDone({}, TEXT("Sign in and choose a project first."));
-		return;
-	}
-	FString Capability = Lane->Capability;
-	if (LaneId == TEXT("3d") && Mode == TEXT("image"))
-	{
-		Capability = TEXT("img23d");
-	}
-	FString Prompt = GetPrompt().TrimStartAndEnd();
-	if (Prompt.IsEmpty() && Lane->StarterPrompts.Num() > 0)
-	{
-		Prompt = Lane->StarterPrompts[0];
-	}
-	TWeakPtr<FScenarioSession> WeakSession = Session->AsShared();
-	Session->Api().Recommend(Capability, Prompt, 5, [WeakSession, OnDone](const FScenarioReply& Reply)
-	{
-		if (!Reply.bOk)
-		{
-			OnDone({}, Reply.Error.Message);
-			return;
-		}
-		TArray<TSharedPtr<FJsonValue>> Rows = ScenarioJson::GetArray(Reply.Value, TEXT("ranked"));
-		if (Rows.Num() == 0)
-		{
-			Rows = ScenarioJson::GetArray(Reply.Value, TEXT("models"));
-		}
-		if (Rows.Num() == 0)
-		{
-			Rows = ScenarioJson::GetArray(Reply.Value, TEXT("results"));
-		}
-		const TSharedPtr<FScenarioSession> Pinned = WeakSession.Pin();
-		const UScenarioProjectSettings& Project = UScenarioProjectSettings::Get();
-		TArray<TPair<FString, FString>> Models;
-		for (const TSharedPtr<FJsonValue>& Row : Rows)
-		{
-			const TSharedPtr<FJsonObject> Object = Row->Type == EJson::Object ? Row->AsObject() : nullptr;
-			FString Id = ScenarioJson::GetString(Object, TEXT("model_id"), ScenarioJson::GetString(Object, TEXT("id")));
-			if (Id.IsEmpty() || !Project.IsModelAllowed(Id))
-			{
-				continue;
-			}
-			FString Name = ScenarioJson::GetString(Object, TEXT("name"), ScenarioJson::GetString(Object, TEXT("model_name")));
-			if (Name.IsEmpty() && Pinned.IsValid())
-			{
-				const FScenarioCatalogModel* Known = Pinned->Catalog().Find(Id);
-				Name = Known ? Known->Summary.Name : Id;
-			}
-			Models.Add({ Id, Name });
-		}
-		OnDone(Models, Models.Num() == 0 ? TEXT("Scenario had no recommendation for this prompt.") : FString());
 	});
 }
 

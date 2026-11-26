@@ -16,7 +16,7 @@ const TArray<FName>& ScenarioProvenance::Keys()
 {
 	static const TArray<FName> List = {
 		TEXT("Scenario.AssetId"), TEXT("Scenario.JobId"), TEXT("Scenario.ModelId"), TEXT("Scenario.ModelName"),
-		TEXT("Scenario.WorkflowId"), TEXT("Scenario.Prompt"), TEXT("Scenario.Parameters"), TEXT("Scenario.InputAssetIds"),
+		TEXT("Scenario.TrainedModelId"), TEXT("Scenario.TrainedModelName"), TEXT("Scenario.WorkflowId"), TEXT("Scenario.Prompt"), TEXT("Scenario.Parameters"), TEXT("Scenario.InputAssetIds"),
 		TEXT("Scenario.QuotedCU"), TEXT("Scenario.ChargedCU"), TEXT("Scenario.CreatedAt"), TEXT("Scenario.TeamId"),
 		TEXT("Scenario.ProjectId"), TEXT("Scenario.Role"), TEXT("Scenario.Lane"), TEXT("Scenario.PluginVersion"), TEXT("Scenario.EngineVersion"),
 	};
@@ -37,6 +37,9 @@ TMap<FName, FString> ScenarioProvenance::Values(const FScenarioJobRow& Row, cons
 	Put(TEXT("Scenario.JobId"), Row.JobId);
 	Put(TEXT("Scenario.ModelId"), Row.ModelId);
 	Put(TEXT("Scenario.ModelName"), Row.ModelName);
+	// A trained model's run: ModelId is its base, the model Scenario ran.
+	Put(TEXT("Scenario.TrainedModelId"), Row.TrainedModelId);
+	Put(TEXT("Scenario.TrainedModelName"), Row.TrainedModelName);
 	Put(TEXT("Scenario.WorkflowId"), Row.WorkflowId);
 	if (!bOmitPrompt)
 	{

@@ -82,8 +82,7 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | Tool | Does |
 |---|---|
 | `list_models` | Models for a lane (`image`, `video`, `3d`, `material`, `audio`, `environment`, `render`); the lane's picks first |
-| `model_schema` | Parameters, options, defaults, which change the price, and the Unreal-ready prompt for 3D |
-| `recommend_models` | Asks Scenario for the best models for a request |
+| `model_schema` | Parameters, options, defaults, which change the price, and the Unreal-ready prompt for 3D. For a trained model (LoRA or composition): its base's parameters plus `addTriggerWords` and, for a LoRA only, `lorasScale` (its weight), and `runs_on`, the base it runs on; `estimate_cost` takes its id, and `generate` the quote it returns (`quote_id`, `approved_cost`) |
 | `estimate_cost` | Free price check; returns the quote |
 | `generate` | SPENDS: runs the quoted request; returns `job_id` |
 | `job_status`, `wait_for_job` | State and files of a job; `wait_for_job` returns `still_running` after 45 seconds by default, call it again. Both also take an `approval_id` (a spend waiting for you, see section 8) |
@@ -111,9 +110,9 @@ Tool descriptions that spend start with `SPENDS`. Tools are annotated as read-on
 | `save_changes` | Saves what the plugin created; `include_levels: true` also saves the open level (with its World Partition actors) and unsaved assets under the Scenario folder. An untitled level is not saved: the result says so |
 | `remove_scenario_items` | Removes actors the plugin placed and assets it imported, after Unreal's reference check |
 
-**Tool search** (Editor Preferences > Plugins > Scenario > **Agent tool search**, off by default). The full tool list is about 29 KB, roughly 7,300 tokens, sent once per connection. With tool search on, `tools/list` holds four tools (about 1.4 KB): `scenario_status`, `find_tools` (names, kinds and descriptions matching a query), `describe_tools` (input schemas) and `call_tool` (runs a tool by name with the same permissions and money rules). Every tool also stays callable by its own name. Turn it on for a client that loads every tool into the model's context; clients that already defer tool definitions (Claude Code, for one) do not need it. It takes effect when the server restarts (the switch on the **Agent** page).
+**Catalog.** `tools/list` holds the 29 core tools and a catalog that reaches the other 18 (the kit, Prompt Spark, the Scenario library, `recover_cloud_job` and `output_log`), about 25 KB: `unreal_tools_list` (every tool, with its lane), `unreal_tools_search` (input schemas for a query) and `unreal_tool_execute_read`, `unreal_tool_execute_write` and `unreal_tool_execute_delete` (run a tool of that lane with the same permissions and money rules; a tool of another lane is refused). The names follow the hosted Scenario MCP's own catalog. Every tool also stays callable by its own name. **List every tool** (Editor Preferences > Plugins > Scenario, off by default) lists all of them (about 47 KB), for clients that search tools themselves; it takes effect when the server restarts (the switch on the **Agent** page).
 
-**Kit: worlds, games and films** (need the **Change this project** permission; distances in meters)
+**Kit: worlds, games and films** (in the catalog; need the **Change this project** permission; distances in meters)
 
 | Tool | Does |
 |---|---|
@@ -173,7 +172,7 @@ Unreal 5.8 ships an Experimental Model Context Protocol plugin: an MCP server in
 
 **What the agent sees**
 
-- Toolset `ScenarioToolsets.ScenarioToolset`, 19 tools: `GetStatus`, `ListModels`, `GetModelSchema`, `RecommendModels`, `EstimateCost`, `Generate`, `ListWorkflows`, `GetWorkflowSchema`, `EstimateWorkflow`, `RunWorkflow`, `GetJobStatus`, `WaitForJob`, `ListJobs`, `CancelJob`, `CheckUnknownJob`, `SearchAssets`, `PrepareResult`, `ApplyResult`, `SaveChanges`. They run the same actions as the tools of the same purpose on the Scenario MCP server.
+- Toolset `ScenarioToolsets.ScenarioToolset`, 18 tools: `GetStatus`, `ListModels`, `GetModelSchema`, `EstimateCost`, `Generate`, `ListWorkflows`, `GetWorkflowSchema`, `EstimateWorkflow`, `RunWorkflow`, `GetJobStatus`, `WaitForJob`, `ListJobs`, `CancelJob`, `CheckUnknownJob`, `SearchAssets`, `PrepareResult`, `ApplyResult`, `SaveChanges`. They run the same actions as the tools of the same purpose on the Scenario MCP server.
 - Agent skill `/Script/ScenarioToolsets.ScenarioAgentSkill`, listed by Epic's `ToolsetRegistry.AgentSkillToolset` (`ListSkills`, `GetSkills`). It carries the live state (signed in, project, **Change this project**, spending switch, lanes) and the rules the tool descriptions cannot: price first, never repeat a paid call, apply then save, and which work belongs to Epic's toolsets.
 - Optional parameters have a word as default (`all`, `auto`, `default`, `*`, `selection`, `none`) because Epic's registry fills a left-out parameter only from its default. `Parameters` and `Inputs` are JSON object text, for example `{"prompt": "a stone well"}`.
 - Not in the toolset: Python, removals, kit tools, uploads, Prompt Spark, and level reads and screenshots (Epic's toolsets cover the level).

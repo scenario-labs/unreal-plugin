@@ -38,7 +38,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioEditorRegistryTest, "Scenario.Editor.A
 bool FScenarioEditorRegistryTest::RunTest(const FString& Parameters)
 {
 	const TArray<FScenarioAction>& Actions = FScenarioActions::Get().All();
-	TestEqual(TEXT("39 built-in actions and 9 kit actions"), Actions.Num(), 48);
+	TestEqual(TEXT("38 built-in actions and 9 kit actions"), Actions.Num(), 47);
 	TSet<FString> Names;
 	for (const FScenarioAction& Entry : Actions)
 	{

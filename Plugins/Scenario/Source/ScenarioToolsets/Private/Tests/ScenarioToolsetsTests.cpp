@@ -88,7 +88,7 @@ bool FScenarioToolsetsSchemaTest::RunTest(const FString&)
 	}
 	const TArray<TSharedPtr<FJsonValue>> Tools = ScenarioJson::GetArray(Schema, TEXT("tools"));
 	const TMap<FString, FString>& Map = UScenarioToolset::ActionsByTool();
-	TestEqual(TEXT("Tool count"), Tools.Num(), 19);
+	TestEqual(TEXT("Tool count"), Tools.Num(), 18);
 	TestEqual(TEXT("Every tool maps to one action"), Map.Num(), Tools.Num());
 
 	// Only what the action itself needs is required; everything else can be left out.
@@ -96,7 +96,6 @@ bool FScenarioToolsetsSchemaTest::RunTest(const FString&)
 		{ TEXT("GetStatus"), TEXT("") },
 		{ TEXT("ListModels"), TEXT("") },
 		{ TEXT("GetModelSchema"), TEXT("modelId") },
-		{ TEXT("RecommendModels"), TEXT("prompt") },
 		{ TEXT("EstimateCost"), TEXT("modelId") },
 		{ TEXT("Generate"), TEXT("quoteId,approvedCost") },
 		{ TEXT("ListWorkflows"), TEXT("") },

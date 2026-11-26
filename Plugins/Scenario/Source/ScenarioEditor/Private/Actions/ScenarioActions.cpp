@@ -502,6 +502,11 @@ namespace ScenarioActionHelpers
 			Json->SetStringField(TEXT("lane"), Row.Lane);
 		}
 		Json->SetStringField(Row.Kind == TEXT("workflow") ? TEXT("workflow_id") : TEXT("model_id"), Row.Kind == TEXT("workflow") ? Row.WorkflowId : Row.ModelId);
+		if (!Row.TrainedModelId.IsEmpty())
+		{
+			// model_id is the base that ran it.
+			Json->SetStringField(TEXT("trained_model_id"), Row.TrainedModelId);
+		}
 		Json->SetNumberField(TEXT("progress"), FMath::RoundToDouble(Row.Progress * 100.0) / 100.0);
 		if (!Row.QuotedExact.IsEmpty())
 		{

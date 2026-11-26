@@ -49,9 +49,11 @@ enum class EScenarioConnection : uint8
 struct SCENARIOCORE_API FScenarioRunRequest
 {
 	EScenarioQuoteKind Kind = EScenarioQuoteKind::Model;
-	/** Model id, or workflow id for workflows. Prompt Spark uses the target model's id. */
+	/** Model id, or workflow id for workflows. Prompt Spark uses the target model's id. A trained model's id is resolved to its base (FScenarioSession::Resolve). */
 	FString TargetId;
 	FString TargetName;
+	/** Set once resolved: the trained model TargetId (its base) runs, carried in Parameters. */
+	FString TrainedModelId;
 	/** Lane id (image, 3d...), empty when unknown. */
 	FString Lane;
 	/** The payload as sent: run parameters, workflow inputs, or {prompt, images, num_results} for Prompt Spark. */
@@ -70,7 +72,8 @@ struct SCENARIOCORE_API FScenarioSessionConfig
 {
 	/** Folder for the job list, catalog cache, workspace and downloads (the project's Saved/Scenario). */
 	FString StateDir;
-	FString Endpoint;
+	/** Scenario's REST API address; empty for the default. */
+	FString ApiUrl;
 	TSharedPtr<IScenarioHttpTransport> Transport;
 	TSharedPtr<IScenarioCredentialStore> Store;
 	/** Tests inject a backend; sign-in is then the backend's business. */
@@ -122,6 +125,8 @@ public:
 	bool IsCredentialStoreSecure() const;
 	/** environment, store or empty: where the API key came from. */
 	const FString& GetApiKeySource() const { return ApiKeySource; }
+	/** The email of the Scenario account signed in with OAuth; empty with an API key or when unknown. */
+	FString GetAccountEmail() const;
 
 	void SignInWithBrowser(TFunction<void(const FString& Url)> OnUrl, FScenarioReplyCallback OnDone);
 	void SignInWithDeviceCode(TFunction<void(const FScenarioDeviceCode& Code)> OnCode, FScenarioReplyCallback OnDone);
@@ -154,6 +159,14 @@ public:
 	/** The fresh quote for this request, or null. */
 	const FScenarioQuote* QuoteFor(const FScenarioRunRequest& Request) const;
 	FString Fingerprint(const FScenarioRunRequest& Request) const;
+	/**
+	 * The request as it is priced and sent. A trained model (read by the
+	 * catalog's GetSchema) goes to its base: TargetId becomes the base,
+	 * TrainedModelId the trained model, and the parameters carry it
+	 * (ScenarioTrained::BaseParameters), so the fingerprint covers the trained
+	 * model and its weight. Any other request is returned as it is.
+	 */
+	FScenarioRunRequest Resolve(const FScenarioRunRequest& Request) const;
 
 	/**
 	 * Paid. QuoteId and ApprovedExact are required for agents (empty for the
@@ -220,6 +233,7 @@ private:
 	void LoadWorkspace();
 	void SaveWorkspace() const;
 	void ApplyWorkspaceToClient();
+	void PriceResolved(const FScenarioRunRequest& Request, TFunction<void(const TScenarioResult<FScenarioQuote>&)> OnDone);
 	void AfterJobUpdate(const FString& LocalId);
 	void PumpDownloads();
 	void StartFileDownload(const FString& LocalId, int32 FileIndex, int32 UrlAttempt);
@@ -229,7 +243,7 @@ private:
 	FScenarioSessionConfig Config;
 	TSharedPtr<IScenarioHttpTransport> Transport;
 	TSharedPtr<IScenarioCredentialStore> Store;
-	TSharedPtr<class FScenarioMcpClient> Client;
+	TSharedPtr<class FScenarioRestClient> Client;
 	TSharedPtr<IScenarioBackend> Backend;
 	TSharedPtr<FScenarioApi> ApiPtr;
 	TSharedPtr<FScenarioOAuth> OAuth;
