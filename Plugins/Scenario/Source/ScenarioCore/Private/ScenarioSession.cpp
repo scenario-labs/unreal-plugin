@@ -281,6 +281,11 @@ void FScenarioSession::UseApiKey(const FString& Key, const FString& Secret, cons
 	}
 }
 
+FString FScenarioSession::GetAccountEmail() const
+{
+	return AuthMode == EScenarioAuthMode::OAuth && OAuth.IsValid() ? OAuth->GetAccountEmail() : FString();
+}
+
 void FScenarioSession::UseOAuth()
 {
 	++AuthGeneration;
