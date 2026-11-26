@@ -23,6 +23,7 @@ namespace ScenarioRestTests
 		virtual bool HasCredentials() const override { return true; }
 		virtual FString AuthorizationHeader() const override { return TEXT("Bearer ") + Token; }
 		virtual bool NeedsWorkspaceArguments() const override { return bWorkspace; }
+		virtual uint32 GetSignInGeneration() const override { return Generation; }
 		virtual void Refresh(TFunction<void(bool)> OnDone) override
 		{
 			++Refreshes;
@@ -39,6 +40,7 @@ namespace ScenarioRestTests
 		bool bWorkspace = false;
 		bool bRefreshWorks = true;
 		int32 Refreshes = 0;
+		uint32 Generation = 0;
 		/** Runs while the token is renewed, before the request is resent. */
 		TFunction<void()> DuringRefresh;
 		FString Token = TEXT("old-token");
@@ -185,6 +187,19 @@ bool FScenarioRestReadRetryTest::RunTest(const FString& Parameters)
 	FRig Long;
 	Long.Transport->Responder = [](const FScenarioFakeRequest&) { return Status(429, TEXT("{\"reason\":\"slow\"}"), { { TEXT("Retry-After"), TEXT("120") } }); };
 	TestFalse(TEXT("long Retry-After stops"), Long.Send(FScenarioRequest::Get(TEXT("/jobs/job_1"))).bOk);
+
+	// The project changes during the back-off: the read is not retried in the new project.
+	FRig Moved(true);
+	Moved.Client->SetWorkspace(TEXT("team_1"), TEXT("proj_1"));
+	TSharedRef<FScenarioRestClient> MovedClient = Moved.Client;
+	Moved.Transport->Responder = [MovedClient](const FScenarioFakeRequest&)
+	{
+		MovedClient->SetWorkspace(TEXT("team_1"), TEXT("proj_2"));
+		return Status(503, TEXT("busy"));
+	};
+	const FScenarioReply Stopped = Moved.Send(FScenarioRequest::Get(TEXT("/assets")));
+	TestEqual(TEXT("stopped after a workspace change"), Stopped.Error.Kind, EScenarioErrorKind::Local);
+	TestEqual(TEXT("no retry in the new project"), Moved.Transport->Requests.Num(), 1);
 	TestEqual(TEXT("no retry past the cap"), Long.Transport->Requests.Num(), 1);
 
 	FRig DryRun;
@@ -275,6 +290,33 @@ bool FScenarioRestRefreshTest::RunTest(const FString& Parameters)
 	const FScenarioReply Stopped = Moved.Send(FRig::Paid());
 	TestTrue(TEXT("not resent after a workspace change"), !Stopped.bOk && Stopped.Error.bNotSent);
 	TestEqual(TEXT("only the refused request went out"), Moved.Transport->Requests.Num(), 1);
+
+	// Someone signs in again while the token is renewed: the paid call is not resent under that sign-in.
+	FRig Switched(true);
+	TSharedRef<FTestAuth> SwitchedAuth = Switched.Auth;
+	Switched.Auth->DuringRefresh = [SwitchedAuth]() { ++SwitchedAuth->Generation; };
+	Switched.Transport->Responder = [Denied](const FScenarioFakeRequest& Request)
+	{
+		return Request.Headers.FindRef(TEXT("Authorization")) == TEXT("Bearer fresh-token")
+			? Status(200, TEXT("{\"job\":{\"jobId\":\"job_4\",\"status\":\"queued\"}}"))
+			: Status(403, TEXT("{}"), Denied);
+	};
+	const FScenarioReply NotResent = Switched.Send(FRig::Paid());
+	TestTrue(TEXT("not resent after another sign-in"), !NotResent.bOk && NotResent.Error.bNotSent);
+	TestEqual(TEXT("only the first request went out"), Switched.Transport->Requests.Num(), 1);
+
+	// The sign-in changed before the refusal came back: no renewal for it.
+	FRig Replaced(true);
+	TSharedRef<FScenarioRestClient> ReplacedClient = Replaced.Client;
+	Replaced.Transport->Responder = [ReplacedClient](const FScenarioFakeRequest&)
+	{
+		ReplacedClient->SetAuth(MakeShared<FTestAuth>(true));
+		return Status(401, TEXT("{\"message\":\"Unauthorized\"}"));
+	};
+	const FScenarioReply Unrenewed = Replaced.Send(FRig::Paid());
+	TestEqual(TEXT("refusal returned as is"), Unrenewed.Error.Kind, EScenarioErrorKind::Auth);
+	TestEqual(TEXT("the old sign-in is not renewed"), Replaced.Auth->Refreshes, 0);
+	TestEqual(TEXT("nothing resent"), Replaced.Transport->Requests.Num(), 1);
 	return true;
 }
 
@@ -617,8 +659,10 @@ bool FScenarioApiUploadTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("an upload is sent once"), Backend->Calls.Last().Call, EScenarioCall::Paid);
 
 	// The complete races the upload's own state: a refusal saying so is harmless, the read decides.
-	Backend->On(TEXT("POST /uploads/*/action"), [](const FScenarioRequest&)
+	int32 Completes = 0;
+	Backend->On(TEXT("POST /uploads/*/action"), [&Completes](const FScenarioRequest&)
 	{
+		++Completes;
 		FScenarioReply Race = FScenarioReply::Fail(EScenarioErrorKind::Invalid, TEXT("Scenario refused the settings."), TEXT("Unable to complete upload with status: complete"));
 		Race.Error.bNotSent = true;
 		return Race;
@@ -630,8 +674,9 @@ bool FScenarioApiUploadTest::RunTest(const FString& Parameters)
 	});
 	const TScenarioResult<FString> Pending = Run<FString>([&Api](auto Done) { Api.UploadComplete(TEXT("upload_1"), Done); });
 	TestEqual(TEXT("complete is not the end: still importing"), Pending.Error.Kind, EScenarioErrorKind::Timeout);
-	const TScenarioResult<FString> Imported = Run<FString>([&Api](auto Done) { Api.UploadComplete(TEXT("upload_1"), Done); });
+	const TScenarioResult<FString> Imported = Run<FString>([&Api](auto Done) { Api.UploadStatus(TEXT("upload_1"), Done); });
 	TestTrue(TEXT("the asset once imported"), Imported.bOk && Imported.Value == TEXT("asset_new"));
+	TestEqual(TEXT("the complete is sent once, the upload is read again"), Completes, 1);
 
 	Backend->OnJson(TEXT("GET /uploads/*"), TEXT("{\"upload\":{\"status\":\"failed\",\"errorMessage\":\"Unsupported file\"}}"));
 	const TScenarioResult<FString> Failed = Run<FString>([&Api](auto Done) { Api.UploadComplete(TEXT("upload_1"), Done); });

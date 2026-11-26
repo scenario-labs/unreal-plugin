@@ -39,7 +39,8 @@ struct SCENARIOCORE_API FScenarioOAuthApp
 	/** Why the SCENARIO_OAUTH_* variables were refused; sign-in fails with it. Empty when usable. */
 	FString Problem;
 
-	FString MetadataUrl() const { return Issuer + TEXT("/.well-known/oauth-authorization-server"); }
+	/** RFC 8414: the well-known segment goes between the host and the issuer's path, if it has one. */
+	FString MetadataUrl() const;
 	/** Production, or the development instance named by both variables together (HTTPS issuer). */
 	static FScenarioOAuthApp Select(const FString& EnvIssuer, const FString& EnvClientId);
 	/** Select() with SCENARIO_OAUTH_ISSUER and SCENARIO_OAUTH_CLIENT_ID. */
@@ -74,6 +75,7 @@ public:
 	virtual FString AuthorizationHeader() const override;
 	virtual bool NeedsWorkspaceArguments() const override { return true; }
 	virtual void Refresh(TFunction<void(bool bRefreshed)> OnDone) override;
+	virtual uint32 GetSignInGeneration() const override { return SignInGeneration; }
 
 	/**
 	 * Loads the refresh token saved by an earlier session. True when one exists.

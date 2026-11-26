@@ -228,8 +228,10 @@ public:
 
 	/** Multipart upload: start (creates an upload, costs no CU), then PUT parts, then complete. */
 	void UploadStart(const FString& FileName, const FString& ContentType, const FString& Kind, int64 FileSize, TCallback<FScenarioUploadTicket> OnDone);
-	/** Asks Scenario to assemble the parts, then reads the upload once: the asset id, or Timeout while it is still importing. */
+	/** Asks Scenario to assemble the parts (sent once), then reads the upload once: the asset id, or Timeout while it is still importing. */
 	void UploadComplete(const FString& UploadId, TCallback<FString> OnDone);
+	/** Reads the upload once, as UploadComplete does after its request: a read, so it can be repeated while the import runs. */
+	void UploadStatus(const FString& UploadId, TCallback<FString> OnDone);
 
 	/** Finds the CU price in a dry-run reply, at the top level or one level down. */
 	static bool FindEstimate(const TSharedPtr<FJsonObject>& Value, FScenarioEstimate& Out);

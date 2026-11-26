@@ -44,6 +44,39 @@ namespace
 		}
 		return FString();
 	}
+
+	/** Reads an upload once: the asset id once imported, the import's failure, or Timeout while it is still importing. A read, so it can be repeated. */
+	void ReadUpload(const TSharedRef<IScenarioBackend>& Backend, const FString& UploadId, TFunction<void(const TScenarioResult<FString>&)> OnDone)
+	{
+		Backend->Send(FScenarioRequest::Get(TEXT("/uploads/") + FScenarioRequest::Segment(UploadId)), [OnDone](const FScenarioReply& Reply)
+		{
+			const TSharedPtr<FJsonObject> Upload = Reply.bOk ? ScenarioJson::GetObject(Reply.Value, TEXT("upload")) : nullptr;
+			const FString AssetId = ScenarioJson::GetString(Upload, TEXT("entityId"));
+			const FString Status = ScenarioJson::GetString(Upload, TEXT("status"));
+			if (!AssetId.IsEmpty())
+			{
+				OnDone(TScenarioResult<FString>::Ok(AssetId));
+				return;
+			}
+			if (Status == TEXT("failed"))
+			{
+				const FString Reason = ScenarioJson::GetString(Upload, TEXT("errorMessage"), TEXT("no reason given"));
+				OnDone(TScenarioResult<FString>::Fail(EScenarioErrorKind::Scenario, FString::Printf(TEXT("Scenario could not import the file: %s."), *Reason)));
+				return;
+			}
+			if (!Reply.bOk && Reply.Error.Kind != EScenarioErrorKind::NotFound)
+			{
+				OnDone(FailFrom<FString>(Reply));
+				return;
+			}
+			// Not imported yet (or not readable yet right after the complete): the uploader reads again.
+			FScenarioError Error;
+			Error.Kind = EScenarioErrorKind::Timeout;
+			Error.Message = TEXT("Scenario is still processing the upload.");
+			Error.Detail = Status;
+			OnDone(TScenarioResult<FString>::Fail(Error));
+		});
+	}
 }
 
 EScenarioJobPhase FScenarioJobInfo::PhaseFromStatus(const FString& Status)
@@ -1059,7 +1092,7 @@ void FScenarioApi::UploadComplete(const FString& UploadId, TCallback<FString> On
 	TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
 	Body->SetStringField(TEXT("action"), TEXT("complete"));
 	TWeakPtr<IScenarioBackend> WeakBackend = BackendRef;
-	BackendRef->Send(FScenarioRequest::Post(Path + TEXT("/action"), Body, EScenarioCall::Paid), [WeakBackend, Path, OnDone](const FScenarioReply& Completed)
+	BackendRef->Send(FScenarioRequest::Post(Path + TEXT("/action"), Body, EScenarioCall::Paid), [WeakBackend, UploadId, OnDone](const FScenarioReply& Completed)
 	{
 		// A second complete, or one read before the upload is visible, is refused harmlessly: read on.
 		const FString Said = (Completed.Error.Detail + TEXT(" ") + Completed.Error.Message).ToLower();
@@ -1068,38 +1101,14 @@ void FScenarioApi::UploadComplete(const FString& UploadId, TCallback<FString> On
 			OnDone(FailFrom<FString>(Completed));
 			return;
 		}
-		const TSharedPtr<IScenarioBackend> Backend = WeakBackend.Pin();
-		if (!Backend.IsValid())
+		if (const TSharedPtr<IScenarioBackend> Backend = WeakBackend.Pin())
 		{
-			return;
+			ReadUpload(Backend.ToSharedRef(), UploadId, OnDone);
 		}
-		Backend->Send(FScenarioRequest::Get(Path), [OnDone](const FScenarioReply& Reply)
-		{
-			const TSharedPtr<FJsonObject> Upload = Reply.bOk ? ScenarioJson::GetObject(Reply.Value, TEXT("upload")) : nullptr;
-			const FString AssetId = ScenarioJson::GetString(Upload, TEXT("entityId"));
-			const FString Status = ScenarioJson::GetString(Upload, TEXT("status"));
-			if (!AssetId.IsEmpty())
-			{
-				OnDone(TScenarioResult<FString>::Ok(AssetId));
-				return;
-			}
-			if (Status == TEXT("failed"))
-			{
-				const FString Reason = ScenarioJson::GetString(Upload, TEXT("errorMessage"), TEXT("no reason given"));
-				OnDone(TScenarioResult<FString>::Fail(EScenarioErrorKind::Scenario, FString::Printf(TEXT("Scenario could not import the file: %s."), *Reason)));
-				return;
-			}
-			if (!Reply.bOk && Reply.Error.Kind != EScenarioErrorKind::NotFound)
-			{
-				OnDone(FailFrom<FString>(Reply));
-				return;
-			}
-			// Not imported yet (or not readable yet right after the complete): the uploader asks again.
-			FScenarioError Error;
-			Error.Kind = EScenarioErrorKind::Timeout;
-			Error.Message = TEXT("Scenario is still processing the upload.");
-			Error.Detail = Status;
-			OnDone(TScenarioResult<FString>::Fail(Error));
-		});
 	});
+}
+
+void FScenarioApi::UploadStatus(const FString& UploadId, TCallback<FString> OnDone)
+{
+	ReadUpload(BackendRef, UploadId, OnDone);
 }
