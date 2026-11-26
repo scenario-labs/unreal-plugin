@@ -87,7 +87,7 @@ void SScenarioWorkflowsPage::Refresh()
 	for (const FScenarioWorkflowItem& Item : Model->GetWorkflows())
 	{
 		if (Item.bTeam == bTeam && (Query.IsEmpty() || Item.Name.Contains(Query) || Item.Description.Contains(Query)
-			|| Item.Tags.ContainsByPredicate([this](const FString& Tag) { return Tag.Contains(Query); })))
+			|| Item.Tags.ContainsByPredicate([this](const FString& ItemTag) { return ItemTag.Contains(Query); })))
 		{
 			Matches.Add(&Item);
 		}

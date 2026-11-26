@@ -205,10 +205,10 @@ void FScenarioRestClient::Send(const FScenarioRequest& Request, FScenarioReplyCa
 
 void FScenarioRestClient::Attempt(const FScenarioRequest& Request, const FString& BoundUrl, int32 AttemptIndex, int32 Attempts, FScenarioReplyCallback OnDone)
 {
-	TWeakPtr<FScenarioRestClient> WeakThis = AsShared();
-	SendOnce(Request, true, [WeakThis, Request, BoundUrl, AttemptIndex, Attempts, OnDone](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioRestClient> WeakSelf = AsShared();
+	SendOnce(Request, true, [WeakSelf, Request, BoundUrl, AttemptIndex, Attempts, OnDone](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioRestClient> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioRestClient> This = WeakSelf.Pin();
 		if (Reply.bOk)
 		{
 			if (Request.Call == EScenarioCall::DryRun)
@@ -237,9 +237,9 @@ void FScenarioRestClient::Attempt(const FScenarioRequest& Request, const FString
 			if (Delay >= 0.0)
 			{
 				UE_LOG(LogScenario, Verbose, TEXT("Retrying %s %s in %.1f s (%s)."), *Request.Verb, *Request.Path, Delay, LexToString(Reply.Error.Kind));
-				This->Transport->Delay(static_cast<float>(Delay), [WeakThis, Request, BoundUrl, AttemptIndex, Attempts, OnDone]()
+				This->Transport->Delay(static_cast<float>(Delay), [WeakSelf, Request, BoundUrl, AttemptIndex, Attempts, OnDone]()
 				{
-					if (const TSharedPtr<FScenarioRestClient> Again = WeakThis.Pin())
+					if (const TSharedPtr<FScenarioRestClient> Again = WeakSelf.Pin())
 					{
 						if (!Again->UrlFor(Request).Equals(BoundUrl, ESearchCase::CaseSensitive))
 						{
@@ -280,7 +280,7 @@ void FScenarioRestClient::SendOnce(const FScenarioRequest& Request, bool bAllowR
 		Headers.Add(TEXT("Content-Type"), TEXT("application/json"));
 	}
 
-	TWeakPtr<FScenarioRestClient> WeakThis = AsShared();
+	TWeakPtr<FScenarioRestClient> WeakSelf = AsShared();
 	const FString Url = UrlFor(Request);
 	// The sign-in that sends the request: a renewal resends it only for that one.
 	const TWeakPtr<IScenarioAuthProvider> SentAuth = Auth;
@@ -290,18 +290,18 @@ void FScenarioRestClient::SendOnce(const FScenarioRequest& Request, bool bAllowR
 		return Client.Auth.IsValid() && Client.Auth == SentAuth.Pin() && Client.Auth->GetSignInGeneration() == SentGeneration;
 	};
 	Transport->Send(Request.Verb, Url, Headers, Body, FMath::Clamp(Request.TimeoutSeconds, 1.0f, 180.0f),
-		[WeakThis, Request, Url, bAllowRefresh, SameSignIn, OnDone](const FScenarioHttpResponse& Response)
+		[WeakSelf, Request, Url, bAllowRefresh, SameSignIn, OnDone](const FScenarioHttpResponse& Response)
 	{
-		const TSharedPtr<FScenarioRestClient> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioRestClient> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
 		}
 		if (bAllowRefresh && IsGatewayRefusal(Response) && SameSignIn(*This))
 		{
-			This->Auth->Refresh([WeakThis, Request, Url, Response, SameSignIn, OnDone](bool bRefreshed)
+			This->Auth->Refresh([WeakSelf, Request, Url, Response, SameSignIn, OnDone](bool bRefreshed)
 			{
-				const TSharedPtr<FScenarioRestClient> Self = WeakThis.Pin();
+				const TSharedPtr<FScenarioRestClient> Self = WeakSelf.Pin();
 				if (!Self.IsValid())
 				{
 					return;
