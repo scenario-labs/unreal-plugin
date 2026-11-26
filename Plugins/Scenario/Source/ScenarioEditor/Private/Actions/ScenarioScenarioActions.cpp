@@ -23,10 +23,17 @@ namespace
 {
 	using FRunFn = TFunction<void(const TSharedPtr<FJsonObject>&, const FScenarioCaller&, FScenarioActionDone)>;
 
-	FScenarioAction Make(const FString& Name, EScenarioActionKind Kind, const FString& Description, const TSharedPtr<FJsonObject>& Schema, FRunFn Run)
+	FScenarioAction Make(const FString& Name, const FString& Title, EScenarioActionKind Kind, const FString& Description, const TSharedPtr<FJsonObject>& Schema, FRunFn Run)
 	{
+		// Listed in the agent server's catalog instead of tools/list.
+		static const TSet<FString> CatalogOnly = { TEXT("approve_prompt"), TEXT("estimate_prompt"), TEXT("list_assets"), TEXT("list_collections"), TEXT("list_generations"), TEXT("read_prompt_result"), TEXT("recover_cloud_job"), TEXT("search_assets") };
+		// The actions that never reach Scenario.
+		static const TSet<FString> LocalOnly = { TEXT("capture_reference"), TEXT("list_local_jobs"), TEXT("read_prompt_result"), TEXT("scenario_status") };
 		FScenarioAction Action;
 		Action.Name = Name;
+		Action.Title = Title;
+		Action.bCatalogOnly = CatalogOnly.Contains(Name);
+		Action.bOpenWorld = !LocalOnly.Contains(Name);
 		Action.Kind = Kind;
 		Action.Description = Description;
 		Action.InputSchema = Schema;
@@ -465,8 +472,8 @@ void FScenarioActions::RegisterScenarioActions()
 	}();
 
 	// scenario_status
-	Register(Make(TEXT("scenario_status"), EScenarioActionKind::Read,
-		TEXT("Sign-in state, Scenario team and project, plugin and engine versions, permissions in force, and job counts. Call first."),
+	Register(Make(TEXT("scenario_status"), TEXT("Get Status"), EScenarioActionKind::Read,
+		TEXT("Sign-in state, Scenario team and project, plugin and engine versions, permissions in force, and job counts. Call it first.\nReturns: { signed_in, ready, auth, workspace: { team, project }, permissions, spending_disabled, active_jobs, unresolved_jobs, plugin_version, engine_version, last_error }."),
 		Object({}),
 		[this](const TSharedPtr<FJsonObject>&, const FScenarioCaller& Caller, FScenarioActionDone Done)
 		{
@@ -519,15 +526,15 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// list_models
-	Register(Make(TEXT("list_models"), EScenarioActionKind::Read,
-		TEXT("Scenario models filtered by lane, modality, capability chip or text. The lane's picks come first. At most 40 rows."),
+	Register(Make(TEXT("list_models"), TEXT("List Models"), EScenarioActionKind::Read,
+		TEXT("Scenario models filtered by lane, modality, capability chip or text. The lane's picks come first. At most 40 rows. Use model_schema next for a model's inputs.\nReturns: { models: [{ id, name, modality, does, provider, tags, about, replaced_by }], matched, note }."),
 		Object({
 			{ TEXT("lane"), TEXT("string"), TEXT("Plugin lane; its picks come first."), FString(), Lanes },
-			{ TEXT("modality"), TEXT("string"), FString(), FString(), { TEXT("image"), TEXT("video"), TEXT("3d"), TEXT("audio") } },
+			{ TEXT("modality"), TEXT("string"), TEXT("Output kind: image, video, 3d or audio."), FString(), { TEXT("image"), TEXT("video"), TEXT("3d"), TEXT("audio") } },
 			{ TEXT("chip"), TEXT("string"), TEXT("Capability as in the web app: Generate, Edit, Upscale, Remove background, Texture...") },
 			{ TEXT("query"), TEXT("string"), TEXT("Text search on name, provider and description.") },
-			{ TEXT("source"), TEXT("string"), FString(), FString(), { TEXT("all"), TEXT("catalog"), TEXT("trained") } },
-			{ TEXT("include_legacy"), TEXT("boolean") },
+			{ TEXT("source"), TEXT("string"), TEXT("all (default), catalog (Scenario's models) or trained (the team's own)."), FString(), { TEXT("all"), TEXT("catalog"), TEXT("trained") } },
+			{ TEXT("include_legacy"), TEXT("boolean"), TEXT("Also list models Scenario has replaced with newer ones. Default false.") },
 			{ TEXT("limit"), TEXT("integer"), TEXT("Default 20, max 40.") },
 		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
@@ -617,9 +624,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// model_schema
-	Register(Make(TEXT("model_schema"), EScenarioActionKind::Read,
-		TEXT("A model's parameters: types, defaults, options, limits, which change the price, and file inputs (they take Scenario asset ids)."),
-		Object({ { TEXT("model_id"), TEXT("string") } }, { TEXT("model_id") }),
+	Register(Make(TEXT("model_schema"), TEXT("Get Model Inputs"), EScenarioActionKind::Read,
+		TEXT("A model's parameters: types, defaults, options, limits, which change the price, and file inputs (they take Scenario asset ids).\nReturns: { model_id, lane, the parameters, plugin_defaults, unreal_ready_prompt, files }."),
+		Object({ { TEXT("model_id"), TEXT("string"), TEXT("Model id from list_models.") } }, { TEXT("model_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -677,10 +684,10 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// estimate_cost
-	Register(Make(TEXT("estimate_cost"), EScenarioActionKind::Read,
-		TEXT("Free price check of a model run (dry run). Returns quote_id and cu_cost_exact; generate needs both. Quotes are single use and last 120 s."),
+	Register(Make(TEXT("estimate_cost"), TEXT("Check Price"), EScenarioActionKind::Read,
+		TEXT("Free price check of a model run (a dry run: nothing is charged). generate needs its quote_id and cu_cost_exact. Quotes are single use and last 120 s.\nReturns: { quote_id, cu_cost_exact, cu_cost, discount_cu, expires_in_seconds, priced_parameters, warnings, next }."),
 		Object({
-			{ TEXT("model_id"), TEXT("string") },
+			{ TEXT("model_id"), TEXT("string"), TEXT("Model id from list_models.") },
 			{ TEXT("parameters"), TEXT("object"), TEXT("Values by parameter name (model_schema). Plugin defaults fill the rest.") },
 			{ TEXT("lane"), TEXT("string"), TEXT("Where results land; inferred from the model when omitted."), FString(), Lanes },
 		}, { TEXT("model_id") }),
@@ -694,13 +701,13 @@ void FScenarioActions::RegisterScenarioActions()
 
 	// generate
 	{
-		FScenarioAction Action = Make(TEXT("generate"), EScenarioActionKind::Spend,
-			TEXT("SPENDS Creative Units. Runs the request priced by estimate_cost. Needs quote_id and approved_cost equal to its cu_cost_exact. Returns job_id; then wait_for_job."),
+		FScenarioAction Action = Make(TEXT("generate"), TEXT("Generate"), EScenarioActionKind::Spend,
+			TEXT("SPENDS Creative Units. Runs the request priced by estimate_cost. Needs quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried: when its outcome is unknown, use recover_local_job, never call again.\nReturns: { job_id, next }, or { approval_id, state: pending_approval } while the person approves the spend; then wait_for_job."),
 			Object({
-				{ TEXT("quote_id"), TEXT("string") },
+				{ TEXT("quote_id"), TEXT("string"), TEXT("quote_id from estimate_cost: single use, valid 120 s.") },
 				{ TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") },
 				{ TEXT("destination"), TEXT("string"), TEXT("Content folder for the import, for example /Game/Props. Default: the plugin's folder.") },
-				{ TEXT("lane"), TEXT("string"), FString(), FString(), Lanes },
+				{ TEXT("lane"), TEXT("string"), TEXT("Where the results land in Unreal: image, 3d, material, environment, audio, video or render. Inferred from the model when omitted."), FString(), Lanes },
 			}, { TEXT("quote_id"), TEXT("approved_cost") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{
@@ -711,9 +718,9 @@ void FScenarioActions::RegisterScenarioActions()
 	}
 
 	// job_status
-	Register(Make(TEXT("job_status"), EScenarioActionKind::Read,
-		TEXT("State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too."),
-		Object({ { TEXT("job_id"), TEXT("string") }, { TEXT("job_ids"), TEXT("array") } }),
+	Register(Make(TEXT("job_status"), TEXT("Get Job Status"), EScenarioActionKind::Read,
+		TEXT("State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too.\nReturns: for one id, the job { job_id, state, progress, quoted_cu, charged_cu, files: [{ index, asset_id, role, downloaded, imported_objects }], error, next }, or { approval_id, state, cu_cost_exact } for a spend still waiting; for several, { jobs: [...] } of those."),
+		Object({ { TEXT("job_id"), TEXT("string"), TEXT("Job id from generate, run_workflow or list_local_jobs, or an approval_id.") }, { TEXT("job_ids"), TEXT("array"), TEXT("Several job ids at once.") } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -758,9 +765,9 @@ void FScenarioActions::RegisterScenarioActions()
 
 	// wait_for_job
 	{
-		FScenarioAction Action = Make(TEXT("wait_for_job"), EScenarioActionKind::Read,
-			TEXT("Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s). Returns job_status, with still_running when it is not done yet."),
-			Object({ { TEXT("job_id"), TEXT("string") }, { TEXT("timeout_seconds"), TEXT("integer") } }, { TEXT("job_id") }),
+		FScenarioAction Action = Make(TEXT("wait_for_job"), TEXT("Wait for Job"), EScenarioActionKind::Read,
+			TEXT("Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s).\nReturns: the one job (or approval) as job_status returns it for one id, with still_running and next when it is not done yet."),
+			Object({ { TEXT("job_id"), TEXT("string"), TEXT("Job id from generate or run_workflow.") }, { TEXT("timeout_seconds"), TEXT("integer"), TEXT("Seconds to wait. Default 45, max 160.") } }, { TEXT("job_id") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 			{
 				FScenarioActionResult Fail;
@@ -828,10 +835,10 @@ void FScenarioActions::RegisterScenarioActions()
 	}
 
 	// list_local_jobs
-	Register(Make(TEXT("list_local_jobs"), EScenarioActionKind::Read,
-		TEXT("This project's jobs, newest first: every request made from this editor by people, agents and scripts. Survives restarts."),
+	Register(Make(TEXT("list_local_jobs"), TEXT("List Local Jobs"), EScenarioActionKind::Read,
+		TEXT("This project's jobs, newest first: every request made from this editor by people, agents and scripts. Survives restarts.\nReturns: { jobs: [...] }, each as job_status describes it."),
 		Object({
-			{ TEXT("state"), TEXT("string"), FString(), FString(), { TEXT("all"), TEXT("active"), TEXT("unresolved"), TEXT("finished") } },
+			{ TEXT("state"), TEXT("string"), TEXT("all (default), active, unresolved (outcome unknown) or finished."), FString(), { TEXT("all"), TEXT("active"), TEXT("unresolved"), TEXT("finished") } },
 			{ TEXT("limit"), TEXT("integer"), TEXT("Default 20, max 50.") },
 		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
@@ -864,8 +871,8 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// list_generations
-	Register(Make(TEXT("list_generations"), EScenarioActionKind::Read,
-		TEXT("Recent jobs on Scenario for this project, from any tool, marked when they are already in this Unreal project."),
+	Register(Make(TEXT("list_generations"), TEXT("List Scenario Jobs"), EScenarioActionKind::Read,
+		TEXT("Recent jobs on Scenario for this project, from any tool, marked when they are already in this Unreal project.\nReturns: { generations: [{ scenario_job_id, type, status, model_id, workflow_id, assets, charged_cu, created_at, job_id }], note }; job_id is set when the job is in this project."),
 		Object({ { TEXT("limit"), TEXT("integer"), TEXT("Default 20, max 50.") } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -922,10 +929,10 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// list_workflows
-	Register(Make(TEXT("list_workflows"), EScenarioActionKind::Read,
-		TEXT("Ready workflows: the team's own, Scenario's featured ones, or both."),
+	Register(Make(TEXT("list_workflows"), TEXT("List Workflows"), EScenarioActionKind::Read,
+		TEXT("Ready workflows: the team's own, Scenario's featured ones, or both.\nReturns: { workflows: [{ workflow_id, name, about, inputs, source }] }."),
 		Object({
-			{ TEXT("source"), TEXT("string"), FString(), FString(), { TEXT("all"), TEXT("team"), TEXT("featured") } },
+			{ TEXT("source"), TEXT("string"), TEXT("team, featured (Scenario's) or all (default)."), FString(), { TEXT("all"), TEXT("team"), TEXT("featured") } },
 			{ TEXT("limit"), TEXT("integer"), TEXT("Per source. Default 20, max 50.") },
 		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
@@ -996,9 +1003,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// workflow_schema
-	Register(Make(TEXT("workflow_schema"), EScenarioActionKind::Read,
-		TEXT("A workflow's inputs, in the same form as model_schema."),
-		Object({ { TEXT("workflow_id"), TEXT("string") } }, { TEXT("workflow_id") }),
+	Register(Make(TEXT("workflow_schema"), TEXT("Get Workflow Inputs"), EScenarioActionKind::Read,
+		TEXT("A workflow's inputs, in the same form as model_schema.\nReturns: { name, about } and the inputs as model_schema gives a model's parameters."),
+		Object({ { TEXT("workflow_id"), TEXT("string"), TEXT("Workflow id from list_workflows.") } }, { TEXT("workflow_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -1023,9 +1030,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// estimate_workflow
-	Register(Make(TEXT("estimate_workflow"), EScenarioActionKind::Read,
-		TEXT("Free price check of a workflow run. Returns quote_id and cu_cost_exact for run_workflow."),
-		Object({ { TEXT("workflow_id"), TEXT("string") }, { TEXT("inputs"), TEXT("object"), TEXT("Values by input name (workflow_schema).") } }, { TEXT("workflow_id") }),
+	Register(Make(TEXT("estimate_workflow"), TEXT("Check Workflow Price"), EScenarioActionKind::Read,
+		TEXT("Free price check of a workflow run (a dry run: nothing is charged). run_workflow needs its quote_id and cu_cost_exact. Quotes are single use and last 120 s.\nReturns: { quote_id, cu_cost_exact, cu_cost, expires_in_seconds, warnings, next }."),
+		Object({ { TEXT("workflow_id"), TEXT("string"), TEXT("Workflow id from list_workflows.") }, { TEXT("inputs"), TEXT("object"), TEXT("Values by input name (workflow_schema).") } }, { TEXT("workflow_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -1071,12 +1078,12 @@ void FScenarioActions::RegisterScenarioActions()
 
 	// run_workflow
 	{
-		FScenarioAction Action = Make(TEXT("run_workflow"), EScenarioActionKind::Spend,
-			TEXT("SPENDS Creative Units. Runs the workflow priced by estimate_workflow, with its quote_id and approved_cost. Returns job_id."),
+		FScenarioAction Action = Make(TEXT("run_workflow"), TEXT("Run Workflow"), EScenarioActionKind::Spend,
+			TEXT("SPENDS Creative Units. Runs the workflow priced by estimate_workflow, with its quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried: when its outcome is unknown, use recover_local_job.\nReturns: { job_id, next }, or { approval_id, state: pending_approval } while the person approves the spend."),
 			Object({
-				{ TEXT("quote_id"), TEXT("string") },
-				{ TEXT("approved_cost"), TEXT("string") },
-				{ TEXT("destination"), TEXT("string") },
+				{ TEXT("quote_id"), TEXT("string"), TEXT("quote_id from estimate_workflow: single use, valid 120 s.") },
+				{ TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") },
+				{ TEXT("destination"), TEXT("string"), TEXT("Content folder for the import, for example /Game/Props. Default: the plugin's folder.") },
 				{ TEXT("workflow_name"), TEXT("string"), TEXT("For the job list.") },
 			}, { TEXT("quote_id"), TEXT("approved_cost") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
@@ -1088,24 +1095,24 @@ void FScenarioActions::RegisterScenarioActions()
 	}
 
 	// list_assets, search_assets
-	Register(Make(TEXT("list_assets"), EScenarioActionKind::Read,
-		TEXT("Assets in the Scenario project, newest first. Their ids go straight into file fields."),
+	Register(Make(TEXT("list_assets"), TEXT("List Scenario Assets"), EScenarioActionKind::Read,
+		TEXT("Assets in the Scenario project, newest first. Their ids go straight into file fields.\nReturns: { assets: [{ asset_id, kind, type, name, size, model_id, prompt, scenario_job_id, job_id }] }."),
 		Object({
-			{ TEXT("kind"), TEXT("string"), FString(), FString(), { TEXT("image"), TEXT("video"), TEXT("3d"), TEXT("audio") } },
-			{ TEXT("limit"), TEXT("integer") },
-			{ TEXT("offset"), TEXT("integer") },
+			{ TEXT("kind"), TEXT("string"), TEXT("image, video, 3d or audio; default all."), FString(), { TEXT("image"), TEXT("video"), TEXT("3d"), TEXT("audio") } },
+			{ TEXT("limit"), TEXT("integer"), TEXT("Rows to return. Default 20, max 50.") },
+			{ TEXT("offset"), TEXT("integer"), TEXT("Rows to skip, for the next page.") },
 		}),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			SearchLibrary(Args, FString(), Done);
 		}));
-	Register(Make(TEXT("search_assets"), EScenarioActionKind::Read,
-		TEXT("Text search in the Scenario project's assets."),
+	Register(Make(TEXT("search_assets"), TEXT("Search Scenario Assets"), EScenarioActionKind::Read,
+		TEXT("Text search in the Scenario project's assets. Their ids go straight into file fields.\nReturns: { assets: [...] }, each as list_assets describes it."),
 		Object({
-			{ TEXT("query"), TEXT("string") },
-			{ TEXT("kind"), TEXT("string"), FString(), FString(), { TEXT("image"), TEXT("video"), TEXT("3d"), TEXT("audio") } },
-			{ TEXT("limit"), TEXT("integer") },
-			{ TEXT("offset"), TEXT("integer") },
+			{ TEXT("query"), TEXT("string"), TEXT("Words to look for.") },
+			{ TEXT("kind"), TEXT("string"), TEXT("image, video, 3d or audio; default all."), FString(), { TEXT("image"), TEXT("video"), TEXT("3d"), TEXT("audio") } },
+			{ TEXT("limit"), TEXT("integer"), TEXT("Rows to return. Default 20, max 50.") },
+			{ TEXT("offset"), TEXT("integer"), TEXT("Rows to skip, for the next page.") },
 		}, { TEXT("query") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -1113,8 +1120,8 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// list_collections
-	Register(Make(TEXT("list_collections"), EScenarioActionKind::Read,
-		TEXT("Collections in the Scenario project."),
+	Register(Make(TEXT("list_collections"), TEXT("List Scenario Collections"), EScenarioActionKind::Read,
+		TEXT("Collections in the Scenario project.\nReturns: the collections as Scenario lists them, each with its id and name."),
 		Object({}),
 		[](const TSharedPtr<FJsonObject>&, const FScenarioCaller&, FScenarioActionDone Done)
 		{
@@ -1132,11 +1139,11 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// estimate_prompt
-	Register(Make(TEXT("estimate_prompt"), EScenarioActionKind::Read,
-		TEXT("Free price of Prompt Spark: prompt variants written for a target model, optionally from reference images. Returns a quote for approve_prompt."),
+	Register(Make(TEXT("estimate_prompt"), TEXT("Check Prompt Spark Price"), EScenarioActionKind::Read,
+		TEXT("Free price of Prompt Spark: prompt variants written for a target model, optionally from reference images. approve_prompt needs its quote_id and cu_cost_exact.\nReturns: { quote_id, cu_cost_exact, cu_cost, expires_in_seconds, next }."),
 		Object({
 			{ TEXT("model_id"), TEXT("string"), TEXT("The model the prompt is for.") },
-			{ TEXT("prompt"), TEXT("string") },
+			{ TEXT("prompt"), TEXT("string"), TEXT("The idea to write prompts from.") },
 			{ TEXT("image_ids"), TEXT("array"), TEXT("Scenario asset ids of reference images.") },
 			{ TEXT("num_results"), TEXT("integer"), TEXT("1 to 4, default 3.") },
 		}, { TEXT("model_id"), TEXT("prompt") }),
@@ -1169,9 +1176,9 @@ void FScenarioActions::RegisterScenarioActions()
 
 	// approve_prompt
 	{
-		FScenarioAction Action = Make(TEXT("approve_prompt"), EScenarioActionKind::Spend,
-			TEXT("SPENDS Creative Units. Runs the Prompt Spark call priced by estimate_prompt. Returns job_id for read_prompt_result."),
-			Object({ { TEXT("quote_id"), TEXT("string") }, { TEXT("approved_cost"), TEXT("string") } }, { TEXT("quote_id"), TEXT("approved_cost") }),
+		FScenarioAction Action = Make(TEXT("approve_prompt"), TEXT("Run Prompt Spark"), EScenarioActionKind::Spend,
+			TEXT("SPENDS Creative Units. Runs the Prompt Spark call priced by estimate_prompt, with its quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried.\nReturns: { job_id, next } for read_prompt_result, or { approval_id, state: pending_approval } while the person approves the spend."),
+			Object({ { TEXT("quote_id"), TEXT("string"), TEXT("quote_id from estimate_prompt: single use, valid 120 s.") }, { TEXT("approved_cost"), TEXT("string"), TEXT("The quote's cu_cost_exact, verbatim.") } }, { TEXT("quote_id"), TEXT("approved_cost") }),
 			[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 			{
 				SpendQuote(EScenarioQuoteKind::PromptSpark, Args, Caller, Done);
@@ -1181,9 +1188,9 @@ void FScenarioActions::RegisterScenarioActions()
 	}
 
 	// read_prompt_result
-	Register(Make(TEXT("read_prompt_result"), EScenarioActionKind::Read,
-		TEXT("The prompt variants of a Prompt Spark job (this editor session only)."),
-		Object({ { TEXT("job_id"), TEXT("string") } }, { TEXT("job_id") }),
+	Register(Make(TEXT("read_prompt_result"), TEXT("Read Prompt Spark Result"), EScenarioActionKind::Read,
+		TEXT("The prompt variants of a Prompt Spark job (this editor session only).\nReturns: the prompt variants Scenario wrote."),
+		Object({ { TEXT("job_id"), TEXT("string"), TEXT("job_id from approve_prompt.") } }, { TEXT("job_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -1204,10 +1211,10 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// capture_reference
-	Register(Make(TEXT("capture_reference"), EScenarioActionKind::Editor,
-		TEXT("Captures the level viewport to a PNG, or exports actors to a GLB, as a local reference for upload_reference. Writes only under Saved/Scenario."),
+	Register(Make(TEXT("capture_reference"), TEXT("Capture Reference"), EScenarioActionKind::Editor,
+		TEXT("Captures the level viewport to a PNG, or exports actors to a GLB, as a local reference for upload_reference. Writes only under Saved/Scenario.\nReturns: { reference_id, kind, file, captured, next }."),
 		Object({
-			{ TEXT("source"), TEXT("string"), FString(), FString(), { TEXT("viewport"), TEXT("actors") } },
+			{ TEXT("source"), TEXT("string"), TEXT("viewport (default): a PNG of the level viewport; actors: a GLB of the actors."), FString(), { TEXT("viewport"), TEXT("actors") } },
 			{ TEXT("actor_ids"), TEXT("array"), TEXT("Names or labels; default the selection.") },
 			{ TEXT("width"), TEXT("integer"), TEXT("Viewport capture, default 1280.") },
 			{ TEXT("height"), TEXT("integer"), TEXT("Viewport capture, default 720.") },
@@ -1263,9 +1270,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// upload_reference
-	Register(Make(TEXT("upload_reference"), EScenarioActionKind::Spend,
-		TEXT("Uploads a captured reference (reference_id) or a file the person chose in the editor to Scenario. Free. Returns upload_id; poll reference_upload_status."),
-		Object({ { TEXT("reference_id"), TEXT("string") }, { TEXT("path"), TEXT("string"), TEXT("Project-relative path of a file the plugin produced or the person chose.") } }),
+	Register(Make(TEXT("upload_reference"), TEXT("Upload Reference"), EScenarioActionKind::Spend,
+		TEXT("Uploads a captured reference (reference_id) or a file the person chose in the editor to Scenario. Free.\nReturns: { upload_id, state }; poll reference_upload_status for the asset_id."),
+		Object({ { TEXT("reference_id"), TEXT("string"), TEXT("reference_id from capture_reference.") }, { TEXT("path"), TEXT("string"), TEXT("Project-relative path of a file the plugin produced or the person chose.") } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller& Caller, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -1335,9 +1342,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// reference_upload_status
-	Register(Make(TEXT("reference_upload_status"), EScenarioActionKind::Read,
-		TEXT("State of an upload_reference call: uploading, imported (with asset_id) or failed."),
-		Object({ { TEXT("upload_id"), TEXT("string") } }, { TEXT("upload_id") }),
+	Register(Make(TEXT("reference_upload_status"), TEXT("Get Upload Status"), EScenarioActionKind::Read,
+		TEXT("State of an upload_reference call.\nReturns: { upload_id, state (uploading, imported or failed), progress, asset_id once imported, error }."),
+		Object({ { TEXT("upload_id"), TEXT("string"), TEXT("upload_id from upload_reference.") } }, { TEXT("upload_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			const FUpload* Upload = Uploads().Find(Str(Args, TEXT("upload_id")));
@@ -1362,9 +1369,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// recover_local_job
-	Register(Make(TEXT("recover_local_job"), EScenarioActionKind::Editor,
-		TEXT("Resolves jobs whose outcome is unknown: \"check\" matches them against Scenario's job list; \"dismiss\" hides a finished job. Only the person can mark a request as not sent."),
-		Object({ { TEXT("job_id"), TEXT("string") }, { TEXT("action"), TEXT("string"), FString(), FString(), { TEXT("check"), TEXT("dismiss") } } }),
+	Register(Make(TEXT("recover_local_job"), TEXT("Recover Local Job"), EScenarioActionKind::Editor,
+		TEXT("Resolves jobs whose outcome is unknown: \"check\" matches them against Scenario's job list; \"dismiss\" hides a finished job. Only the person can mark a request as not sent.\nReturns: { job, linked, dismissed, still_unresolved, next }."),
+		Object({ { TEXT("job_id"), TEXT("string"), TEXT("Job id from list_local_jobs.") }, { TEXT("action"), TEXT("string"), TEXT("check (default): match it against Scenario's job list; dismiss: hide a finished job."), FString(), { TEXT("check"), TEXT("dismiss") } } }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -1419,9 +1426,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// recover_cloud_job
-	Register(Make(TEXT("recover_cloud_job"), EScenarioActionKind::Editor,
-		TEXT("Links a Scenario job (scenario_job_id from list_generations) into this project's job list and downloads its files. Free."),
-		Object({ { TEXT("scenario_job_id"), TEXT("string") }, { TEXT("lane"), TEXT("string"), FString(), FString(), Lanes } }, { TEXT("scenario_job_id") }),
+	Register(Make(TEXT("recover_cloud_job"), TEXT("Link Scenario Job"), EScenarioActionKind::Editor,
+		TEXT("Links a Scenario job (scenario_job_id from list_generations) into this project's job list and downloads its files. Free.\nReturns: the linked job, as job_status describes it."),
+		Object({ { TEXT("scenario_job_id"), TEXT("string"), TEXT("scenario_job_id from list_generations.") }, { TEXT("lane"), TEXT("string"), TEXT("Where the results land in Unreal: image, 3d, material, environment, audio, video or render. Inferred from the model when omitted."), FString(), Lanes } }, { TEXT("scenario_job_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;
@@ -1454,9 +1461,9 @@ void FScenarioActions::RegisterScenarioActions()
 		}));
 
 	// cancel_job
-	Register(Make(TEXT("cancel_job"), EScenarioActionKind::Editor,
-		TEXT("Asks Scenario to cancel a queued or running job. Whether CU are refunded is Scenario's decision."),
-		Object({ { TEXT("job_id"), TEXT("string") } }, { TEXT("job_id") }),
+	Register(Make(TEXT("cancel_job"), TEXT("Cancel Job"), EScenarioActionKind::Editor,
+		TEXT("Asks Scenario to cancel a queued or running job. Whether CU are refunded is Scenario's decision.\nReturns: the job, as job_status describes it."),
+		Object({ { TEXT("job_id"), TEXT("string"), TEXT("Job id from generate, run_workflow or list_local_jobs.") } }, { TEXT("job_id") }),
 		[](const TSharedPtr<FJsonObject>& Args, const FScenarioCaller&, FScenarioActionDone Done)
 		{
 			FScenarioActionResult Fail;

@@ -128,7 +128,10 @@ void FScenarioActions::RegisterKitActions()
 
 		FScenarioAction Action;
 		Action.Name = Name;
+		Tool->TryGetStringField(TEXT("title"), Action.Title);
 		Action.Description = Tool->GetStringField(TEXT("description"));
+		// The kit's tools are served through the agent server's catalog.
+		Action.bCatalogOnly = true;
 		const TSharedPtr<FJsonObject>* Schema = nullptr;
 		Action.InputSchema = Tool->TryGetObjectField(TEXT("input_schema"), Schema) ? *Schema : MakeShared<FJsonObject>();
 		Action.Kind = Kind == TEXT("read") ? EScenarioActionKind::Read : Kind == TEXT("editor") ? EScenarioActionKind::Editor : EScenarioActionKind::Change;

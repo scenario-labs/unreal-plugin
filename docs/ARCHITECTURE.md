@@ -138,13 +138,13 @@ Measured on Unreal 5.8.3 with the Scenario plugin and Epic's Model Context Proto
 
 | What | Bytes | About tokens |
 |---|---|---|
-| Scenario MCP server, `tools/list` (47 tools) | 29,175 | 7,290 |
-| Scenario MCP server, `tools/list` with **Agent tool search** (4 tools) | 1,456 | 360 |
+| Scenario MCP server, `tools/list` (29 core tools and the catalog's 5) | 25,381 | 6,340 |
+| Scenario MCP server, `tools/list` with **List every tool** (47 tools and the catalog's 5) | 47,401 | 11,850 |
 | Epic's server, `tools/list` (3 meta tools) | 1,719 | 430 |
 | Epic's server, `list_toolsets` | 13,366 | 3,340 |
 | Epic's server, `describe_toolset` for the Scenario toolset (18 tools) | about 11,600 | 2,900 |
 
-The full list is above 6,000 tokens, so the server has an opt-in tool search mode (`bAgentToolSearch`, off by default): `tools/list` returns `scenario_status`, `find_tools`, `describe_tools` and `call_tool`, and every tool stays callable by name. It is off by default because clients that already defer tool definitions gain nothing from it and lose the per-tool annotations in the list.
+The server lists the core tools and serves the others through a catalog, as the hosted Scenario MCP does: `unreal_tools_list`, `unreal_tools_search` and `unreal_tool_execute_read`, `_write` and `_delete` (the lane comes from the tool's hints; a tool of another lane is refused, naming its executor). Every tool stays callable by name, and `bAgentListEveryTool` (off by default) lists them all for clients that search tools themselves. Each tool has a title, the four hints and a `Returns:` line, within the 2,048 characters of each description that Claude Code shows the model. `Scenario.Agent.Tools.Budget` checks the rules of scenario-labs/components' `mcp-check`, and `Scenario.Agent.Tools.Snapshot` keeps `Plugins/Scenario/Tests/mcp-tools.json`, the committed copy of the tools, current.
 
 ## Simplifications in version 0.2
 
@@ -162,7 +162,7 @@ These are deliberate, listed so reviewers can judge them:
 ## Tests
 
 - `Scenario.Core.*` automation tests: JSON-RPC and SSE parsing, error kinds, retry policy, quotes and fingerprints, the job list state machine, schema forms, naming, OAuth helpers, the local HTTP listener, the session against a fake Scenario, trained models (bases, trigger words, the base's request, fingerprints), recorded schema fixtures in `Plugins/Scenario/Tests/Fixtures/`.
-- `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), tool list budget, tool search mode, permissions, client config writers.
+- `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), the tool rules and snapshot, the catalog, permissions, client config writers.
 - `Scenario.Toolsets.*` automation tests (5.8): registration, each tool's schema against its action, the spend gate (a paid call through the registry answers `pending_approval`, consumes no quote and writes no job), reads without sign-in, the agent skill's size.
 - `tools/contract_check.py`: a free check against the live service (reads and dry runs only).
 - Live paid runs are manual, with cheap models and low settings, recorded in `tests/live/LEDGER.md`.
