@@ -131,7 +131,19 @@ $run = Invoke-Installer ('-Project "{0}" -EngineRoot "{1}" -Yes' -f $Loose, $Eng
 Check ($run.Code -eq 0) 'the installer succeeds'
 Check (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $Loose) 'Plugins\Scenario\Scenario.uplugin')) 'the plugin is installed'
 
-Write-Host '--- 6. Without -Project, -Yes refuses to guess'
+Write-Host '--- 6. A project that names no Unreal, with two installed: -Yes refuses to choose'
+$Older = Join-Path $Work 'Epic Games\UE_5.7'
+New-Item -ItemType Directory -Force -Path (Join-Path $Older 'Engine\Build') | Out-Null
+Set-Content -LiteralPath (Join-Path $Older 'Engine\Build\Build.version') -Encoding ASCII -Value '{ "MajorVersion": 5, "MinorVersion": 7, "PatchVersion": 0 }'
+$Both = @{ InstallationList = @($Listed.InstallationList[0], @{ InstallLocation = $Older; AppName = 'UE_5.7'; AppVersion = '5.7.0' }) }
+Set-Content -LiteralPath $LauncherList -Encoding ASCII -Value ($Both | ConvertTo-Json -Depth 4)
+$Unnamed = New-Project 'Unnamed Game' ''
+$run = Invoke-Installer ('-Project "{0}" -Yes' -f $Unnamed)
+Set-Content -LiteralPath $LauncherList -Encoding ASCII -Value ($Listed | ConvertTo-Json -Depth 4)
+Check ($run.Code -ne 0 -and $run.Output -match '-EngineRoot <an Unreal folder>') 'the installer asks for -EngineRoot'
+Check (-not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $Unnamed) 'Plugins'))) 'nothing is installed'
+
+Write-Host '--- 7. Without -Project, -Yes refuses to guess'
 $run = Invoke-Installer '-Yes'
 Check ($run.Code -ne 0 -and $run.Output -match '-Project is needed') 'the installer asks for -Project'
 
