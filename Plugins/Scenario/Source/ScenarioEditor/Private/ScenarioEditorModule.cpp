@@ -13,6 +13,7 @@
 #include "ISettingsModule.h"
 #include "LevelEditor.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Modules/ModuleManager.h"
 #include "ScenarioActions.h"
 #include "ScenarioCreateModel.h"
@@ -53,6 +54,16 @@ namespace
 	TArray<TPair<FName, FScenarioEditorModule::FSectionFactory>> Sections;
 	FScenarioEditorModule::FSectionFactory HeaderStatus;
 	TSharedPtr<FUICommandList> GlobalCommands;
+
+	/** Unreal 5.8 replaced FCoreDelegates::OnPostEngineInit with GetOnPostEngineInit(). */
+	FSimpleMulticastDelegate& OnPostEngineInitDelegate()
+	{
+#if UE_VERSION_OLDER_THAN(5, 8, 0)
+		return FCoreDelegates::OnPostEngineInit;
+#else
+		return FCoreDelegates::GetOnPostEngineInit();
+#endif
+	}
 
 	/** Content Browser assets that can be a Scenario input. */
 	bool IsInputClass(const FAssetData& Asset)
@@ -244,7 +255,7 @@ void FScenarioEditorModule::StartupModule()
 	// Plugins in the PostEngineInit phase load after OnPostEngineInit fires, and
 	// a module's editor subsystems are created after its StartupModule: start on
 	// the first tick where the subsystem exists.
-	PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
+	PostEngineInitHandle = OnPostEngineInitDelegate().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
 	// Asset thumbnails hold engine objects: release them before the object system shuts down, not in ShutdownModule.
 	PreExitHandle = FCoreDelegates::OnEnginePreExit.AddLambda([]() { FScenarioThumbnails::Get().Shutdown(); });
 	StartTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
@@ -261,7 +272,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 		return;
 	}
 	bStarted = true;
-	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
+	OnPostEngineInitDelegate().Remove(PostEngineInitHandle);
 	FScenarioCreateModel::Get()->Initialize();
 	if (FLevelEditorModule* LevelEditor = FModuleManager::GetModulePtr<FLevelEditorModule>(TEXT("LevelEditor")))
 	{
@@ -285,7 +296,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 
 void FScenarioEditorModule::ShutdownModule()
 {
-	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
+	OnPostEngineInitDelegate().Remove(PostEngineInitHandle);
 	FCoreDelegates::OnEnginePreExit.Remove(PreExitHandle);
 	FTSTicker::GetCoreTicker().RemoveTicker(StartTicker);
 	if (bStarted)
