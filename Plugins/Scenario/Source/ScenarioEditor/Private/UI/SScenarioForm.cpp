@@ -18,6 +18,7 @@
 #include "ScenarioSession.h"
 #include "ScenarioStyle.h"
 #include "ScenarioThumbnails.h"
+#include "ScenarioTrained.h"
 #include "ScenarioWidgets.h"
 #include "SDropTarget.h"
 #include "SScenarioPages.h"
@@ -280,9 +281,50 @@ void SScenarioForm::Rebuild()
 	{
 		AddRow(Settings, SettingRows, LOCTEXT("Size", "Size"), LOCTEXT("SizeTip", "The texture size in pixels.\nChanges the price."), BuildSize(*Width, *Height), false, false);
 	}
-	auto Skip = [&PromptName, bSize](const FScenarioField& Field)
+	// A trained model: its weight and trigger words come first, in rows of their own.
+	const FScenarioTrainedInfo* Trained = Model->GetTrained();
+	auto IsTrainedField = [Trained](const FScenarioField& Field)
 	{
-		return Field.IsFile() || Field.Name == PromptName || (bSize && (Field.Name == TEXT("width") || Field.Name == TEXT("height")));
+		return Trained && (Field.Name == ScenarioTrained::WeightField || Field.Name == ScenarioTrained::TriggerField);
+	};
+	if (Trained)
+	{
+		if (const FScenarioField* Weight = ScenarioSchema::Find(Fields, ScenarioTrained::WeightField))
+		{
+			AddFieldRow(Settings, SettingRows, *Weight, false);
+		}
+		if (const FScenarioField* Trigger = ScenarioSchema::Find(Fields, ScenarioTrained::TriggerField))
+		{
+			const TSharedPtr<FScenarioCreateModel> M = Model;
+			const FString Name = Trigger->Name;
+			const FString Words = Trained->TriggerWords;
+			AddRow(Settings, SettingRows, FText::FromString(Trigger->Label), FieldTooltip(*Trigger),
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					ScenarioUI::Switch(MakeAttributeLambda([M, Name]() { return ScenarioJson::Truthy(M->GetValue(Name)); }),
+						[M, Name](bool bOn) { M->SetValue(Name, MakeShared<FJsonValueBoolean>(bOn)); })
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				.Padding(ScenarioUI::Gutter, 0.0f, 0.0f, 0.0f)
+				[
+					ScenarioUI::Line(MakeAttributeLambda([M, Name, Words]()
+					{
+						return ScenarioJson::Truthy(M->GetValue(Name))
+							? FText::Format(LOCTEXT("TriggerAdded", "{0}, added before the prompt"), FText::FromString(Words))
+							: FText::Format(LOCTEXT("TriggerLeftOut", "{0}, left out"), FText::FromString(Words));
+					}), ScenarioUI::EText::Meta, true)
+				],
+				false, false);
+		}
+	}
+	auto Skip = [&PromptName, bSize, &IsTrainedField](const FScenarioField& Field)
+	{
+		return Field.IsFile() || Field.Name == PromptName || (bSize && (Field.Name == TEXT("width") || Field.Name == TEXT("height"))) || IsTrainedField(Field);
 	};
 	for (const FScenarioField& Field : Fields)
 	{

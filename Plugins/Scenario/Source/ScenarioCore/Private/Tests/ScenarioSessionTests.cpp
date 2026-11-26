@@ -27,6 +27,9 @@ namespace ScenarioSessionTests
 		{
 			Backend->OnJson(TEXT("GET /teams"), TEXT("{\"teams\":[{\"id\":\"team_1\",\"name\":\"Studio\",\"projects\":[{\"id\":\"proj_1\",\"name\":\"Cove\"}]}]}"));
 			Backend->OnJson(TEXT("GET /models"), TEXT("{\"models\":[]}"));
+			// The catalog lists no model, so a price check reads the model first.
+			Backend->OnJson(TEXT("GET /models/*"), TEXT("{\"model\":{\"id\":\"model_flare\",\"name\":\"Flare\",\"type\":\"custom\",\"capabilities\":[\"txt2img\"],")
+				TEXT("\"inputs\":[{\"name\":\"prompt\",\"type\":\"string\"},{\"name\":\"numOutputs\",\"type\":\"number\"}]}}"));
 			Backend->OnJson(TEXT("GET /usages"), TEXT("{\"consumption\":[{\"userId\":\"user_1\",\"value\":42.5}]}"));
 			Backend->OnJson(TEXT("GET /jobs"), TEXT("{\"jobs\":[]}"));
 			Backend->On(TEXT("POST /generate/custom/*"), [this](const FScenarioRequest& Request)

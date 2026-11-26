@@ -131,6 +131,10 @@ struct SCENARIOCORE_API FScenarioModelSummary
 	/** trained when ready; training or failed for trained models that cannot run yet. */
 	FString Status;
 	double CreatedAt = -1.0;
+	/** Trained models: base names their record lists (flux.1-dev...), the weight it gives itself (-1 when none), its trigger words. */
+	TArray<FString> CompliantModelIds;
+	double OwnScale = -1.0;
+	FString TriggerWords;
 
 	static FScenarioModelSummary FromJson(const TSharedPtr<FJsonObject>& Object);
 };
@@ -194,7 +198,12 @@ public:
 	/** Signed download URL; Format converts images and 3D (png, jpg, webp, glb, fbx, obj), empty keeps the original. */
 	void DownloadUrl(const FString& AssetId, const FString& Format, TCallback<FString> OnDone);
 
-	/** The model's inputs as {model_id, name, capabilities, parameters}, the shape ScenarioSchema reads. */
+	/** The model's record (GET /models/{id}), the "model" object. */
+	void GetModel(const FString& ModelId, FScenarioReplyCallback OnDone);
+	/**
+	 * The model's own inputs as {model_id, name, capabilities, parameters}, the shape ScenarioSchema reads.
+	 * A trained model lists none: FScenarioCatalog::GetSchema gives its base's form instead.
+	 */
 	void GetSchema(const FString& ModelId, FScenarioReplyCallback OnDone);
 	/**
 	 * One page of models. Privacy "public" or "private"; Modality image, video, 3d, audio or empty.

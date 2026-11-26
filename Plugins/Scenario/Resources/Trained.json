@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "updated": "2026-11-23",
+  "note": "Trained models (LoRAs and compositions) run on a base model. The plugin reads these base models' schemas to find which trained types each takes: modelTypes on their loras input (a LoRA) or their modelId input (a composition). The list says which models to read, never what they take. base_names maps compliantModelIds entries (base names, not model ids) to model ids; it only orders the candidates. default_scale is the LoRA weight when the trained model's record gives none of its own.",
+  "base_probes": [
+    "model_bfl-flux-2-dev",
+    "model_bfl-flux-1-dev",
+    "model_bfl-flux-1-schnell",
+    "model_flux-kontext-editing",
+    "model_flux-krea-dev",
+    "model_z-image",
+    "model_z-image-turbo",
+    "model_bfl-flux-2-klein-9b",
+    "model_bfl-flux-2-klein-9b-base",
+    "model_bfl-flux-2-klein-4b",
+    "model_bfl-flux-2-klein-4b-base",
+    "model_qwen-image",
+    "model_qwen-image-2512",
+    "model_qwen-image-edit",
+    "model_qwen-image-edit-2509",
+    "model_qwen-image-edit-2511"
+  ],
+  "base_names": {
+    "flux.1-dev": "model_bfl-flux-1-dev",
+    "flux.1-schnell": "model_bfl-flux-1-schnell",
+    "flux.2-dev": "model_bfl-flux-2-dev"
+  },
+  "default_scale": 0.75
+}

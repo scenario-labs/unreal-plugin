@@ -13,6 +13,7 @@
 #include "ScenarioSession.h"
 #include "ScenarioSettings.h"
 #include "ScenarioSubsystem.h"
+#include "ScenarioTrained.h"
 #include "ScenarioWidgets.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
@@ -120,11 +121,26 @@ namespace
 	/** "OpenAI", "Your team", "Scenario". */
 	FString MakerOf(const FScenarioCatalogModel& Model)
 	{
-		if (Model.bTeam || Model.bTrained)
+		if (Model.bTeam)
 		{
 			return TEXT("Your team");
 		}
 		return Model.Summary.Provider.IsEmpty() ? FString(TEXT("Scenario")) : Model.Summary.Provider;
+	}
+
+	bool IsTrainedRow(const FScenarioCatalogModel& Model)
+	{
+		return Model.bTrained && ScenarioTrained::IsTrainedType(Model.Summary.Type);
+	}
+
+	/** How a trained row runs ("LoRA via FLUX.1 Dev"), once the catalog has read the bases. */
+	TOptional<FScenarioTrainedInfo> TrainedOf(const FScenarioCatalog* Catalog, const FScenarioCatalogModel& Model)
+	{
+		if (!Catalog || !IsTrainedRow(Model) || Catalog->Bases().Num() == 0)
+		{
+			return TOptional<FScenarioTrainedInfo>();
+		}
+		return Catalog->TrainedInfo(Model);
 	}
 
 	/** "txt2img" -> "Text to image", "img23d" -> "Image to 3D", "inpaint" -> "Inpaint". */
@@ -328,7 +344,8 @@ void SScenarioModelPicker::Construct(const FArguments& InArgs)
 		{
 			Cat.RefreshIfNeeded(Subsystem->Session().Scope());
 		}
-		CatalogHandle = Cat.OnChanged.AddSP(this, &SScenarioModelPicker::Refresh);
+		LoadBasesForTrainedRows();
+		CatalogHandle = Cat.OnChanged.AddSP(this, &SScenarioModelPicker::OnCatalogChanged);
 	}
 
 	ChildSlot
@@ -569,9 +586,21 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 								SNew(STextBlock)
 								.Text_Lambda([this]()
 								{
-									return Selected.IsValid()
-										? FText::FromString(FString::Printf(TEXT("%s · %s"), *MakerOf(*Selected), *CapabilitiesText(*Selected)))
-										: FText::GetEmpty();
+									if (!Selected.IsValid())
+									{
+										return FText::GetEmpty();
+									}
+									const TOptional<FScenarioTrainedInfo> Trained = TrainedOf(Catalog(), *Selected);
+									if (Trained.IsSet())
+									{
+										FString Line = FString::Printf(TEXT("%s · %s"), *MakerOf(*Selected), *Trained->Label());
+										if (!Trained->TriggerWords.IsEmpty())
+										{
+											Line += FString::Printf(TEXT(" · Trigger words: %s"), *Trained->TriggerWords);
+										}
+										return FText::FromString(Line);
+									}
+									return FText::FromString(FString::Printf(TEXT("%s · %s"), *MakerOf(*Selected), *CapabilitiesText(*Selected)));
 								})
 								.Font(ScenarioUI::Font(ScenarioUI::EText::Meta))
 								.ColorAndOpacity(FSlateColor(ScenarioUI::Palette::Dim()))
@@ -596,7 +625,7 @@ TSharedRef<SWidget> SScenarioModelPicker::BuildDetails()
 								+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, ScenarioUI::RowGap, 0.0f)
 								[
 									ShownWhen(ScenarioUI::Pill(LOCTEXT("TeamChip", "Team"), ScenarioUI::ETone::Neutral,
-										LOCTEXT("TeamChipTip", "Trained by your team.")), Is([](const FScenarioCatalogModel& M) { return M.bTeam || M.bTrained; }))
+										LOCTEXT("TeamChipTip", "Trained by your team.")), Is([](const FScenarioCatalogModel& M) { return M.bTeam; }))
 								]
 								+ SHorizontalBox::Slot().AutoWidth()
 								[
@@ -707,6 +736,29 @@ void SScenarioModelPicker::Select(const FItem& Item)
 	ScheduleEstimate();
 }
 
+void SScenarioModelPicker::OnCatalogChanged()
+{
+	// On a first launch the trained rows arrive after the picker opened.
+	LoadBasesForTrainedRows();
+	Refresh();
+}
+
+void SScenarioModelPicker::LoadBasesForTrainedRows()
+{
+	UScenarioSubsystem* Subsystem = UScenarioSubsystem::Get();
+	if (bBasesAsked || !Subsystem || !Subsystem->Session().IsReady())
+	{
+		return;
+	}
+	FScenarioCatalog& Cat = Subsystem->Session().Catalog();
+	if (!Cat.HasFreshBases() && Cat.All().ContainsByPredicate([](const FScenarioCatalogModel& Model) { return IsTrainedRow(Model); }))
+	{
+		// Once: a base that does not answer leaves the bases stale, and their load broadcasts OnChanged again.
+		bBasesAsked = true;
+		Cat.LoadBases();
+	}
+}
+
 void SScenarioModelPicker::Refresh()
 {
 	Items.Reset();
@@ -768,10 +820,16 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 {
 	const FString Id = Item->Id();
 	TArray<FString> Meta = { MakerOf(*Item) };
-	if (Item->Chips.Num() > 0)
+	const TOptional<FScenarioTrainedInfo> Trained = TrainedOf(Catalog(), *Item);
+	if (Trained.IsSet())
+	{
+		Meta.Add(Trained->Label());
+	}
+	else if (Item->Chips.Num() > 0)
 	{
 		Meta.Add(FString::Join(Item->Chips, TEXT(", ")));
 	}
+	const bool bCannotRun = Trained.IsSet() && !Trained->IsRunnable();
 	auto IsFavorite = [Id]() { return UScenarioEditorSettings::Get().IsFavorite(Id); };
 	return SNew(STableRow<FItem>, Owner)
 		.Style(&ScenarioUI::Style().GetWidgetStyle<FTableRowStyle>("Scenario.TableRow"))
@@ -798,7 +856,8 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(Item->Summary.Name))
-					.ToolTipText(FText::FromString(Item->Summary.Name))
+					.ToolTipText(FText::FromString(bCannotRun ? Trained->Problem() : Item->Summary.Name))
+					.ColorAndOpacity(bCannotRun ? FSlateColor(ScenarioUI::Palette::Faint()) : FSlateColor::UseForeground())
 					.Font(ScenarioUI::Font(ScenarioUI::EText::Body))
 					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 					.HighlightText_Lambda([this]() { return FText::FromString(Text); })
@@ -823,7 +882,7 @@ TSharedRef<ITableRow> SScenarioModelPicker::MakeRow(FItem Item, const TSharedRef
 			.VAlign(VAlign_Center)
 			.Padding(ScenarioUI::RowGap, 0.0f, 0.0f, 0.0f)
 			[
-				Item->bTeam || Item->bTrained
+				Item->bTeam
 					? ScenarioUI::Pill(LOCTEXT("TeamChip", "Team"), ScenarioUI::ETone::Neutral, LOCTEXT("TeamChipTip", "Trained by your team."))
 					: SNullWidget::NullWidget
 			]

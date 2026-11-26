@@ -93,6 +93,11 @@ TSharedRef<FJsonObject> FScenarioJobRow::ToJson() const
 	Object->SetStringField(TEXT("lane"), Lane);
 	Object->SetStringField(TEXT("model_id"), ModelId);
 	Object->SetStringField(TEXT("model_name"), ModelName);
+	if (!TrainedModelId.IsEmpty())
+	{
+		Object->SetStringField(TEXT("trained_model_id"), TrainedModelId);
+		Object->SetStringField(TEXT("trained_model_name"), TrainedModelName);
+	}
 	Object->SetStringField(TEXT("workflow_id"), WorkflowId);
 	Object->SetStringField(TEXT("prompt"), Prompt);
 	Object->SetObjectField(TEXT("parameters"), Parameters.IsValid() ? Parameters : MakeShared<FJsonObject>());
@@ -153,6 +158,8 @@ bool FScenarioJobRow::FromJson(const TSharedPtr<FJsonObject>& Object, FScenarioJ
 	Out.Lane = ScenarioJson::GetString(Object, TEXT("lane"));
 	Out.ModelId = ScenarioJson::GetString(Object, TEXT("model_id"));
 	Out.ModelName = ScenarioJson::GetString(Object, TEXT("model_name"));
+	Out.TrainedModelId = ScenarioJson::GetString(Object, TEXT("trained_model_id"));
+	Out.TrainedModelName = ScenarioJson::GetString(Object, TEXT("trained_model_name"));
 	Out.WorkflowId = ScenarioJson::GetString(Object, TEXT("workflow_id"));
 	Out.Prompt = ScenarioJson::GetString(Object, TEXT("prompt"));
 	Out.Parameters = ScenarioJson::GetObject(Object, TEXT("parameters"));
