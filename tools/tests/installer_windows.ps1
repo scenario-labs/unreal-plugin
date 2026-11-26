@@ -133,7 +133,8 @@ Check (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $Loose) 'Plugins\Sc
 
 Write-Host '--- 6. A project that names no Unreal, with two installed: -Yes refuses to choose'
 $Older = Join-Path $Work 'Epic Games\UE_5.7'
-New-Item -ItemType Directory -Force -Path (Join-Path $Older 'Engine\Build') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $Older 'Engine\Build\BatchFiles') | Out-Null
+Copy-Item -LiteralPath (Join-Path $BatchFiles 'RunUAT.bat') -Destination (Join-Path $Older 'Engine\Build\BatchFiles')
 Set-Content -LiteralPath (Join-Path $Older 'Engine\Build\Build.version') -Encoding ASCII -Value '{ "MajorVersion": 5, "MinorVersion": 7, "PatchVersion": 0 }'
 $Both = @{ InstallationList = @($Listed.InstallationList[0], @{ InstallLocation = $Older; AppName = 'UE_5.7'; AppVersion = '5.7.0' }) }
 Set-Content -LiteralPath $LauncherList -Encoding ASCII -Value ($Both | ConvertTo-Json -Depth 4)
