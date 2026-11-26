@@ -15,6 +15,8 @@ namespace ScenarioHash
 
 	/** Base64 with the URL-safe alphabet and no padding (RFC 4648 section 5). */
 	SCENARIOCORE_API FString Base64Url(const TArray<uint8>& Bytes);
+	/** Reads Base64Url, padded or not. False when the text is not Base64Url. */
+	SCENARIOCORE_API bool FromBase64Url(const FString& Text, TArray<uint8>& OutBytes);
 
 	/** Random bytes from the operating system's generator. */
 	SCENARIOCORE_API TArray<uint8> RandomBytes(int32 Count);

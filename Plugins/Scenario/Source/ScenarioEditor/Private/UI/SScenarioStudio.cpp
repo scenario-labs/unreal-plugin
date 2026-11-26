@@ -458,7 +458,9 @@ TSharedRef<SWidget> SScenarioStudio::BuildAccountMenu()
 {
 	FMenuBuilder Menu(true, nullptr);
 	FScenarioSession* Session = ScenarioUI::Session();
+	const FString Email = Session ? Session->GetAccountEmail() : FString();
 	const FText Who = !Session ? FText::GetEmpty()
+		: !Email.IsEmpty() ? FText::Format(LOCTEXT("WhoAccount", "Signed in as {0}"), FText::FromString(Email))
 		: Session->GetAuthMode() == EScenarioAuthMode::OAuth ? LOCTEXT("WhoOAuth", "Signed in with your Scenario account")
 		: LOCTEXT("WhoKey", "Signed in with an API key");
 	Menu.BeginSection(NAME_None, Who);
