@@ -312,6 +312,13 @@ if ($Code -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $Stage 'Scenario.upl
     Remove-Item -LiteralPath $Stage -Recurse -Force -ErrorAction SilentlyContinue
     Fail ("The build failed (exit code {0}). The full log is {1}.`nMost often a Visual Studio component or the Windows SDK is missing; see {2}" -f $Code, $Log, $Troubleshooting)
 }
+# Unreal turns on an optional plugin only in projects with C++ code, and without the Toolset Registry
+# Windows cannot load Scenario: where the engine has the registry (5.8), the installed plugin requires it.
+if (Test-Path -LiteralPath (Join-Path $Engine.Root 'Engine\Plugins\Experimental\ToolsetRegistry') -PathType Container) {
+    $Descriptor = Join-Path $Stage 'Scenario.uplugin'
+    $Text = [System.IO.File]::ReadAllText($Descriptor)
+    [System.IO.File]::WriteAllText($Descriptor, [regex]::Replace($Text, '("Name"\s*:\s*"ToolsetRegistry"[^{}]*?"Optional"\s*:\s*)true', '${1}false'))
+}
 
 # 5. Install.
 Step "Installing into $Destination"

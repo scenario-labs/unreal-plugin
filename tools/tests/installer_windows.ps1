@@ -19,6 +19,9 @@ $Engine = Join-Path $Work 'Epic Games\UE_5.8'
 $BatchFiles = Join-Path $Engine 'Engine\Build\BatchFiles'
 New-Item -ItemType Directory -Force -Path $BatchFiles | Out-Null
 Set-Content -LiteralPath (Join-Path $Engine 'Engine\Build\Build.version') -Encoding ASCII -Value '{ "MajorVersion": 5, "MinorVersion": 8, "PatchVersion": 0 }'
+# Unreal 5.8 installs the Toolset Registry; section 7 removes it, as in Unreal 5.6 and 5.7.
+$Registry = Join-Path $Engine 'Engine\Plugins\Experimental\ToolsetRegistry'
+New-Item -ItemType Directory -Force -Path $Registry | Out-Null
 $Stub = @'
 @echo off
 setlocal EnableExtensions
@@ -71,6 +74,12 @@ function Invoke-Installer([string]$Arguments) {
     return [pscustomobject]@{ Code = $process.ExitCode; Output = $text }
 }
 
+# The Optional field of the Toolset Registry reference in a Scenario.uplugin.
+function Get-RegistryOptional([string]$File) {
+    $descriptor = Get-Content -LiteralPath $File -Raw | ConvertFrom-Json
+    return @($descriptor.Plugins | Where-Object { $_.Name -eq 'ToolsetRegistry' })[0].Optional
+}
+
 $script:Failures = 0
 function Check([bool]$Condition, [string]$Name) {
     if ($Condition) {
@@ -97,6 +106,8 @@ Check ($Recorded[0] -eq 'BuildPlugin') 'RunUAT runs BuildPlugin'
 Check ($Recorded -contains "-Plugin=$PluginFile") 'the plugin path reaches RunUAT whole, spaces included'
 Check ($Recorded -contains '-TargetPlatforms=Win64') 'for Win64'
 Check (@(Get-ChildItem -LiteralPath (Join-Path $ProjectDir 'Saved\Scenario') -Filter 'Install-*.log').Count -eq 1) 'the build log is in Saved\Scenario'
+Check ((Get-RegistryOptional (Join-Path $Installed 'Scenario.uplugin')) -eq $false) 'the installed plugin requires the Toolset Registry, which the engine has'
+Check ((Get-RegistryOptional $PluginFile) -eq $true) 'the source keeps it optional'
 
 Write-Host '--- 2. Installing again keeps the previous version'
 Start-Sleep -Seconds 2
@@ -147,6 +158,13 @@ Check (-not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $Unnamed) 'Pl
 Write-Host '--- 7. Without -Project, -Yes refuses to guess'
 $run = Invoke-Installer '-Yes'
 Check ($run.Code -ne 0 -and $run.Output -match '-Project is needed') 'the installer asks for -Project'
+
+Write-Host '--- 8. An Unreal without the Toolset Registry, as 5.6 and 5.7'
+Start-Sleep -Seconds 2
+Remove-Item -LiteralPath $Registry -Recurse -Force
+$run = Invoke-Installer ('-Project "{0}" -EngineRoot "{1}" -Yes' -f $Loose, $Engine)
+Check ($run.Code -eq 0) 'the installer succeeds'
+Check ((Get-RegistryOptional (Join-Path (Split-Path -Parent $Loose) 'Plugins\Scenario\Scenario.uplugin')) -eq $true) 'the installed plugin keeps the Toolset Registry optional'
 
 if ($script:Failures -gt 0) {
     Write-Host "$($script:Failures) check(s) failed." -ForegroundColor Red

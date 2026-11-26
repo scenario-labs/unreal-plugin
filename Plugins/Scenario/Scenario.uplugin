@@ -49,6 +49,6 @@
 	"Plugins": [
 		{ "Name": "Interchange", "Enabled": true },
 		{ "Name": "GLTFExporter", "Enabled": true },
-		{ "Name": "ToolsetRegistry", "Enabled": true, "Optional": true }
+		{ "Name": "ToolsetRegistry", "Enabled": true, "Optional": true, "TargetAllowList": [ "Editor" ] }
 	]
 }

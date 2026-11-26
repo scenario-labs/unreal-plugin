@@ -183,6 +183,18 @@ if [ "$status" != 0 ] || [ ! -f "$stage/Scenario.uplugin" ]; then
   fail "The build failed (exit code $status). The full log is $log.
 See https://github.com/scenario-labs/unreal-plugin/blob/main/docs/TROUBLESHOOTING.md"
 fi
+# Unreal turns on an optional plugin only in projects with C++ code: where the engine has the
+# Toolset Registry (5.8), the installed plugin requires it, so Scenario's toolset reaches it in every project.
+if [ -d "$engine_root/Engine/Plugins/Experimental/ToolsetRegistry" ]; then
+  i=0
+  while name="$(json "$stage/Scenario.uplugin" "Plugins.$i.Name")"; do
+    if [ "$name" = ToolsetRegistry ]; then
+      plutil -replace "Plugins.$i.Optional" -bool NO -r "$stage/Scenario.uplugin" || fail "Could not edit $stage/Scenario.uplugin."
+      break
+    fi
+    i=$((i + 1))
+  done
+fi
 
 # 5. Install.
 bold "Installing into $destination"
