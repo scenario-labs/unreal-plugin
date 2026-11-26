@@ -87,6 +87,14 @@ bool FScenarioOAuthMetadata::FromJson(const TSharedPtr<FJsonObject>& Object, FSc
 	return Out.IsValid();
 }
 
+FString FScenarioOAuthApp::MetadataUrl() const
+{
+	const TCHAR* WellKnown = TEXT("/.well-known/oauth-authorization-server");
+	const int32 Scheme = Issuer.Find(TEXT("://"));
+	const int32 PathStart = Scheme == INDEX_NONE ? INDEX_NONE : Issuer.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Scheme + 3);
+	return PathStart == INDEX_NONE ? Issuer + WellKnown : Issuer.Left(PathStart) + WellKnown + Issuer.Mid(PathStart);
+}
+
 FScenarioOAuthApp FScenarioOAuthApp::Select(const FString& EnvIssuer, const FString& EnvClientId)
 {
 	FScenarioOAuthApp Out;
@@ -246,7 +254,7 @@ FString FScenarioOAuth::ReadCallback(const FString& Query, const FString& Expect
 	}
 	if (const FString* Issuer = Values.Find(TEXT("iss")))
 	{
-		if (!ExpectedIssuer.IsEmpty() && *Issuer != ExpectedIssuer)
+		if (!ExpectedIssuer.IsEmpty() && !Issuer->Equals(ExpectedIssuer, ESearchCase::CaseSensitive))
 		{
 			return TEXT("The sign-in reply came from an unexpected server.");
 		}

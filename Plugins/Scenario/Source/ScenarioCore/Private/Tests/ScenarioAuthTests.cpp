@@ -178,6 +178,8 @@ bool FScenarioOAuthAppTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("production client"), Production.ClientId, FString(TEXT("U67CS7IbpZy0PPe0")));
 	TestTrue(TEXT("production usable"), Production.Problem.IsEmpty());
 	TestEqual(TEXT("metadata url"), Production.MetadataUrl(), FString(TEXT("https://clerk.scenario.com/.well-known/oauth-authorization-server")));
+	TestEqual(TEXT("metadata url of an issuer with a path"), FScenarioOAuthApp::Select(TEXT("https://id.example.test/dev"), TEXT("dev_client")).MetadataUrl(),
+		FString(TEXT("https://id.example.test/.well-known/oauth-authorization-server/dev")));
 
 	const FScenarioOAuthApp Development = FScenarioOAuthApp::Select(TEXT(" https://dev.example.test/ "), TEXT("dev_client"));
 	TestEqual(TEXT("development issuer trimmed"), Development.Issuer, FString(TEXT("https://dev.example.test")));
