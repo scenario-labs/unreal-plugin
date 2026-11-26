@@ -8,6 +8,8 @@
 - Plugins/Scenario/Scenario.uplugin, Resources/Lanes.json and
   Resources/Trained.json are valid JSON with the keys the plugin reads.
 - Resources/AgentSkill/SKILL.md has `name` and `description` frontmatter.
+- PowerShell and batch files are ASCII: Windows PowerShell 5.1 and cmd.exe
+  read a file without a byte order mark in the system code page.
 - No secret-looking strings (API keys, Basic or Bearer credentials, private
   keys, GitHub tokens, signed URL signatures), no personal home paths, and no
   tracked .env files.
@@ -35,6 +37,7 @@ BINARY_SUFFIXES = {
     ".mp4", ".mov", ".pdf", ".ttf", ".otf", ".woff", ".woff2", ".dylib", ".dll", ".so",
 }
 EM_DASH = chr(0x2014)
+ASCII_SUFFIXES = {".ps1", ".bat", ".cmd"}
 UPLUGIN = "Plugins/Scenario/Scenario.uplugin"
 LANES = "Plugins/Scenario/Resources/Lanes.json"
 TRAINED = "Plugins/Scenario/Resources/Trained.json"
@@ -193,6 +196,13 @@ def check_trained(text: str) -> list[tuple[int, str]]:
     return problems
 
 
+def check_ascii(name: str, text: str) -> list[tuple[int, str]]:
+    if pathlib.PurePosixPath(name).suffix.lower() not in ASCII_SUFFIXES:
+        return []
+    return [(number, "non-ASCII character: Windows reads this file in the system code page")
+            for number, line in enumerate(text.splitlines(), 1) if not line.isascii()]
+
+
 def check_skill(text: str) -> list[tuple[int, str]]:
     match = re.match(r"---\n(.*?)\n---\n", text, re.S)
     if not match:
@@ -213,8 +223,12 @@ def lint(root: pathlib.Path) -> list[str]:
         if text is None:
             if name in REQUIRED:
                 problems.append(f"{name}:1: not UTF-8 text")
+            if pathlib.PurePosixPath(name).suffix.lower() in ASCII_SUFFIXES:
+                # Not UTF-8, so not ASCII either: check the bytes as they are.
+                found = check_ascii(name, (root / name).read_bytes().decode("latin-1"))
+                problems += [f"{name}:{line}: {message}" for line, message in found]
             continue
-        found = check_header(name, text) + check_text(name, text)
+        found = check_header(name, text) + check_text(name, text) + check_ascii(name, text)
         if name == UPLUGIN:
             found += check_uplugin(text)
         elif name == LANES:
