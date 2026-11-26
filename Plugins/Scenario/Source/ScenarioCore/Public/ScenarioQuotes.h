@@ -18,8 +18,10 @@ struct SCENARIOCORE_API FScenarioQuote
 	FString Id;
 	FString Fingerprint;
 	EScenarioQuoteKind Kind = EScenarioQuoteKind::Model;
-	/** Model or workflow id. */
+	/** Model or workflow id: a trained model's base. */
 	FString TargetId;
+	/** The trained model the request runs on TargetId (also in Parameters), empty otherwise. */
+	FString TrainedModelId;
 	FString Scope;
 	TSharedPtr<FJsonObject> Parameters;
 	double CU = 0.0;
@@ -48,7 +50,8 @@ public:
 	/** Scope string for a workspace: "team/project", or "key" for API keys. */
 	static FString WorkspaceScope(const FString& TeamId, const FString& ProjectId);
 
-	const FScenarioQuote& Store(EScenarioQuoteKind Kind, const FString& TargetId, const TSharedPtr<FJsonObject>& Parameters, const FString& Scope, double CU, double Discount, double Now);
+	const FScenarioQuote& Store(EScenarioQuoteKind Kind, const FString& TargetId, const TSharedPtr<FJsonObject>& Parameters, const FString& Scope, double CU, double Discount, double Now,
+		const FString& TrainedModelId = FString());
 
 	/** The fresh quote for this fingerprint, or null. */
 	const FScenarioQuote* Usable(const FString& Fingerprint, double Now) const;

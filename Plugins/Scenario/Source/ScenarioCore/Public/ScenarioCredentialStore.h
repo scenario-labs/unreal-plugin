@@ -10,8 +10,8 @@
  * user's config folder. Accounts used by the plugin:
  *   api-key            the API key id (not secret, kept beside its secret)
  *   api-secret         the API secret
- *   oauth-refresh      the OAuth refresh token
- *   oauth-client       the registered OAuth client (JSON, not secret)
+ *   oauth-refresh      the OAuth session (JSON): refresh token, client id,
+ *                      issuer, account id and email, written together
  *   agent-token        the bearer token of the local MCP server
  */
 class SCENARIOCORE_API IScenarioCredentialStore

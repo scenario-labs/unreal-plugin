@@ -11,7 +11,6 @@
 #include "ScenarioHash.h"
 #include "ScenarioHttp.h"
 #include "ScenarioJson.h"
-#include "ScenarioRpc.h"
 #include "ScenarioTelemetry.h"
 #include "ScenarioTypes.h"
 
@@ -101,8 +100,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioUrlTest, "Scenario.Core.Url", SCENARIO
 bool FScenarioUrlTest::RunTest(const FString& Parameters)
 {
 	TestEqual(TEXT("host"), ScenarioUrl::Host(TEXT("https://user:pw@CDN.Cloud.Scenario.com:443/a/b?x=1")), FString(TEXT("cdn.cloud.scenario.com")));
-	TestTrue(TEXT("https"), ScenarioUrl::IsHttps(TEXT("https://mcp.scenario.com/mcp")));
-	TestFalse(TEXT("http"), ScenarioUrl::IsHttps(TEXT("http://mcp.scenario.com/mcp")));
+	TestTrue(TEXT("https"), ScenarioUrl::IsHttps(TEXT("https://api.cloud.scenario.com/v1")));
+	TestFalse(TEXT("http"), ScenarioUrl::IsHttps(TEXT("http://api.cloud.scenario.com/v1")));
 	TestTrue(TEXT("loopback"), ScenarioUrl::IsLoopbackHost(TEXT("127.0.0.1")));
 	TestFalse(TEXT("not loopback"), ScenarioUrl::IsLoopbackHost(TEXT("127.0.0.1.evil.com")));
 	TestEqual(TEXT("encode"), ScenarioUrl::Encode(TEXT("a b&c=d/\u00e9")), FString(TEXT("a%20b%26c%3Dd%2F%C3%A9")));
@@ -130,31 +129,6 @@ bool FScenarioErrorsTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("signature removed"), Scrubbed.Contains(TEXT("X-Amz-Signature")));
 	TestFalse(TEXT("token removed"), Scrubbed.Contains(TEXT("eyJhbGciOiJIUzI1NiJ9")));
 	TestTrue(TEXT("path kept"), Scrubbed.Contains(TEXT("https://cdn.cloud.scenario.com/a.png?...")));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioRpcParseTest, "Scenario.Core.Rpc.Parse", SCENARIO_TEST_FLAGS)
-bool FScenarioRpcParseTest::RunTest(const FString& Parameters)
-{
-	const FScenarioReply Json = ScenarioRpc::ParseReply(TEXT("{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"ok\":1}}"), TEXT("application/json"), 3);
-	TestTrue(TEXT("json ok"), Json.bOk && Json.Value->HasField(TEXT("result")));
-
-	const FString Stream =
-		TEXT("event: message\n")
-		TEXT("data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}\n\n")
-		TEXT("data: not json\n\n")
-		TEXT("data: {\"jsonrpc\":\"2.0\",\"id\":7,\n")
-		TEXT("data: \"result\":{\"value\":42}}\n\n")
-		TEXT("data: [DONE]\n\n");
-	const FScenarioReply Sse = ScenarioRpc::ParseReply(Stream, TEXT("text/event-stream"), 7);
-	TestTrue(TEXT("sse ok"), Sse.bOk);
-	TestEqual(TEXT("multi-line data joined"), ScenarioJson::GetNumber(ScenarioJson::GetObject(Sse.Value, TEXT("result")), TEXT("value")), 42.0);
-	TestEqual(TEXT("bad events skipped"), ScenarioRpc::StreamMessages(Stream).Num(), 2);
-
-	const FScenarioReply Wrong = ScenarioRpc::ParseReply(TEXT("{\"jsonrpc\":\"2.0\",\"id\":8,\"result\":{}}"), TEXT("application/json"), 9);
-	TestFalse(TEXT("wrong id is an error"), Wrong.bOk);
-	const FScenarioReply Notification = ScenarioRpc::ParseReply(FString(), FString(), -1);
-	TestTrue(TEXT("empty notification reply"), Notification.bOk);
 	return true;
 }
 

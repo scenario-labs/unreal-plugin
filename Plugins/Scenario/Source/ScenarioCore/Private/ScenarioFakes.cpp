@@ -27,24 +27,27 @@ TSharedPtr<FJsonObject> FScenarioFakeRequest::BodyJson() const
 	return ScenarioJson::ParseObject(BodyText());
 }
 
-FString FScenarioFakeRequest::RpcMethod() const
+FString FScenarioFakeRequest::Path() const
 {
-	return ScenarioJson::GetString(BodyJson(), TEXT("method"));
+	FString Left, Right;
+	FString Base = Url.Split(TEXT("?"), &Left, &Right) ? Left : Url;
+	const int32 Scheme = Base.Find(TEXT("://"));
+	if (Scheme != INDEX_NONE)
+	{
+		const int32 Slash = Base.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Scheme + 3);
+		Base = Slash == INDEX_NONE ? TEXT("/") : Base.Mid(Slash);
+	}
+	return Base;
 }
 
-FString FScenarioFakeRequest::ToolName() const
+FString FScenarioFakeRequest::Query(const FString& Name) const
 {
-	const TSharedPtr<FJsonObject> Json = BodyJson();
-	if (ScenarioJson::GetString(Json, TEXT("method")) != TEXT("tools/call"))
+	FString Left, Right;
+	if (!Url.Split(TEXT("?"), &Left, &Right))
 	{
 		return FString();
 	}
-	return ScenarioJson::GetString(ScenarioJson::GetObject(Json, TEXT("params")), TEXT("name"));
-}
-
-TSharedPtr<FJsonObject> FScenarioFakeRequest::ToolArguments() const
-{
-	return ScenarioJson::GetObject(ScenarioJson::GetObject(BodyJson(), TEXT("params")), TEXT("arguments"));
+	return ScenarioUrl::ParseQuery(Right).FindRef(Name);
 }
 
 void FScenarioFakeTransport::Send(const FString& Verb, const FString& Url, const TMap<FString, FString>& Headers, const TArray<uint8>& Body,
@@ -90,23 +93,11 @@ void FScenarioFakeTransport::EnqueueJson(int32 Status, const FString& Body, cons
 	Queue.Add(Json(Status, Body, Headers));
 }
 
-void FScenarioFakeTransport::EnqueueSse(int32 Status, const FString& Body, const TMap<FString, FString>& Headers)
-{
-	FScenarioHttpResponse Response = Json(Status, Body, Headers);
-	Response.Headers.Add(TEXT("content-type"), TEXT("text/event-stream"));
-	Queue.Add(Response);
-}
-
 void FScenarioFakeTransport::EnqueueTransportError(EScenarioErrorKind Kind)
 {
 	FScenarioHttpResponse Response;
 	Response.TransportError = Kind;
 	Queue.Add(Response);
-}
-
-TArray<FScenarioFakeRequest> FScenarioFakeTransport::ToolCalls() const
-{
-	return Requests.FilterByPredicate([](const FScenarioFakeRequest& Request) { return !Request.ToolName().IsEmpty(); });
 }
 
 FScenarioHttpResponse FScenarioFakeTransport::Json(int32 Status, const FString& Body, const TMap<FString, FString>& Headers)
@@ -122,76 +113,35 @@ FScenarioHttpResponse FScenarioFakeTransport::Json(int32 Status, const FString& 
 	return Response;
 }
 
-FString FScenarioFakeTransport::ToolResult(int64 Id, const FString& StructuredJson, bool bIsError)
+bool FScenarioFakeBackend::Matches(const FString& Route, const FScenarioRequest& Request)
 {
-	return FString::Printf(TEXT("{\"jsonrpc\":\"2.0\",\"id\":%lld,\"result\":{\"content\":[{\"type\":\"text\",\"text\":%s}],\"structuredContent\":%s,\"isError\":%s}}"),
-		Id, *ScenarioJson::EscapeString(StructuredJson), *StructuredJson, bIsError ? TEXT("true") : TEXT("false"));
-}
-
-FString FScenarioFakeTransport::InitializeResult(int64 Id)
-{
-	return FString::Printf(TEXT("{\"jsonrpc\":\"2.0\",\"id\":%lld,\"result\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"fake\",\"version\":\"0\"}}}"), Id);
-}
-
-void FScenarioFakeMcpServer::On(const FString& Tool, TFunction<FString(const TSharedPtr<FJsonObject>& Arguments)> Handler)
-{
-	Handlers.Add(Tool, [Handler](const TSharedPtr<FJsonObject>& Arguments, int64 RequestId)
+	FString Verb, Path;
+	if (!Route.Split(TEXT(" "), &Verb, &Path) || Verb != Request.Verb)
 	{
-		return FScenarioFakeTransport::Json(200, FScenarioFakeTransport::ToolResult(RequestId, Handler(Arguments)));
-	});
-}
-
-void FScenarioFakeMcpServer::OnRaw(const FString& Tool, FToolHandler Handler)
-{
-	Handlers.Add(Tool, MoveTemp(Handler));
-}
-
-FScenarioHttpResponse FScenarioFakeMcpServer::Handle(const FScenarioFakeRequest& Request)
-{
-	const TSharedPtr<FJsonObject> Json = Request.BodyJson();
-	const FString Method = ScenarioJson::GetString(Json, TEXT("method"));
-	const int64 Id = static_cast<int64>(ScenarioJson::GetNumber(Json, TEXT("id"), -1.0));
-	if (Method == TEXT("initialize"))
-	{
-		return FScenarioFakeTransport::Json(200, FScenarioFakeTransport::InitializeResult(Id), { { TEXT("mcp-session-id"), SessionId } });
+		return false;
 	}
-	if (Method == TEXT("notifications/initialized"))
+	TArray<FString> Want, Have;
+	Path.ParseIntoArray(Want, TEXT("/"));
+	Request.Path.ParseIntoArray(Have, TEXT("/"));
+	if (Want.Num() != Have.Num())
 	{
-		FScenarioHttpResponse Accepted;
-		Accepted.Status = 202;
-		return Accepted;
+		return false;
 	}
-	if (Method != TEXT("tools/call"))
+	for (int32 Index = 0; Index < Want.Num(); ++Index)
 	{
-		return FScenarioFakeTransport::Json(200, FString::Printf(TEXT("{\"jsonrpc\":\"2.0\",\"id\":%lld,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}"), Id));
-	}
-	const FString Tool = Request.ToolName();
-	CallCounts.FindOrAdd(Tool)++;
-	if (const FToolHandler* Handler = Handlers.Find(Tool))
-	{
-		return (*Handler)(Request.ToolArguments(), Id);
-	}
-	return FScenarioFakeTransport::Json(200, FScenarioFakeTransport::ToolResult(Id, FString::Printf(TEXT("{\"error\":\"Unknown tool %s\"}"), *Tool), true));
-}
-
-void FScenarioFakeMcpServer::Attach(FScenarioFakeTransport& Transport)
-{
-	TWeakPtr<FScenarioFakeMcpServer> WeakSelf = AsShared();
-	Transport.Responder = [WeakSelf](const FScenarioFakeRequest& Request)
-	{
-		if (const TSharedPtr<FScenarioFakeMcpServer> Self = WeakSelf.Pin())
+		if (Want[Index] != TEXT("*") && Want[Index] != ScenarioUrl::Decode(Have[Index]))
 		{
-			return Self->Handle(Request);
+			return false;
 		}
-		FScenarioHttpResponse Gone;
-		Gone.TransportError = EScenarioErrorKind::Transport;
-		return Gone;
-	};
+	}
+	return true;
 }
 
-void FScenarioFakeBackend::CallTool(const FString& Tool, const TSharedPtr<FJsonObject>& Arguments, FScenarioReplyCallback OnDone, float TimeoutSeconds)
+void FScenarioFakeBackend::Send(const FScenarioRequest& Request, FScenarioReplyCallback OnDone)
 {
-	Calls.Add({ Tool, Arguments.IsValid() ? ScenarioJson::CloneObject(Arguments) : MakeShared<FJsonObject>() });
+	FScenarioRequest Seen = Request;
+	Seen.Body = Request.Body.IsValid() ? ScenarioJson::CloneObject(Request.Body) : nullptr;
+	Calls.Add(Seen);
 	if (!bSignedIn)
 	{
 		FScenarioReply Reply = FScenarioReply::Fail(EScenarioErrorKind::Auth, TEXT("Sign in to Scenario first."));
@@ -199,31 +149,52 @@ void FScenarioFakeBackend::CallTool(const FString& Tool, const TSharedPtr<FJsonO
 		OnDone(Reply);
 		return;
 	}
-	if (const FHandler* Handler = Handlers.Find(Tool))
+	const FString Exact = Request.Verb + TEXT(" ") + Request.Path;
+	if (const FHandler* Handler = Handlers.Find(Exact))
 	{
-		OnDone((*Handler)(Arguments));
+		OnDone((*Handler)(Request));
 		return;
 	}
-	OnDone(FScenarioReply::Fail(EScenarioErrorKind::NotFound, FString::Printf(TEXT("The fake backend has no handler for %s."), *Tool)));
+	for (const TPair<FString, FHandler>& Pair : Handlers)
+	{
+		if (Matches(Pair.Key, Request))
+		{
+			OnDone(Pair.Value(Request));
+			return;
+		}
+	}
+	OnDone(FScenarioReply::Fail(EScenarioErrorKind::NotFound, FString::Printf(TEXT("The fake backend has no handler for %s."), *Exact)));
 }
 
-void FScenarioFakeBackend::OnJson(const FString& Tool, const FString& Json)
+void FScenarioFakeBackend::OnJson(const FString& Route, const FString& Json)
 {
-	On(Tool, [Json](const TSharedPtr<FJsonObject>&)
+	On(Route, [Json](const FScenarioRequest&)
 	{
 		const TSharedPtr<FJsonObject> Value = ScenarioJson::ParseObject(Json);
 		return Value.IsValid() ? FScenarioReply::Ok(Value) : FScenarioReply::Fail(EScenarioErrorKind::Protocol, TEXT("Bad fixture JSON."));
 	});
 }
 
-int32 FScenarioFakeBackend::CountOf(const FString& Tool) const
+int32 FScenarioFakeBackend::CountOf(const FString& Route) const
 {
 	int32 Count = 0;
-	for (const TPair<FString, TSharedPtr<FJsonObject>>& Call : Calls)
+	for (const FScenarioRequest& Call : Calls)
 	{
-		Count += Call.Key == Tool ? 1 : 0;
+		Count += Matches(Route, Call) ? 1 : 0;
 	}
 	return Count;
+}
+
+const FScenarioRequest* FScenarioFakeBackend::Last(const FString& Route) const
+{
+	for (int32 Index = Calls.Num() - 1; Index >= 0; --Index)
+	{
+		if (Matches(Route, Calls[Index]))
+		{
+			return &Calls[Index];
+		}
+	}
+	return nullptr;
 }
 
 FString ScenarioFixtures::Dir()

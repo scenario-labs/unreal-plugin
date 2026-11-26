@@ -142,6 +142,9 @@ EOF
   fi
   sorted="$(printf '%s' "$matches" | sort -t '	' -k1,1 -r -V 2>/dev/null || printf '%s' "$matches" | sort -r)"
   choice=1
+  if [ "$count" -gt 1 ] && [ "$yes" = 1 ] && [ -z "$association" ]; then
+    fail "Several Unreal versions are installed and the project names none. Run the installer with --engine <an Unreal folder>."
+  fi
   if [ "$count" -gt 1 ] && [ "$yes" = 0 ]; then
     echo "Several Unreal versions are installed:"
     printf '%s\n' "$sorted" | awk -F '\t' '{ printf "  %d) Unreal %s  (%s)\n", NR, $1, $2 }'
@@ -164,14 +167,14 @@ log_dir="$project_dir/Saved/Scenario"
 mkdir -p "$log_dir" || fail "Could not create $log_dir."
 log="$log_dir/Install-$STAMP.log"
 # The temporary folder's real path: Unreal's build accelerator fails on the /var -> /private/var symlink.
-stage="$(cd "${TMPDIR:-/tmp}" && pwd -P)/ScenarioBuild-$STAMP"
+stage="$(cd "${TMPDIR:-/tmp}" && pwd -P)/ScenarioBuild-$STAMP-$$"
 bold "Compiling Scenario $plugin_version for Unreal $version. This takes a few minutes."
 echo "Full log: $log"
 "$engine_root/Engine/Build/BatchFiles/RunUAT.sh" BuildPlugin -Plugin="$PLUGIN" -Package="$stage" -TargetPlatforms=Mac 2>&1 \
   | tee "$log" | grep --line-buffered -E '^\[[0-9]+/[0-9]+\]' | sed -u 's/^/  /'
 status="${PIPESTATUS[0]}"
 if [ "$status" != 0 ] || [ ! -f "$stage/Scenario.uplugin" ]; then
-  errors="$(grep -E '(^|[[:space:]])(error|ERROR)[[:space:]:]|fatal error|^Unable to instantiate module' "$log" | head -10)"
+  errors="$(grep -E '(^|[[:space:]])(error|ERROR)[[:space:]:]|(^|[[:space:]])Error:|fatal error|^Unable to instantiate module' "$log" | head -10)"
   if [ -n "$errors" ]; then
     printf '\nThe first errors:\n'
     printf '%s\n' "$errors" | sed 's/^/  /'

@@ -13,6 +13,7 @@
 #include "ISettingsModule.h"
 #include "LevelEditor.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Modules/ModuleManager.h"
 #include "ScenarioActions.h"
 #include "ScenarioCreateModel.h"
@@ -26,6 +27,7 @@
 #include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
 #include "ScenarioThumbnails.h"
+#include "ScenarioTrained.h"
 #include "ScenarioWidgets.h"
 #include "SScenarioComposer.h"
 #include "SScenarioJobCard.h"
@@ -52,6 +54,16 @@ namespace
 	TArray<TPair<FName, FScenarioEditorModule::FSectionFactory>> Sections;
 	FScenarioEditorModule::FSectionFactory HeaderStatus;
 	TSharedPtr<FUICommandList> GlobalCommands;
+
+	/** Unreal 5.8 replaced FCoreDelegates::OnPostEngineInit with GetOnPostEngineInit(). */
+	FSimpleMulticastDelegate& OnPostEngineInitDelegate()
+	{
+#if UE_VERSION_OLDER_THAN(5, 8, 0)
+		return FCoreDelegates::OnPostEngineInit;
+#else
+		return FCoreDelegates::GetOnPostEngineInit();
+#endif
+	}
 
 	/** Content Browser assets that can be a Scenario input. */
 	bool IsInputClass(const FAssetData& Asset)
@@ -159,10 +171,13 @@ namespace
 		}
 		const FString* Lane = Values->Find(TEXT("Scenario.Lane"));
 		const FString* ModelId = Values->Find(TEXT("Scenario.ModelId"));
+		const FString* TrainedId = Values->Find(TEXT("Scenario.TrainedModelId"));
 		const FString* Parameters = Values->Find(TEXT("Scenario.Parameters"));
 		const FString LaneId = Lane ? *Lane : FString();
-		const FString Model = ModelId ? *ModelId : FString();
-		const FString Params = Parameters ? *Parameters : FString();
+		// A trained model's run reopens the trained model, with its form's values rather than its base's.
+		const bool bTrained = TrainedId && !TrainedId->IsEmpty();
+		const FString Model = bTrained ? *TrainedId : ModelId ? *ModelId : FString();
+		const FString Params = Parameters ? (bTrained ? ScenarioJson::Write(ScenarioTrained::FormValues(ScenarioJson::ParseObject(*Parameters))) : *Parameters) : FString();
 
 		const TSharedRef<SWindow> Window = SNew(SWindow)
 			.Title(FText::Format(LOCTEXT("GenerationTitle", "How {0} was made"), FText::FromName(Asset.AssetName)))
@@ -240,7 +255,7 @@ void FScenarioEditorModule::StartupModule()
 	// Plugins in the PostEngineInit phase load after OnPostEngineInit fires, and
 	// a module's editor subsystems are created after its StartupModule: start on
 	// the first tick where the subsystem exists.
-	PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
+	PostEngineInitHandle = OnPostEngineInitDelegate().AddRaw(this, &FScenarioEditorModule::OnPostEngineInit);
 	// Asset thumbnails hold engine objects: release them before the object system shuts down, not in ShutdownModule.
 	PreExitHandle = FCoreDelegates::OnEnginePreExit.AddLambda([]() { FScenarioThumbnails::Get().Shutdown(); });
 	StartTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
@@ -257,7 +272,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 		return;
 	}
 	bStarted = true;
-	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
+	OnPostEngineInitDelegate().Remove(PostEngineInitHandle);
 	FScenarioCreateModel::Get()->Initialize();
 	if (FLevelEditorModule* LevelEditor = FModuleManager::GetModulePtr<FLevelEditorModule>(TEXT("LevelEditor")))
 	{
@@ -281,7 +296,7 @@ void FScenarioEditorModule::OnPostEngineInit()
 
 void FScenarioEditorModule::ShutdownModule()
 {
-	FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
+	OnPostEngineInitDelegate().Remove(PostEngineInitHandle);
 	FCoreDelegates::OnEnginePreExit.Remove(PreExitHandle);
 	FTSTicker::GetCoreTicker().RemoveTicker(StartTicker);
 	if (bStarted)

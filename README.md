@@ -70,7 +70,7 @@ The [Scenario MCP guide](docs/MCP_GUIDE.md) lists every tool and the permissions
 2. Download **Source code (zip)** from the [latest release](https://github.com/scenario-labs/unreal-plugin/releases/latest) and unzip it.
 3. Double-click `Install-Windows.bat` (on macOS, `Install-macOS.command`) and choose your project's `.uproject` file.
 
-The installer compiles for the Unreal version your project uses, in a few minutes, and installs the plugin in `<Project>/Plugins/Scenario`. A previous copy moves to `<Project>/Saved/Scenario/`, next to the build log. The installers are not signed yet: Windows may ask you to confirm (**More info**, then **Run anyway**), and macOS may block the first run (allow it in **System Settings > Privacy & Security**, then double-click again).
+The installer compiles for the Unreal version your project uses, in a few minutes, and installs the plugin in `<Project>/Plugins/Scenario`. A previous copy moves to `<Project>/Saved/Scenario/`, next to the build log. If you had turned Scenario off in the project, turn it on again in **Edit > Plugins** and restart the editor. The installers are not signed yet: Windows may ask you to confirm (**More info**, then **Run anyway**), and macOS may block the first run (allow it in **System Settings > Privacy & Security**, then double-click again).
 
 From source: run the same installer from a clone of this repository. Copying `Plugins/Scenario/` into a project yourself works only in a C++ project, which Unreal compiles when it opens; a Blueprint-only project stops with "module 'ScenarioCore' could not be found".
 

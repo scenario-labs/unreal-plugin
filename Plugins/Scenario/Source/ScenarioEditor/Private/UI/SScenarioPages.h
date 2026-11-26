@@ -85,7 +85,6 @@ private:
 	TSharedRef<SWidget> BuildDestination();
 	void RefreshRecent();
 	void OnModelChanged();
-	void ShowSuggestions();
 
 	TSharedPtr<FScenarioCreateModel> Model;
 	TSharedPtr<SScenarioForm> Form;
