@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ScenarioMcpClient.h"
+#include "ScenarioRestClient.h"
 #include "ScenarioTypes.h"
 
 class IScenarioCredentialStore;
@@ -15,7 +15,6 @@ struct SCENARIOCORE_API FScenarioOAuthMetadata
 	FString Issuer;
 	FString AuthorizationEndpoint;
 	FString TokenEndpoint;
-	FString RegistrationEndpoint;
 	FString DeviceAuthorizationEndpoint;
 	FString RevocationEndpoint;
 
@@ -32,20 +31,40 @@ struct SCENARIOCORE_API FScenarioDeviceCode
 	double ExpiresAt = 0.0;
 };
 
+/** The identity provider and the registered OAuth application Unreal signs in as. */
+struct SCENARIOCORE_API FScenarioOAuthApp
+{
+	FString Issuer;
+	FString ClientId;
+	/** Why the SCENARIO_OAUTH_* variables were refused; sign-in fails with it. Empty when usable. */
+	FString Problem;
+
+	/** RFC 8414: the well-known segment goes between the host and the issuer's path, if it has one. */
+	FString MetadataUrl() const;
+	/** Production, or the development instance named by both variables together (HTTPS issuer). */
+	static FScenarioOAuthApp Select(const FString& EnvIssuer, const FString& EnvClientId);
+	/** Select() with SCENARIO_OAUTH_ISSUER and SCENARIO_OAUTH_CLIENT_ID. */
+	static FScenarioOAuthApp FromEnvironment();
+};
+
 DECLARE_MULTICAST_DELEGATE(FOnScenarioOAuthChanged);
 
 /**
- * Sign in with Scenario: OAuth 2.1 through the hosted Scenario MCP's
- * authorization server. Authorization code with PKCE and a loopback redirect
- * by default, the device code grant as the fallback, refresh tokens in the
- * credential store, the access token in memory only.
+ * Sign in with Scenario as "Scenario for Unreal Engine", the plugin's
+ * registered public OAuth application on Scenario's identity provider.
+ * Authorization code with PKCE and a loopback redirect by default, the device
+ * code grant as the fallback, refresh tokens in the credential store, the
+ * access token in memory only.
  */
 class SCENARIOCORE_API FScenarioOAuth : public IScenarioAuthProvider, public TSharedFromThis<FScenarioOAuth>
 {
 public:
-	static const TCHAR* DefaultMetadataUrl;
-	static const TCHAR* DefaultResource;
-	/** Fixed loopback ports registered as redirect URIs; the first free one is used. */
+	static const TCHAR* ProductionIssuer;
+	/** The production application's client id: a public client, so not a secret. */
+	static const TCHAR* ProductionClientId;
+	/** Who the person is (their id and email, shown in the editor), and a refresh token. */
+	static const TCHAR* DefaultScope;
+	/** Loopback ports tried in order; the provider accepts a loopback redirect on any port. */
 	static const TArray<int32>& RedirectPorts();
 	static constexpr double BrowserTimeoutSeconds = 300.0;
 
@@ -56,11 +75,18 @@ public:
 	virtual FString AuthorizationHeader() const override;
 	virtual bool NeedsWorkspaceArguments() const override { return true; }
 	virtual void Refresh(TFunction<void(bool bRefreshed)> OnDone) override;
+	virtual uint32 GetSignInGeneration() const override { return SignInGeneration; }
 
-	/** Loads the refresh token saved by an earlier session. True when one exists. */
+	/**
+	 * Loads the refresh token saved by an earlier session. True when one exists.
+	 * A token saved for another application (an older version's own client, or
+	 * another provider) is deleted without being sent anywhere.
+	 */
 	bool Restore();
 	bool HasRefreshToken() const { return !RefreshToken.IsEmpty(); }
 	bool IsAccessTokenFresh() const;
+	/** The signed-in account's email, from the ID token; empty when unknown. Shown in the editor, never logged. */
+	const FString& GetAccountEmail() const { return AccountEmail; }
 
 	/**
 	 * Starts the browser sign-in. OnUrl receives the authorization URL to open;
@@ -72,7 +98,10 @@ public:
 	void Cancel();
 	bool IsSigningIn() const { return bSigningIn; }
 
-	/** Revokes the refresh token (best effort), removes it from the store and forgets the access token. */
+	/**
+	 * Revokes the refresh token (best effort), removes it from the store and forgets the access token.
+	 * Editors on this machine share the saved session, so the others end theirs at their next refresh.
+	 */
 	void SignOut();
 
 	/** Uses an access token from the environment (SCENARIO_ACCESS_TOKEN) for CI. True when one is set. */
@@ -83,18 +112,26 @@ public:
 	// Exposed for tests.
 	static FString MakeCodeChallenge(const FString& Verifier);
 	static FString BuildAuthorizeUrl(const FScenarioOAuthMetadata& Metadata, const FString& ClientId, const FString& RedirectUri,
-		const FString& Challenge, const FString& State, const FString& Resource, const FString& Scope);
+		const FString& Challenge, const FString& State, const FString& Scope);
 	/** Reads ?code=&state=&iss= or ?error= from a callback query. Returns an error message or empty, and the code. */
 	static FString ReadCallback(const FString& Query, const FString& ExpectedState, const FString& ExpectedIssuer, FString& OutCode);
+	/** The claims of a JWT, without checking its signature; null when unreadable. */
+	static TSharedPtr<FJsonObject> ReadTokenClaims(const FString& Jwt);
 
-	FString MetadataUrl;
-	FString Resource;
-	/** Empty by default: the authorization server's default scopes are used. */
+	FScenarioOAuthApp App;
 	FString Scope;
 
 private:
 	void Discover(TFunction<void(const FScenarioReply&)> OnDone);
-	void EnsureClient(TFunction<void(const FScenarioReply&, const FString& ClientId)> OnDone);
+	/**
+	 * Takes the refresh token another editor on this machine saved since this one last read or wrote it, when it
+	 * belongs to the same application, provider and account. True when taken.
+	 */
+	bool AdoptStoredSession();
+	/** Forgets the session and deletes the saved one; with bKeepNewer, not when another editor has replaced it since. */
+	void ForgetSession(bool bKeepNewer = false);
+	void SendRefresh(bool bRetried);
+	void FinishRefresh(bool bOk);
 	void PostForm(const FString& Url, const TArray<TPair<FString, FString>>& Fields, FScenarioReplyCallback OnDone);
 	void ExchangeCode(const FString& Code, const FString& RedirectUri, FScenarioReplyCallback OnDone);
 	bool ApplyTokenResponse(const TSharedPtr<FJsonObject>& Token);
@@ -105,10 +142,14 @@ private:
 	TSharedRef<IScenarioHttpTransport> Transport;
 	TSharedRef<IScenarioCredentialStore> Store;
 	FScenarioOAuthMetadata Metadata;
-	FString ClientId;
 	FString AccessToken;
 	double AccessExpiresAt = 0.0;
 	FString RefreshToken;
+	/** The refresh token last read from or written to the store, to tell another editor's changes from this one's. */
+	FString StoredRefreshToken;
+	/** The account's id (sub) and email, from the ID token. */
+	FString AccountId;
+	FString AccountEmail;
 
 	bool bSigningIn = false;
 	uint32 SignInGeneration = 0;

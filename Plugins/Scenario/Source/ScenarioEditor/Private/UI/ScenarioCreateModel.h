@@ -10,6 +10,7 @@
 #include "ScenarioSession.h"
 
 class AActor;
+struct FScenarioTrainedInfo;
 
 enum class EScenarioGenerateState : uint8
 {
@@ -121,6 +122,8 @@ public:
 	FString GetModelName() const;
 	FString GetModelNote() const;
 	FString GetModelBadge() const;
+	/** How the chosen trained model runs (its base, weight, trigger words) once its form is loaded; null for other models. */
+	const FScenarioTrainedInfo* GetTrained() const;
 	/** Picks a model; switches lane when the model belongs to another one. */
 	void SetModel(const FString& InModelId, const FString& InName = FString());
 	TArray<FScenarioLaneModel> QuickPicks() const;
@@ -220,8 +223,6 @@ public:
 	/** LocalId is the Spark job's row in the job list, empty when nothing was sent. */
 	void RunSpark(TFunction<void(const TArray<FString>& Variants, const FString& Error, const FString& LocalId)> OnDone);
 
-	/** Suggest: Scenario's recommendation for the prompt. */
-	void Suggest(TFunction<void(const TArray<TPair<FString, FString>>& Models, const FString& Error)> OnDone);
 
 	FSimpleMulticastDelegate OnChanged;
 
@@ -252,6 +253,8 @@ private:
 	TArray<FScenarioField> Fields;
 	TSharedRef<FJsonObject> Values = MakeShared<FJsonObject>();
 	bool bLoadingSchema = false;
+	/** The form is a trained model's (its base's form): read again when the catalog forgets it (another project). */
+	bool bTrainedForm = false;
 	FString SchemaError;
 	int32 SchemaGeneration = 0;
 	TArray<FScenarioReference> References;

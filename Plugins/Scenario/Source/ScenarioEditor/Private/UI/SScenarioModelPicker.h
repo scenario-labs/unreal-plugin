@@ -50,6 +50,9 @@ private:
 	using FItem = TSharedPtr<FScenarioCatalogModel>;
 
 	void Refresh();
+	void OnCatalogChanged();
+	/** Reads the bases once trained rows are listed, so they show how they run; once per picker. */
+	void LoadBasesForTrainedRows();
 	void Select(const FItem& Item);
 	void Choose(const FItem& Item);
 	TSharedRef<ITableRow> MakeRow(FItem Item, const TSharedRef<STableViewBase>& Owner);
@@ -75,6 +78,7 @@ private:
 	FItem Selected;
 	TSharedPtr<SListView<FItem>> List;
 	FDelegateHandle CatalogHandle;
+	bool bBasesAsked = false;
 	TSharedPtr<class FActiveTimerHandle> EstimateTimer;
 };
 

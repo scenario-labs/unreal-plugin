@@ -12,7 +12,7 @@ The Scenario plugin runs a local MCP server inside the Unreal Editor. Its tools 
 - Server: `http://127.0.0.1:9877/mcp` (if 9877 is taken, the plugin uses the next free port up to 9886; the Agent page of the Scenario Studio shows the real one).
 - A bearer token is required by default. The Set up buttons on the Scenario Studio's Agent page write it into Claude Code, Codex, Cursor or Claude Desktop. Never ask the user to paste the token into chat.
 - Port 8000 is Epic's own Unreal MCP server (Unreal 5.8), not this one. Epic's toolsets edit actors, materials, Blueprints and the rest of the editor. On 5.8 the plugin also registers a Scenario toolset there (`ScenarioToolsets.ScenarioToolset`, reached with `call_tool`): same price, quote and landing rules, and every paid call waits for the person's Approve in the editor (see Money rules). Use this server when you have it; use Epic's registry when it is the only one connected.
-- With Agent tool search on (Editor Preferences, off by default), `tools/list` shows only `scenario_status`, `find_tools`, `describe_tools` and `call_tool`: find a tool, describe it, then call it by name.
+- `tools/list` shows the core tools. The kit's world, game and film tools, Prompt Spark and the Scenario library are in the catalog: `unreal_tools_search` (or `unreal_tools_list`), then `unreal_tool_execute_<lane>` or the tool's own name.
 - If a call answers `Auth: Not signed in`, ask the user to sign in from the Scenario button in the level editor toolbar.
 
 ## Which tool for which job
@@ -30,7 +30,7 @@ Scenario tools never edit what they did not create. The result of a Scenario job
 
 1. `scenario_status`: signed in, project, permissions (change_project, run_python), spending rules.
 2. `scene_summary` (and `object_detail`, `screenshot_viewport`) to understand the level before generating for it.
-3. `list_models` with a `lane` (image, video, 3d, material, audio, environment, render). The lane's picks come first and are the safe default. `recommend_models` asks Scenario for a pick.
+3. `list_models` with a `lane` (image, video, 3d, material, audio, environment, render). The lane's picks come first and are the safe default.
 4. `model_schema`: parameter names, options, defaults, and which change the price. File fields take Scenario asset ids.
 5. `estimate_cost` with `model_id` and `parameters`: free, returns `quote_id` and `cu_cost_exact`.
 6. `generate` with `quote_id` and `approved_cost` equal to `cu_cost_exact`, character for character. Returns `job_id`.

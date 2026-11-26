@@ -5,8 +5,8 @@
 - Every .h, .cpp and .cs file under Plugins/ and Source/ starts with the MIT
   copyright header.
 - No em dash (U+2014) in any text file.
-- Plugins/Scenario/Scenario.uplugin and Resources/Lanes.json are valid JSON
-  with the keys the plugin reads.
+- Plugins/Scenario/Scenario.uplugin, Resources/Lanes.json and
+  Resources/Trained.json are valid JSON with the keys the plugin reads.
 - Resources/AgentSkill/SKILL.md has `name` and `description` frontmatter.
 - PowerShell and batch files are ASCII: Windows PowerShell 5.1 and cmd.exe
   read a file without a byte order mark in the system code page.
@@ -22,6 +22,7 @@ Usage: python3 tools/lint.py [--root DIR]
 """
 import argparse
 import json
+import math
 import pathlib
 import re
 import subprocess
@@ -39,7 +40,9 @@ EM_DASH = chr(0x2014)
 ASCII_SUFFIXES = {".ps1", ".bat", ".cmd"}
 UPLUGIN = "Plugins/Scenario/Scenario.uplugin"
 LANES = "Plugins/Scenario/Resources/Lanes.json"
+TRAINED = "Plugins/Scenario/Resources/Trained.json"
 SKILL = "Plugins/Scenario/Resources/AgentSkill/SKILL.md"
+REQUIRED = (UPLUGIN, LANES, TRAINED, SKILL)
 # The one runtime module: actors that games made with the kit use. No network code, no Scenario data.
 RUNTIME_MODULES = {"ScenarioGameplay"}
 UPLUGIN_KEYS = ("FileVersion", "Version", "VersionName", "FriendlyName", "Description", "Category", "CreatedBy", "Modules")
@@ -163,6 +166,36 @@ def check_lanes(text: str) -> list[tuple[int, str]]:
     return problems
 
 
+def check_trained(text: str) -> list[tuple[int, str]]:
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        return [(getattr(error, "lineno", 1), f"invalid JSON: {error}")]
+    if not isinstance(data, dict):
+        return [(1, "must be a JSON object")]
+    problems = [(1, f"missing key {key}") for key in ("version", "base_probes", "base_names", "default_scale") if key not in data]
+    probes = data.get("base_probes", [])
+    if not isinstance(probes, list) or not probes:
+        problems.append((1, "base_probes must be a non-empty list"))
+        probes = []
+    for model_id in probes:
+        if not str(model_id).startswith("model_"):
+            problems.append((1, f"base_probes: {model_id} does not start with model_"))
+    if len(set(map(str, probes))) != len(probes):
+        problems.append((1, "base_probes: duplicate id"))
+    names = data.get("base_names", {})
+    if not isinstance(names, dict):
+        problems.append((1, "base_names must be an object"))
+        names = {}
+    for name, model_id in names.items():
+        if model_id not in probes:
+            problems.append((1, f"base_names: {name} maps to {model_id}, which base_probes does not list"))
+    scale = data.get("default_scale", 0.75)
+    if not isinstance(scale, (int, float)) or isinstance(scale, bool) or (isinstance(scale, float) and not math.isfinite(scale)) or scale < 0:
+        problems.append((1, "default_scale must be a finite number of 0 or more"))
+    return problems
+
+
 def check_ascii(name: str, text: str) -> list[tuple[int, str]]:
     if pathlib.PurePosixPath(name).suffix.lower() not in ASCII_SUFFIXES:
         return []
@@ -188,6 +221,8 @@ def lint(root: pathlib.Path) -> list[str]:
             continue
         text = read_text(root / name)
         if text is None:
+            if name in REQUIRED:
+                problems.append(f"{name}:1: not UTF-8 text")
             if pathlib.PurePosixPath(name).suffix.lower() in ASCII_SUFFIXES:
                 # Not UTF-8, so not ASCII either: check the bytes as they are.
                 found = check_ascii(name, (root / name).read_bytes().decode("latin-1"))
@@ -198,10 +233,12 @@ def lint(root: pathlib.Path) -> list[str]:
             found += check_uplugin(text)
         elif name == LANES:
             found += check_lanes(text)
+        elif name == TRAINED:
+            found += check_trained(text)
         elif name == SKILL:
             found += check_skill(text)
         problems += [f"{name}:{line}: {message}" for line, message in found]
-    for required in (UPLUGIN, LANES, SKILL):
+    for required in REQUIRED:
         if required not in names:
             problems.append(f"{required}:1: file is missing")
     return problems

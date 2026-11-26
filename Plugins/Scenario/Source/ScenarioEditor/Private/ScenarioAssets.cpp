@@ -285,8 +285,14 @@ TArray<UObject*> ScenarioAssets::ImportPipelines(const FString& File, TArray<FSt
 		return Pipelines;
 	}
 	// The engine's own defaults for the format, copied: the project's import stack and the last dialog never reach them.
+#if UE_VERSION_OLDER_THAN(5, 8, 0)
+	// Before 5.8, FBX and OBJ use Interchange's generic assets pipeline.
+	const TCHAR* MeshBase = TEXT("/Interchange/Pipelines/DefaultAssetsPipeline.DefaultAssetsPipeline");
+#else
+	const TCHAR* MeshBase = TEXT("/Interchange/Pipelines/DefaultFBXOBJAssetsPipeline.DefaultFBXOBJAssetsPipeline");
+#endif
 	const TCHAR* Base = bGltf ? TEXT("/Interchange/Pipelines/DefaultGLTFAssetsPipeline.DefaultGLTFAssetsPipeline")
-		: bMesh ? TEXT("/Interchange/Pipelines/DefaultFBXOBJAssetsPipeline.DefaultFBXOBJAssetsPipeline")
+		: bMesh ? MeshBase
 		: TEXT("/Interchange/Pipelines/DefaultTexturePipeline.DefaultTexturePipeline");
 	UObject* Default = LoadObject<UObject>(nullptr, Base, nullptr, LOAD_NoWarn | LOAD_Quiet);
 	if (!Default)
@@ -871,11 +877,20 @@ void ScenarioAssets::ConfigureStaticMesh(UObject* Mesh, TArray<FString>* OutChec
 		}
 	}
 	const bool bWantNanite = Settings.bNanite && Translucent.IsEmpty();
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+	// Unreal 5.6 has no Nanite accessors: the settings are a public member.
+	FMeshNaniteSettings Nanite = StaticMesh->NaniteSettings;
+#else
 	FMeshNaniteSettings Nanite = StaticMesh->GetNaniteSettings();
+#endif
 	if (Nanite.bEnabled != bWantNanite)
 	{
 		Nanite.bEnabled = bWantNanite;
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+		StaticMesh->NaniteSettings = Nanite;
+#else
 		StaticMesh->SetNaniteSettings(Nanite);
+#endif
 	}
 	bool bLightmapUvs = false;
 	if (StaticMesh->GetNumSourceModels() > 0)

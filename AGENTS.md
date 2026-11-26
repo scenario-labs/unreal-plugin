@@ -8,9 +8,9 @@ Root `AGENTS.md` is the repository rulebook; `.claude/CLAUDE.md` links here.
 
 Scenario for Unreal Engine: an Unreal Editor plugin for Unreal 5.6 to 5.8,
 C++ only, in `Plugins/Scenario/`. It prices and runs every Scenario model and
-workflow through the hosted Scenario MCP (`https://mcp.scenario.com/mcp`:
-JSON-RPC 2.0 over HTTP, SSE or JSON replies, OAuth or an API key and secret),
-imports the results as native assets and places them in the open level. People
+workflow through Scenario's REST API (`https://api.cloud.scenario.com/v1`,
+OAuth or an API key and secret), imports the results as native assets and
+places them in the open level. People
 drive it from the Studio tab and the viewport composer; agents drive it through
 a local MCP server inside the editor.
 
@@ -25,13 +25,14 @@ use. Nothing else from the plugin is compiled into a packaged game.
 `Plugins/Scenario/Source/`:
 
 - `ScenarioCore/` (loading phase Default; no editor API, unit-tested):
-  - `ScenarioMcpClient`: the backend interface and its hosted Scenario MCP
-    implementation; read and submit tool lists, retry policy (reads and dry
-    runs only), `SCENARIO_NO_SPEND`.
-  - `ScenarioRpc`, `ScenarioHttp`: JSON-RPC framing, SSE or JSON replies, the
-    HTTP transport on top of Unreal's HTTP module.
+  - `ScenarioRestClient`: the backend interface and its REST implementation;
+    what each request can do to spend (read, dry run, paid, cancel), retry
+    policy (reads and dry runs only), workspace scope, token renewal,
+    `SCENARIO_NO_SPEND`.
+  - `ScenarioHttp`: the HTTP transport on top of Unreal's HTTP module.
   - `ScenarioApi`: typed calls (models, schemas, prices, jobs, assets,
-    workflows, usage); CU values carried as exact decimal strings.
+    workflows, usage, uploads) and their REST paths; CU values carried as exact
+    decimal strings.
   - `ScenarioSession`: sign-in state, workspace (team and project), price
     checks, paid runs, polling, downloads. Every caller goes through it, so the
     money rules hold for the Studio, the composer, agents, scripts and the
@@ -41,8 +42,9 @@ use. Nothing else from the plugin is compiled into a packaged game.
     intent rows, Unknown state, reconciliation.
   - `ScenarioTransfer`: resumable downloads (`.part` files), presigned uploads,
     host allow-lists.
-  - `ScenarioOAuth`: browser sign-in with PKCE on a loopback port, device code
-    fallback, token refresh.
+  - `ScenarioOAuth`: sign-in as the plugin's registered OAuth application
+    (fixed client id, no registration): browser sign-in with PKCE on a
+    loopback port, device code fallback, token refresh.
   - `ScenarioCredentialStore` (+ `Private/Platform/`): macOS Keychain, Windows
     Credential Manager, otherwise an owner-only file in the user's config
     folder.
@@ -50,7 +52,12 @@ use. Nothing else from the plugin is compiled into a packaged game.
     the agent server.
   - `ScenarioSchema`: model schema to form fields, validation, payloads.
   - `ScenarioCatalog`, `ScenarioLanes`: the model picker's catalog (cached 24
-    hours) and the lanes read from `Resources/Lanes.json`.
+    hours) and the lanes read from `Resources/Lanes.json`. The catalog also
+    gives a trained model's form and remembers how it runs.
+  - `ScenarioTrained`: trained models (LoRAs and compositions) run on a base
+    model: kind, base, weight and trigger words from the trained model's
+    record and the schemas of the bases listed in `Resources/Trained.json`;
+    the trained form and the base's request.
   - `ScenarioFiles`, `ScenarioJson`, `ScenarioHash`, `ScenarioCU`,
     `ScenarioErrors`, `ScenarioTypes`: naming and type sniffing, defensive JSON
     and canonical JSON, SHA-256, CU formatting, error kinds and messages.
@@ -109,7 +116,8 @@ use. Nothing else from the plugin is compiled into a packaged game.
 Also in `Plugins/Scenario/`: `Content/Python/scenario_unreal/` (the kit: worlds,
 games and films from Scenario results; `recipes.py` is the entry point),
 `Resources/Kit.json` (the kit tools' names, descriptions and schemas),
-`Resources/Lanes.json` (lanes, picks, presets),
+`Resources/Lanes.json` (lanes, picks, presets), `Resources/Trained.json` (the
+base models read to run trained models),
 `Resources/AgentSkill/SKILL.md` (the agent skill the Agent page installs),
 `Tests/Fixtures/` (recorded Scenario replies), `Config/FilterPlugin.ini`.
 
@@ -122,21 +130,22 @@ runs the Windows one (keep it ASCII); macOS's bash 3.2 runs the other.
 ## Spending rules
 
 Every change keeps them. They are enforced in `FScenarioSession` and
-`FScenarioMcpClient`, below every caller.
+`FScenarioRestClient`, below every caller.
 
-1. A price check is a dry run (`model_run` or `workflow_run` with
-   `dry_run: true`). It is free and returns the exact CU cost.
+1. A price check is a dry run (the model or workflow run with
+   `dryRun=true`). It is free and returns the exact CU cost.
 2. Generate needs an unused quote whose fingerprint matches the request now
    (SHA-256 of target, workspace and canonical JSON) and consumes it. Quotes
    expire after 120 seconds. Agents pass `quote_id` and `approved_cost` equal
    to the quote's exact CU string.
 3. The intent row is written to the job list before the paid request. If it
    cannot be written, nothing is sent.
-4. A paid call is sent once. Any tool not known to be a read is treated as
-   able to spend and is never retried. A transport failure on it marks the job
-   Unknown, which blocks an identical request until it is reconciled.
-5. `SCENARIO_NO_SPEND=1` refuses paid calls before any request; `job_cancel`
-   still goes out.
+4. A paid call is sent once. Any request not marked as a read or a dry run
+   is treated as able to spend and is never retried. A transport failure on
+   it marks the job Unknown, which blocks an identical request until it is
+   reconciled.
+5. `SCENARIO_NO_SPEND=1` refuses paid calls before any request; cancelling a
+   job still goes out.
 6. Secrets live in the OS credential store only: never in project config,
    `Saved/`, logs, provenance or error messages.
 

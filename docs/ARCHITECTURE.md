@@ -15,9 +15,9 @@ How Scenario for Unreal Engine is built, for contributors and reviewers. The cod
    |  import (Interchange), placement (one transaction), provenance, Slate UI
    v
  ScenarioCore: session, quotes, job list, transfers, OAuth, credential store
-   |  HTTPS, JSON-RPC 2.0, SSE or JSON replies
+   |  HTTPS, JSON
    v
- Hosted Scenario MCP (mcp.scenario.com)
+ Scenario REST API (api.cloud.scenario.com)
 ```
 
 Four editor modules and one small runtime module. Only `ScenarioGameplay` is compiled into a packaged game.
@@ -42,12 +42,24 @@ The kit turns Scenario results that are already imported into a walkable level, 
 
 ## Backend
 
-The plugin calls the hosted Scenario MCP (`https://mcp.scenario.com/mcp?toolsets=full`) over JSON-RPC 2.0, the same backend as the other Scenario plugins. `IScenarioBackend` keeps the transport behind an interface so a REST client could replace it.
+The plugin calls Scenario's REST API (`https://api.cloud.scenario.com/v1`) with JSON requests and replies, the same API as the other Scenario plugins. `FScenarioRestClient` sends each request behind the `IScenarioBackend` interface, and `FScenarioApi` turns the plugin's calls into typed results.
 
-- Replies come as SSE or plain JSON; the parser keeps the message matching the request id.
-- Errors are sorted into kinds (`Auth`, `Forbidden`, `Quota`, `Moderated`, `RateLimit`, `NotFound`, `Invalid`, `Transport`, `Timeout`, `ServerError`, `Protocol`, ...) with one message each. Messages are cleaned of signed URL parameters and authorization headers before they reach a log, a toast or an agent.
-- Reads and dry runs are retried with backoff. Any tool not on the read allow-list is treated as able to spend and is never retried.
+- A signed-in person's requests name the team and project in the query (`teamId`, `projectId`); an API key is already scoped to its project. Listings name less: teams nothing, projects the team only. An API key cannot list teams, so it reads its own project.
+- Errors are sorted into kinds (`Auth`, `Forbidden`, `Quota`, `Moderated`, `RateLimit`, `NotFound`, `Invalid`, `Transport`, `Timeout`, `ServerError`, `Protocol`, ...) with one message each, built from the API's `reason`. Messages are cleaned of signed URL parameters and authorization headers before they reach a log, a toast or an agent.
+- Each request says whether it reads, prices, can spend or cancels. Reads and dry runs are retried with backoff; anything else is sent once. Credentials the API's gateway refuses (401, or 403 with `x-amzn-errortype: AccessDeniedException`) never reached a handler, so the token is renewed and the request resent once, paid or not.
+- The API has no long-poll: jobs are read one by one at the poll interval.
 - Creative Unit amounts stay exact decimal strings from parsing to display; no floating-point rounding on the money path.
+
+## Trained models
+
+A trained model (a LoRA or a composition) is never the model called: it runs on a base model. Its record lists no inputs of its own.
+
+- **Bases.** `Resources/Trained.json` lists the base models to read. The catalog reads their schemas once and caches them with its rows (24 hours): a base takes a trained model when its `loras` or `modelId` input lists the trained model's `type` in `modelTypes`. The list says which models to read, never what they take.
+- **Kind.** A LoRA when a `loras` input lists the type; it runs with `loras: [id]` and `lorasScale: [weight]`. A composition when only a `modelId` input does; it runs with `modelId: id`, which replaces any LoRAs. `compliantModelIds` (base names such as `flux.1-dev`) only orders the candidates, through the file's name map. A type no base lists cannot run, and the plugin says so; nothing is guessed.
+- **Weight and trigger words.** The weight is the record's own (`concepts[].scale` for its id), else 0.75, within the base's range. Trigger words are `parameters.conceptPrompt`, else `promptEmbedding`, else a word in capitals that every sample prompt holds (two or more); they go once before the prompt unless it already holds them.
+- **Form.** The catalog's `GetSchema` gives a trained model the base's form without its trained inputs, plus `lorasScale` (a number, LoRAs only) and `addTriggerWords`, and a `trained` object (kind, base, weight range, trigger words).
+- **Runs.** `FScenarioSession::Resolve` turns a request for the trained model into the base's request (`ScenarioTrained::BaseParameters`) before the fingerprint, the price check and the paid call, so the money contract below applies unchanged and a quote covers the trained model and its weight. The job list and provenance keep the base as the model and the trained model beside it (`TrainedModelId`).
+- One trained model per run in version 0.2.
 
 ## Money contract
 
@@ -64,7 +76,7 @@ No Creative Unit cap is set by the plugin.
 
 ## Job list and recovery
 
-`FScenarioLedger` keeps every request in `<Project>/Saved/Scenario/` (newest first, atomic writes, revision counter). Rows carry the local id (`local_<ms>_<n>`), Scenario's job id once known, model, prompt, quoted and charged CU, state and files.
+`FScenarioLedger` keeps every request in `<Project>/Saved/Scenario/` (newest first, atomic writes, revision counter). Rows carry the local id (`local_<ms>_<n>`), Scenario's job id once known, model (for a trained model's run, its base, with the trained model beside it), prompt, quoted and charged CU, state and files.
 
 - On startup, active rows resume polling, and downloads resume from their `.part` files with HTTP range requests.
 - An expired download link is replaced by a fresh one from Scenario; partial data is kept.
@@ -76,7 +88,7 @@ All network and file IO is asynchronous. HTTP runs on Unreal's HTTP module; call
 
 ## Credentials
 
-- OAuth: browser sign-in with PKCE and a loopback redirect on a random local port, with a device-code fallback. The refresh token is stored; the access token stays in memory.
+- OAuth: the plugin signs in as "Scenario for Unreal Engine", its registered public OAuth application on Scenario's identity provider (`clerk.scenario.com`), with a fixed client id and the scopes `openid profile email offline_access`; the ID token's email shows who is signed in. Browser sign-in with PKCE and a loopback redirect on `127.0.0.1` (the first free port of 38917 to 38919; the provider accepts a loopback redirect on any port), with a device-code fallback. The refresh token is stored in one record with the client id, issuer and account it belongs to, and a token saved for another application is deleted, never sent; the access token stays in memory. Editors on one machine signed in to the same account share the saved session: each refresh replaces the refresh token, so an editor refreshes with the newest saved one, and when the provider refuses its token because another editor refreshed first, it retries once with the token that editor saved. `SCENARIO_OAUTH_ISSUER` and `SCENARIO_OAUTH_CLIENT_ID`, set together, select a development instance.
 - API key and secret: checked with a free call, then stored.
 - Stores: macOS Keychain and Windows Credential Manager. On Linux, version 0.2 uses a file readable only by the user, and the Settings page says it is not encrypted.
 - Nothing secret is written to project config, `Saved/`, logs, provenance or diagnostics.
@@ -115,7 +127,7 @@ Streamable HTTP on `127.0.0.1`, port 9877 or the next free one of ten. Requests 
 
 Unreal 5.8 adds Epic's Toolset Registry (Experimental): classes derived from `UToolsetDefinition` whose static `UFUNCTION(meta=(AICallable))` functions become tools, with schemas and descriptions taken from the reflection data and doc comments. Epic's Model Context Protocol plugin serves the registry through three tools: `list_toolsets`, `describe_toolset` and `call_tool`.
 
-- `ScenarioToolsets` holds `UScenarioToolset` (19 tools) and `UScenarioAgentSkill`. Each tool adapts one action of the registry above; no logic is duplicated. Results are `UToolCallAsyncResult` objects completed when the action answers, so long actions (`WaitForJob`) do not block the game thread.
+- `ScenarioToolsets` holds `UScenarioToolset` (18 tools) and `UScenarioAgentSkill`. Each tool adapts one action of the registry above; no logic is duplicated. Results are `UToolCallAsyncResult` objects completed when the action answers, so long actions (`WaitForJob`) do not block the game thread.
 - Optional: `Scenario.uplugin` lists `ToolsetRegistry` as an optional plugin. `ScenarioToolsets.Build.cs` adds the dependency and `WITH_SCENARIO_TOOLSETS=1` only when the engine has the registry folder; the reflected headers are guarded by an engine version check that the header tool understands. On 5.6 and 5.7 the module compiles to nothing.
 - Spending: the registry has no caller identity and Epic's server no token, so the toolset calls with `FScenarioCaller::bSpendWaitsForApproval`. `FScenarioActions::Call` then checks the quote and `approved_cost`, keeps an approval keyed by quote, answers `pending_approval` with an `approval_id` at once and asks the person with a toast. Approve runs the action once; Decline, a timeout or the quote's expiry sends nothing. `job_status` and `wait_for_job` accept the `approval_id`. The session's money rules still apply underneath.
 - Optional string parameters default to a word (`all`, `auto`, `default`, `*`, `selection`, `none`): the registry fills a left-out parameter only from its default, and treats an empty default as none.
@@ -126,13 +138,13 @@ Measured on Unreal 5.8.3 with the Scenario plugin and Epic's Model Context Proto
 
 | What | Bytes | About tokens |
 |---|---|---|
-| Scenario MCP server, `tools/list` (48 tools) | 29,425 | 7,350 |
-| Scenario MCP server, `tools/list` with **Agent tool search** (4 tools) | 1,456 | 360 |
+| Scenario MCP server, `tools/list` (29 core tools and the catalog's 5) | 25,381 | 6,340 |
+| Scenario MCP server, `tools/list` with **List every tool** (47 tools and the catalog's 5) | 47,401 | 11,850 |
 | Epic's server, `tools/list` (3 meta tools) | 1,719 | 430 |
 | Epic's server, `list_toolsets` | 13,366 | 3,340 |
-| Epic's server, `describe_toolset` for the Scenario toolset (19 tools) | about 11,600 | 2,900 |
+| Epic's server, `describe_toolset` for the Scenario toolset (18 tools) | about 11,600 | 2,900 |
 
-The full list is above 6,000 tokens, so the server has an opt-in tool search mode (`bAgentToolSearch`, off by default): `tools/list` returns `scenario_status`, `find_tools`, `describe_tools` and `call_tool`, and every tool stays callable by name. It is off by default because clients that already defer tool definitions gain nothing from it and lose the per-tool annotations in the list.
+The server lists the core tools and serves the others through a catalog, as the hosted Scenario MCP does: `unreal_tools_list`, `unreal_tools_search` and `unreal_tool_execute_read`, `_write` and `_delete` (the lane comes from the tool's hints; a tool of another lane is refused, naming its executor). Every tool stays callable by name, and `bAgentListEveryTool` (off by default) lists them all for clients that search tools themselves. Each tool has a title, the four hints and a `Returns:` line, within the 2,048 characters of each description that Claude Code shows the model. `Scenario.Agent.Tools.Budget` checks the rules of scenario-labs/components' `mcp-check`, and `Scenario.Agent.Tools.Snapshot` keeps `Plugins/Scenario/Tests/mcp-tools.json`, the committed copy of the tools, current.
 
 ## Simplifications in version 0.2
 
@@ -149,8 +161,8 @@ These are deliberate, listed so reviewers can judge them:
 
 ## Tests
 
-- `Scenario.Core.*` automation tests: JSON-RPC and SSE parsing, error kinds, retry policy, quotes and fingerprints, the job list state machine, schema forms, naming, OAuth helpers, the local HTTP listener, the session against a fake Scenario, recorded schema fixtures in `Plugins/Scenario/Tests/Fixtures/`.
-- `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), tool list budget, tool search mode, permissions, client config writers.
+- `Scenario.Core.*` automation tests: JSON-RPC and SSE parsing, error kinds, retry policy, quotes and fingerprints, the job list state machine, schema forms, naming, OAuth helpers, the local HTTP listener, the session against a fake Scenario, trained models (bases, trigger words, the base's request, fingerprints), recorded schema fixtures in `Plugins/Scenario/Tests/Fixtures/`.
+- `Scenario.Agent.*` automation tests: server checks (Host, Origin, token, sessions, JSON-RPC errors), the tool rules and snapshot, the catalog, permissions, client config writers.
 - `Scenario.Toolsets.*` automation tests (5.8): registration, each tool's schema against its action, the spend gate (a paid call through the registry answers `pending_approval`, consumes no quote and writes no job), reads without sign-in, the agent skill's size.
 - `tools/contract_check.py`: a free check against the live service (reads and dry runs only).
 - Live paid runs are manual, with cheap models and low settings, recorded in `tests/live/LEDGER.md`.
