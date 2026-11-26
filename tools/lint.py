@@ -223,6 +223,10 @@ def lint(root: pathlib.Path) -> list[str]:
         if text is None:
             if name in REQUIRED:
                 problems.append(f"{name}:1: not UTF-8 text")
+            if pathlib.PurePosixPath(name).suffix.lower() in ASCII_SUFFIXES:
+                # Not UTF-8, so not ASCII either: check the bytes as they are.
+                found = check_ascii(name, (root / name).read_bytes().decode("latin-1"))
+                problems += [f"{name}:{line}: {message}" for line, message in found]
             continue
         found = check_header(name, text) + check_text(name, text) + check_ascii(name, text)
         if name == UPLUGIN:

@@ -53,7 +53,7 @@ INSTALL = """<h2 id="install">Install</h2>
   <li>Install what Unreal compiles with: on Windows, <a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine">Visual Studio</a> with the <strong>.NET desktop development</strong>, <strong>Desktop development with C++</strong> and <strong>Game development with C++</strong> workloads; on macOS, Xcode.</li>
   <li>Download <strong>Source code (zip)</strong> from the <a href="{releases}/latest">latest release</a> and unzip it.</li>
   <li>Double-click <code>Install-Windows.bat</code> (on macOS, <code>Install-macOS.command</code>) and choose your project's <code>.uproject</code> file. The installer compiles for the Unreal version the project uses, in a few minutes, installs the plugin in <code>&lt;Project&gt;/Plugins/Scenario</code>, and moves a previous copy to <code>&lt;Project&gt;/Saved/Scenario/</code>, next to the build log.</li>
-  <li>Open the project, click the <strong>Scenario</strong> button in the level editor toolbar and sign in.</li>
+  <li>Open the project, click the <strong>Scenario</strong> button in the level editor toolbar and sign in. If you had turned Scenario off in this project, turn it on again in <strong>Edit &gt; Plugins</strong> and restart the editor.</li>
 </ol>
 <p class="note">The installers are not signed yet: Windows may ask you to confirm (<strong>More info</strong>, then <strong>Run anyway</strong>), and macOS may block the first run (allow it in <strong>System Settings &gt; Privacy &amp; Security</strong>, then double-click again).</p>
 """

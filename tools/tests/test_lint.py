@@ -156,6 +156,14 @@ class RepositoryTests(unittest.TestCase):
         self.assertNotIn(lint.TRAINED + ":1: file is missing", problems)
         self.assertFalse([p for p in problems if p.startswith("notes.bin")])
 
+    def test_windows_script_in_another_encoding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            (root / "Install.ps1").write_bytes(b"Write-Host 'ok'\r\nWrite-Host 'caf\xe9'\r\n")
+            problems = lint.lint(root)
+        self.assertIn("Install.ps1:2: non-ASCII character: Windows reads this file in the system code page", problems)
+
 
 if __name__ == "__main__":
     unittest.main()

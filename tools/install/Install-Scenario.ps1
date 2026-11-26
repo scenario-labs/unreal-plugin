@@ -165,7 +165,7 @@ function Select-ProjectFile {
 function Select-Engine($Engines) {
     if ($Engines.Count -eq 1) { return $Engines[0] }
     $sorted = @($Engines | Sort-Object { [version]$_.Version } -Descending)
-    if ($Yes) { return $sorted[0] }
+    if ($Yes) { Fail 'Several Unreal versions are installed and the project names none. Run the installer with -EngineRoot <an Unreal folder>.' }
     Say 'Several Unreal versions are installed:'
     for ($index = 0; $index -lt $sorted.Count; $index++) {
         Say ('  {0}) Unreal {1}  ({2})' -f ($index + 1), $sorted[$index].Version, $sorted[$index].Root)
@@ -279,7 +279,7 @@ $Log = Join-Path $LogDir "Install-$Stamp.log"
 # Not %TEMP%, which can hold 8.3 short names: Unreal's build accelerator expects one spelling of each path.
 $StageRoot = $env:LOCALAPPDATA
 if (-not $StageRoot) { $StageRoot = [System.IO.Path]::GetTempPath() }
-$Stage = Join-Path $StageRoot "Scenario\SB-$Stamp"
+$Stage = Join-Path $StageRoot "Scenario\SB-$Stamp-$PID"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Stage) | Out-Null
 Step ('Compiling Scenario {0} for Unreal {1}. This takes a few minutes.' -f $PluginVersion, $Engine.Version)
 Say "Full log: $Log"
@@ -294,7 +294,7 @@ while ($true) {
     foreach ($line in (Read-NewLog $Log ([ref]$Position))) {
         if ($line -match '^\[\d+/\d+\]') {
             Say ('  ' + $line)
-        } elseif ($line -cmatch '(^|\s)(error|ERROR)\b|: fatal error|^Unable to instantiate module') {
+        } elseif ($line -cmatch '(^|\s)(error|ERROR)\b|(^|\s)Error:|: fatal error|^Unable to instantiate module') {
             $Problems.Add($line)
         }
     }
