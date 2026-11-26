@@ -33,12 +33,14 @@
 
 namespace
 {
-	FString AuthText(const FScenarioSession& Session)
+	/** With bNameAccount, the account's email when known; the diagnostics leave it out. */
+	FString AuthText(const FScenarioSession& Session, bool bNameAccount = false)
 	{
+		const FString Email = bNameAccount ? Session.GetAccountEmail() : FString();
 		switch (Session.GetAuthMode())
 		{
 		case EScenarioAuthMode::OAuth:
-			return TEXT("Signed in with your Scenario account.");
+			return Email.IsEmpty() ? FString(TEXT("Signed in with your Scenario account.")) : FString::Printf(TEXT("Signed in as %s."), *Email);
 		case EScenarioAuthMode::ApiKey:
 			return Session.GetApiKeySource() == TEXT("environment")
 				? TEXT("Using the API key from the SCENARIO_API_KEY environment variable.")
@@ -285,7 +287,7 @@ FString SScenarioSettingsPage::Diagnostics()
 	Lines.Add(FString::Printf(TEXT("Connection: %s"), Connections[FMath::Clamp(static_cast<int32>(Session->GetConnection()), 0, 3)]));
 	Lines.Add(FString::Printf(TEXT("Sign-in: %s"), *AuthText(*Session)));
 	Lines.Add(FString::Printf(TEXT("Credentials: %s%s"), *Session->DescribeCredentialStore(), Session->IsCredentialStoreSecure() ? TEXT("") : TEXT(" (not encrypted)")));
-	Lines.Add(FString::Printf(TEXT("Endpoint: %s"), Session->GetConfig().Endpoint.IsEmpty() ? TEXT("default") : *Session->GetConfig().Endpoint));
+	Lines.Add(FString::Printf(TEXT("API: %s"), Session->GetConfig().ApiUrl.IsEmpty() ? TEXT("default") : *Session->GetConfig().ApiUrl));
 	Lines.Add(FString::Printf(TEXT("Team/project ids: %s / %s"), *Session->GetWorkspace().TeamId, *Session->GetWorkspace().ProjectId));
 	Lines.Add(FString::Printf(TEXT("Spending: %s"), Session->IsSpendingDisabled() ? TEXT("off (SCENARIO_NO_SPEND=1)") : TEXT("on")));
 	Lines.Add(FString::Printf(TEXT("Automatic price checks: %s"), Session->IsEstimateAlarmRaised() ? TEXT("stopped (a price check returned a job)") : TEXT("on")));
@@ -404,8 +406,8 @@ void SScenarioSettingsPage::Rebuild()
 								return FText::GetEmpty();
 							}
 							const FString Team = S->GetWorkspace().TeamName;
-							return Team.IsEmpty() ? FText::FromString(AuthText(*S))
-								: FText::Format(LOCTEXT("TeamLine", "Team {0}. {1}"), FText::FromString(Team), FText::FromString(AuthText(*S)));
+							return Team.IsEmpty() ? FText::FromString(AuthText(*S, true))
+								: FText::Format(LOCTEXT("TeamLine", "Team {0}. {1}"), FText::FromString(Team), FText::FromString(AuthText(*S, true)));
 						}), EText::Meta, true)
 					]
 				]

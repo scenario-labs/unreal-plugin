@@ -8,8 +8,8 @@ All connections use HTTPS.
 
 | Host | What for |
 |---|---|
-| `mcp.scenario.com` | Scenario's hosted service: every model, price, job, workflow, asset and account call; sign-in tokens and app registration |
-| Scenario's sign-in service, at the addresses Scenario's sign-in metadata lists (`clerk.scenario.com` today) | Signing in on another device, and revoking your session when you sign out |
+| `api.cloud.scenario.com` | Scenario's API: every model, price, job, workflow, asset and account call |
+| `clerk.scenario.com`, Scenario's sign-in service | Signing in as "Scenario for Unreal Engine", in the browser or on another device; renewing the session; revoking it when you sign out |
 | `cdn.scenario.com`, `cdn.cloud.scenario.com` | Downloading results. Downloads go to these hosts only |
 | `*.amazonaws.com` | Uploading your input files, to the presigned storage addresses Scenario returns |
 | The image addresses Scenario returns for thumbnails | Showing thumbnails of models and assets in the Studio |
@@ -19,7 +19,7 @@ Sign-in also opens your browser on Scenario's sign-in page, and the sign-in pane
 ## What goes to Scenario
 
 - **Your account or key identity**: an OAuth access token after "Sign in with Scenario", or your API key and secret as a Basic authorization header. For unattended runs, `SCENARIO_ACCESS_TOKEN` or `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` can be read from the environment instead.
-- **What you ask for**: the model, your prompt, the settings in the form, and the workspace (team and project) you chose. Model searches and recommendations send their query, which can include your prompt.
+- **What you ask for**: the model, your prompt, the settings in the form, and the workspace (team and project) you chose. Asset searches send their query.
 - **Price checks**: while you edit the form, the plugin asks Scenario for the price of the current settings. These are dry runs: they carry the same prompt and settings as a generation and cost nothing.
 - **Files you choose as inputs**: images, meshes, audio or video from your project or your disk, captures of the level viewport, and meshes exported for a 3D edit. They are uploaded only when you, or an agent connected to the editor, add them as an input. The upload's file name is built from the actor or asset name, and an exported mesh carries the names inside it.
 - **Workflow inputs and Prompt Spark text**, when you run them.
@@ -38,7 +38,7 @@ Scenario processes these under your Scenario account terms and privacy policy. G
 
 | Data | Where | Committed to source control? |
 |---|---|---|
-| OAuth refresh token, API key id and secret, the plugin's OAuth client id, the agent server token | macOS Keychain or Windows Credential Manager; on Linux, `~/.config/scenario/unreal/credentials.json`, readable only by you | No |
+| OAuth refresh token, with the sign-in application and the account (id and email) it belongs to; API key id and secret; the agent server token | macOS Keychain or Windows Credential Manager; on Linux, `~/.config/scenario/unreal/credentials.json`, readable only by you | No |
 | OAuth access token | Memory only | No |
 | Chosen team and project (ids and names) | `<Project>/Saved/Scenario/workspace.json` | No, `Saved/` is excluded by Unreal's default ignore rules |
 | Your editor preferences, including the agent settings | Your per-user editor settings | No |

@@ -1,0 +1,2485 @@
+{
+	"instructions": "Scenario for Unreal Engine: generate images, video, 3D, materials, audio and skies with Scenario and land them in this Unreal project. Order: scenario_status, scene_summary, list_models, model_schema, estimate_cost, generate (quote_id and approved_cost from the estimate), wait_for_job, prepare_result_application, apply_result_application, then save_changes. Never resend a request whose job is unknown: use recover_local_job. More tools (the kit's worlds, games and films, Prompt Spark, the Scenario library, the Output Log) are in the catalog: unreal_tools_list or unreal_tools_search, then unreal_tool_execute_<lane> or the tool's own name.",
+	"tools": [
+		{
+			"name": "scenario_status",
+			"title": "Get Status",
+			"description": "Sign-in state, Scenario team and project, plugin and engine versions, permissions in force, and job counts. Call it first.\nReturns: { signed_in, ready, auth, workspace: { team, project }, permissions, spending_disabled, active_jobs, unresolved_jobs, plugin_version, engine_version, last_error }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+				}
+			},
+			"annotations":
+			{
+				"title": "Get Status",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "list_models",
+			"title": "List Models",
+			"description": "Scenario models filtered by lane, modality, capability chip or text. The lane's picks come first. At most 40 rows. Use model_schema next for a model's inputs.\nReturns: { models: [{ id, name, modality, does, provider, tags, about, replaced_by }], matched, note }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"lane":
+					{
+						"type": "string",
+						"description": "Plugin lane; its picks come first.",
+						"enum": [
+							"image",
+							"3d",
+							"material",
+							"environment",
+							"audio",
+							"video",
+							"render"
+						]
+					},
+					"modality":
+					{
+						"type": "string",
+						"description": "Output kind: image, video, 3d or audio.",
+						"enum": [
+							"image",
+							"video",
+							"3d",
+							"audio"
+						]
+					},
+					"chip":
+					{
+						"type": "string",
+						"description": "Capability as in the web app: Generate, Edit, Upscale, Remove background, Texture..."
+					},
+					"query":
+					{
+						"type": "string",
+						"description": "Text search on name, provider and description."
+					},
+					"source":
+					{
+						"type": "string",
+						"description": "all (default), catalog (Scenario's models) or trained (the team's own).",
+						"enum": [
+							"all",
+							"catalog",
+							"trained"
+						]
+					},
+					"include_legacy":
+					{
+						"type": "boolean",
+						"description": "Also list models Scenario has replaced with newer ones. Default false."
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Default 20, max 40."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "List Models",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "model_schema",
+			"title": "Get Model Inputs",
+			"description": "A model's parameters: types, defaults, options, limits, which change the price, and file inputs (they take Scenario asset ids).\nReturns: { model_id, lane, the parameters, plugin_defaults, unreal_ready_prompt, files }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"model_id":
+					{
+						"type": "string",
+						"description": "Model id from list_models."
+					}
+				},
+				"required": [
+					"model_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Get Model Inputs",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "estimate_cost",
+			"title": "Check Price",
+			"description": "Free price check of a model run (a dry run: nothing is charged). generate needs its quote_id and cu_cost_exact. Quotes are single use and last 120 s.\nReturns: { quote_id, cu_cost_exact, cu_cost, discount_cu, expires_in_seconds, priced_parameters, warnings, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"model_id":
+					{
+						"type": "string",
+						"description": "Model id from list_models."
+					},
+					"parameters":
+					{
+						"type": "object",
+						"description": "Values by parameter name (model_schema). Plugin defaults fill the rest."
+					},
+					"lane":
+					{
+						"type": "string",
+						"description": "Where results land; inferred from the model when omitted.",
+						"enum": [
+							"image",
+							"3d",
+							"material",
+							"environment",
+							"audio",
+							"video",
+							"render"
+						]
+					}
+				},
+				"required": [
+					"model_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Check Price",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "generate",
+			"title": "Generate",
+			"description": "SPENDS Creative Units. Runs the request priced by estimate_cost. Needs quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried: when its outcome is unknown, use recover_local_job, never call again.\nReturns: { job_id, next }, or { approval_id, state: pending_approval } while the person approves the spend; then wait_for_job.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"quote_id":
+					{
+						"type": "string",
+						"description": "quote_id from estimate_cost: single use, valid 120 s."
+					},
+					"approved_cost":
+					{
+						"type": "string",
+						"description": "The quote's cu_cost_exact, verbatim."
+					},
+					"destination":
+					{
+						"type": "string",
+						"description": "Content folder for the import, for example /Game/Props. Default: the plugin's folder."
+					},
+					"lane":
+					{
+						"type": "string",
+						"description": "Where the results land in Unreal: image, 3d, material, environment, audio, video or render. Inferred from the model when omitted.",
+						"enum": [
+							"image",
+							"3d",
+							"material",
+							"environment",
+							"audio",
+							"video",
+							"render"
+						]
+					}
+				},
+				"required": [
+					"quote_id",
+					"approved_cost"
+				]
+			},
+			"annotations":
+			{
+				"title": "Generate",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "job_status",
+			"title": "Get Job Status",
+			"description": "State, progress, cost, files and whether they are downloaded and imported, with the next step. Takes job_id or job_ids; an approval_id from a spend waiting for the person works too.\nReturns: for one id, the job { job_id, state, progress, quoted_cu, charged_cu, files: [{ index, asset_id, role, downloaded, imported_objects }], error, next }, or { approval_id, state, cu_cost_exact } for a spend still waiting; for several, { jobs: [...] } of those.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"job_id":
+					{
+						"type": "string",
+						"description": "Job id from generate, run_workflow or list_local_jobs, or an approval_id."
+					},
+					"job_ids":
+					{
+						"type": "array",
+						"description": "Several job ids at once.",
+						"items":
+						{
+							"type": "string"
+						}
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Get Job Status",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "wait_for_job",
+			"title": "Wait for Job",
+			"description": "Waits until a job is finished and its files are downloaded, up to timeout_seconds (default 45, max 160; agent clients often cut calls at 60 s).\nReturns: the one job (or approval) as job_status returns it for one id, with still_running and next when it is not done yet.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"job_id":
+					{
+						"type": "string",
+						"description": "Job id from generate or run_workflow."
+					},
+					"timeout_seconds":
+					{
+						"type": "integer",
+						"description": "Seconds to wait. Default 45, max 160."
+					}
+				},
+				"required": [
+					"job_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Wait for Job",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "list_local_jobs",
+			"title": "List Local Jobs",
+			"description": "This project's jobs, newest first: every request made from this editor by people, agents and scripts. Survives restarts.\nReturns: { jobs: [...] }, each as job_status describes it.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"state":
+					{
+						"type": "string",
+						"description": "all (default), active, unresolved (outcome unknown) or finished.",
+						"enum": [
+							"all",
+							"active",
+							"unresolved",
+							"finished"
+						]
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Default 20, max 50."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "List Local Jobs",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "list_generations",
+			"title": "List Scenario Jobs",
+			"description": "Recent jobs on Scenario for this project, from any tool, marked when they are already in this Unreal project.\nReturns: { generations: [{ scenario_job_id, type, status, model_id, workflow_id, assets, charged_cu, created_at, job_id }], note }; job_id is set when the job is in this project.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"limit":
+					{
+						"type": "integer",
+						"description": "Default 20, max 50."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "List Scenario Jobs",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "list_workflows",
+			"title": "List Workflows",
+			"description": "Ready workflows: the team's own, Scenario's featured ones, or both.\nReturns: { workflows: [{ workflow_id, name, about, inputs, source }] }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"source":
+					{
+						"type": "string",
+						"description": "team, featured (Scenario's) or all (default).",
+						"enum": [
+							"all",
+							"team",
+							"featured"
+						]
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Per source. Default 20, max 50."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "List Workflows",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "workflow_schema",
+			"title": "Get Workflow Inputs",
+			"description": "A workflow's inputs, in the same form as model_schema.\nReturns: { name, about } and the inputs as model_schema gives a model's parameters.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"workflow_id":
+					{
+						"type": "string",
+						"description": "Workflow id from list_workflows."
+					}
+				},
+				"required": [
+					"workflow_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Get Workflow Inputs",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "estimate_workflow",
+			"title": "Check Workflow Price",
+			"description": "Free price check of a workflow run (a dry run: nothing is charged). run_workflow needs its quote_id and cu_cost_exact. Quotes are single use and last 120 s.\nReturns: { quote_id, cu_cost_exact, cu_cost, expires_in_seconds, warnings, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"workflow_id":
+					{
+						"type": "string",
+						"description": "Workflow id from list_workflows."
+					},
+					"inputs":
+					{
+						"type": "object",
+						"description": "Values by input name (workflow_schema)."
+					}
+				},
+				"required": [
+					"workflow_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Check Workflow Price",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "run_workflow",
+			"title": "Run Workflow",
+			"description": "SPENDS Creative Units. Runs the workflow priced by estimate_workflow, with its quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried: when its outcome is unknown, use recover_local_job.\nReturns: { job_id, next }, or { approval_id, state: pending_approval } while the person approves the spend.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"quote_id":
+					{
+						"type": "string",
+						"description": "quote_id from estimate_workflow: single use, valid 120 s."
+					},
+					"approved_cost":
+					{
+						"type": "string",
+						"description": "The quote's cu_cost_exact, verbatim."
+					},
+					"destination":
+					{
+						"type": "string",
+						"description": "Content folder for the import, for example /Game/Props. Default: the plugin's folder."
+					},
+					"workflow_name":
+					{
+						"type": "string",
+						"description": "For the job list."
+					}
+				},
+				"required": [
+					"quote_id",
+					"approved_cost"
+				]
+			},
+			"annotations":
+			{
+				"title": "Run Workflow",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "list_assets",
+			"title": "List Scenario Assets",
+			"description": "Assets in the Scenario project, newest first. Their ids go straight into file fields.\nReturns: { assets: [{ asset_id, kind, type, name, size, model_id, prompt, scenario_job_id, job_id }] }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"kind":
+					{
+						"type": "string",
+						"description": "image, video, 3d or audio; default all.",
+						"enum": [
+							"image",
+							"video",
+							"3d",
+							"audio"
+						]
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Rows to return. Default 20, max 50."
+					},
+					"offset":
+					{
+						"type": "integer",
+						"description": "Rows to skip, for the next page."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "List Scenario Assets",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "search_assets",
+			"title": "Search Scenario Assets",
+			"description": "Text search in the Scenario project's assets. Their ids go straight into file fields.\nReturns: { assets: [...] }, each as list_assets describes it.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"query":
+					{
+						"type": "string",
+						"description": "Words to look for."
+					},
+					"kind":
+					{
+						"type": "string",
+						"description": "image, video, 3d or audio; default all.",
+						"enum": [
+							"image",
+							"video",
+							"3d",
+							"audio"
+						]
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Rows to return. Default 20, max 50."
+					},
+					"offset":
+					{
+						"type": "integer",
+						"description": "Rows to skip, for the next page."
+					}
+				},
+				"required": [
+					"query"
+				]
+			},
+			"annotations":
+			{
+				"title": "Search Scenario Assets",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "list_collections",
+			"title": "List Scenario Collections",
+			"description": "Collections in the Scenario project.\nReturns: the collections as Scenario lists them, each with its id and name.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+				}
+			},
+			"annotations":
+			{
+				"title": "List Scenario Collections",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "estimate_prompt",
+			"title": "Check Prompt Spark Price",
+			"description": "Free price of Prompt Spark: prompt variants written for a target model, optionally from reference images. approve_prompt needs its quote_id and cu_cost_exact.\nReturns: { quote_id, cu_cost_exact, cu_cost, expires_in_seconds, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"model_id":
+					{
+						"type": "string",
+						"description": "The model the prompt is for."
+					},
+					"prompt":
+					{
+						"type": "string",
+						"description": "The idea to write prompts from."
+					},
+					"image_ids":
+					{
+						"type": "array",
+						"description": "Scenario asset ids of reference images.",
+						"items":
+						{
+							"type": "string"
+						}
+					},
+					"num_results":
+					{
+						"type": "integer",
+						"description": "1 to 4, default 3."
+					}
+				},
+				"required": [
+					"model_id",
+					"prompt"
+				]
+			},
+			"annotations":
+			{
+				"title": "Check Prompt Spark Price",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "approve_prompt",
+			"title": "Run Prompt Spark",
+			"description": "SPENDS Creative Units. Runs the Prompt Spark call priced by estimate_prompt, with its quote_id and approved_cost equal to its cu_cost_exact. Sent once and never retried.\nReturns: { job_id, next } for read_prompt_result, or { approval_id, state: pending_approval } while the person approves the spend.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"quote_id":
+					{
+						"type": "string",
+						"description": "quote_id from estimate_prompt: single use, valid 120 s."
+					},
+					"approved_cost":
+					{
+						"type": "string",
+						"description": "The quote's cu_cost_exact, verbatim."
+					}
+				},
+				"required": [
+					"quote_id",
+					"approved_cost"
+				]
+			},
+			"annotations":
+			{
+				"title": "Run Prompt Spark",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "read_prompt_result",
+			"title": "Read Prompt Spark Result",
+			"description": "The prompt variants of a Prompt Spark job (this editor session only).\nReturns: the prompt variants Scenario wrote.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"job_id":
+					{
+						"type": "string",
+						"description": "job_id from approve_prompt."
+					}
+				},
+				"required": [
+					"job_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Read Prompt Spark Result",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "capture_reference",
+			"title": "Capture Reference",
+			"description": "Captures the level viewport to a PNG, or exports actors to a GLB, as a local reference for upload_reference. Writes only under Saved/Scenario.\nReturns: { reference_id, kind, file, captured, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"source":
+					{
+						"type": "string",
+						"description": "viewport (default): a PNG of the level viewport; actors: a GLB of the actors.",
+						"enum": [
+							"viewport",
+							"actors"
+						]
+					},
+					"actor_ids":
+					{
+						"type": "array",
+						"description": "Names or labels; default the selection.",
+						"items":
+						{
+							"type": "string"
+						}
+					},
+					"width":
+					{
+						"type": "integer",
+						"description": "Viewport capture, default 1280."
+					},
+					"height":
+					{
+						"type": "integer",
+						"description": "Viewport capture, default 720."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Capture Reference",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "upload_reference",
+			"title": "Upload Reference",
+			"description": "Uploads a captured reference (reference_id) or a file the person chose in the editor to Scenario. Free.\nReturns: { upload_id, state }; poll reference_upload_status for the asset_id.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"reference_id":
+					{
+						"type": "string",
+						"description": "reference_id from capture_reference."
+					},
+					"path":
+					{
+						"type": "string",
+						"description": "Project-relative path of a file the plugin produced or the person chose."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Upload Reference",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "reference_upload_status",
+			"title": "Get Upload Status",
+			"description": "State of an upload_reference call.\nReturns: { upload_id, state (uploading, imported or failed), progress, asset_id once imported, error }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"upload_id":
+					{
+						"type": "string",
+						"description": "upload_id from upload_reference."
+					}
+				},
+				"required": [
+					"upload_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Get Upload Status",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "recover_local_job",
+			"title": "Recover Local Job",
+			"description": "Resolves jobs whose outcome is unknown: \"check\" matches them against Scenario's job list; \"dismiss\" hides a finished job. Only the person can mark a request as not sent.\nReturns: { job, linked, dismissed, still_unresolved, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"job_id":
+					{
+						"type": "string",
+						"description": "Job id from list_local_jobs."
+					},
+					"action":
+					{
+						"type": "string",
+						"description": "check (default): match it against Scenario's job list; dismiss: hide a finished job.",
+						"enum": [
+							"check",
+							"dismiss"
+						]
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Recover Local Job",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "recover_cloud_job",
+			"title": "Link Scenario Job",
+			"description": "Links a Scenario job (scenario_job_id from list_generations) into this project's job list and downloads its files. Free.\nReturns: the linked job, as job_status describes it.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"scenario_job_id":
+					{
+						"type": "string",
+						"description": "scenario_job_id from list_generations."
+					},
+					"lane":
+					{
+						"type": "string",
+						"description": "Where the results land in Unreal: image, 3d, material, environment, audio, video or render. Inferred from the model when omitted.",
+						"enum": [
+							"image",
+							"3d",
+							"material",
+							"environment",
+							"audio",
+							"video",
+							"render"
+						]
+					}
+				},
+				"required": [
+					"scenario_job_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Link Scenario Job",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "cancel_job",
+			"title": "Cancel Job",
+			"description": "Asks Scenario to cancel a queued or running job. Whether CU are refunded is Scenario's decision.\nReturns: the job, as job_status describes it.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"job_id":
+					{
+						"type": "string",
+						"description": "Job id from generate, run_workflow or list_local_jobs."
+					}
+				},
+				"required": [
+					"job_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Cancel Job",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "scene_summary",
+			"title": "Summarize Level",
+			"description": "The open level: World Partition state (only loaded actors are listed there), one file per actor, data layers, selection, viewport camera, actor counts by class, and a page of actors with labels, ids, classes, locations and tags.\nReturns: { level, unsaved_changes, world_partition, selection, viewport_camera, actor_counts, actors: [{ label, id, class, location, tags, placed_by_scenario }], actors_matching, next_page, notes }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"class":
+					{
+						"type": "string",
+						"description": "Only actors whose class name contains this."
+					},
+					"page":
+					{
+						"type": "integer",
+						"description": "Page of the actor list: next_page from the previous call."
+					},
+					"page_size":
+					{
+						"type": "integer",
+						"description": "Default 50, max 200."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Summarize Level",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "object_detail",
+			"title": "Get Actor Details",
+			"description": "One actor by id or label: class, transform, bounds, components, meshes and materials per slot, and Scenario provenance.\nReturns: { label, id, class, folder, location, rotation, scale, bounds_center, bounds_size, components: [{ name, class, mesh, materials }], placed_by_scenario, scenario }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"actor_id":
+					{
+						"type": "string",
+						"description": "Actor id or label, from scene_summary."
+					}
+				},
+				"required": [
+					"actor_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Get Actor Details",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "screenshot_viewport",
+			"title": "Screenshot Viewport",
+			"description": "Image of the active level viewport's camera (no gizmos), returned to you, with the world, camera, FOV and size it shows. Pass camera to render another view without moving the person's viewport (also works with no viewport open). frame_check flags all-black, all-white, uniform, clipped or crushed frames; exposure_override says when the viewport's fixed exposure differs from the game's.\nReturns: the image, and { captured, file, frame_check, exposure_override }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"width":
+					{
+						"type": "integer",
+						"description": "Default 1024, max 1920."
+					},
+					"height":
+					{
+						"type": "integer",
+						"description": "Default 576, max 1080."
+					},
+					"camera":
+					{
+						"type": "object",
+						"description": "Optional view: location_m [x, y, z] in meters, then look_at_m [x, y, z] or pitch and yaw in degrees, and fov (default 70)."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Screenshot Viewport",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "find_assets",
+			"title": "Find Assets",
+			"description": "Content Browser search by folder, class, name and Scenario origin. Reads the asset registry; loads nothing.\nReturns: { assets: [{ path, class, from_scenario }], matched }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"path":
+					{
+						"type": "string",
+						"description": "Content folder, default /Game."
+					},
+					"class":
+					{
+						"type": "string",
+						"description": "StaticMesh, Texture2D, MaterialInstanceConstant, SoundWave..."
+					},
+					"name":
+					{
+						"type": "string",
+						"description": "Part of the asset name."
+					},
+					"scenario_only":
+					{
+						"type": "boolean",
+						"description": "Only assets imported from Scenario."
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Default 50, max 200."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Find Assets",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "asset_detail",
+			"title": "Get Asset Details",
+			"description": "One asset: class, size on disk, referencers and dependencies, source file, Scenario provenance, and mesh checks (scale, triangles, bones).\nReturns: { path, class, size_on_disk_kb, referenced_by, depends_on, source_file, scenario, checks }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"asset_path":
+					{
+						"type": "string",
+						"description": "Object path, for example /Game/Scenario/Meshes/SM_Well.SM_Well."
+					},
+					"checks":
+					{
+						"type": "boolean",
+						"description": "Load meshes to run checks (default true)."
+					}
+				},
+				"required": [
+					"asset_path"
+				]
+			},
+			"annotations":
+			{
+				"title": "Get Asset Details",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "output_log",
+			"title": "Read Output Log",
+			"description": "Recent warnings and errors from the Output Log (and Scenario and Interchange messages), newest last.\nReturns: { lines }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"severity":
+					{
+						"type": "string",
+						"description": "errors, warnings (default, with errors) or all.",
+						"enum": [
+							"errors",
+							"warnings",
+							"all"
+						]
+					},
+					"category":
+					{
+						"type": "string",
+						"description": "Prefix, for example LogInterchange."
+					},
+					"since_seconds":
+					{
+						"type": "integer",
+						"description": "Only lines from the last this many seconds."
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Default 50, max 200."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Read Output Log",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "prepare_result_application",
+			"title": "Prepare Result",
+			"description": "Describes how a finished job will land: purpose import, place, material, environment, media_plate or mesh_edit, with targets. Changes nothing; apply_result_application applies it.\nReturns: { application_id, review, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"job_id":
+					{
+						"type": "string",
+						"description": "Finished job id from job_status."
+					},
+					"purpose":
+					{
+						"type": "string",
+						"description": "How the result lands: import, place (default), material, environment, media_plate or mesh_edit.",
+						"enum": [
+							"import",
+							"place",
+							"material",
+							"environment",
+							"media_plate",
+							"mesh_edit"
+						]
+					},
+					"actor_ids":
+					{
+						"type": "array",
+						"description": "Targets (material, media_plate, mesh_edit, at_pivot); default the selection.",
+						"items":
+						{
+							"type": "string"
+						}
+					},
+					"placement":
+					{
+						"type": "string",
+						"description": "For place.",
+						"enum": [
+							"auto",
+							"in_front_of_camera",
+							"at_pivot",
+							"at_location",
+							"on_selection"
+						]
+					},
+					"location":
+					{
+						"type": "array",
+						"description": "[x, y, z] in cm for at_location.",
+						"items":
+						{
+							"type": "number"
+						}
+					},
+					"slot":
+					{
+						"type": "integer",
+						"description": "Material slot, default 0."
+					},
+					"files":
+					{
+						"type": "array",
+						"description": "File indices to import (job_status); default all.",
+						"items":
+						{
+							"type": "integer"
+						}
+					}
+				},
+				"required": [
+					"job_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Prepare Result",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "apply_result_application",
+			"title": "Apply Result",
+			"description": "Applies a prepared application once, in one undo step. When agent changes are off, the person gets a proposal instead.\nReturns: once applied, { ok, created_assets, spawned_actors, modified_actors, checks, warnings, job_id, undo }; while the person decides, { state: pending_approval, review, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"application_id":
+					{
+						"type": "string",
+						"description": "application_id from prepare_result_application."
+					}
+				},
+				"required": [
+					"application_id"
+				]
+			},
+			"annotations":
+			{
+				"title": "Apply Result",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "select_objects",
+			"title": "Select Actors",
+			"description": "Selects actors by id or label (replaces the selection unless add is true).\nReturns: { selected }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"actor_ids":
+					{
+						"type": "array",
+						"description": "Actor ids or labels.",
+						"items":
+						{
+							"type": "string"
+						}
+					},
+					"add":
+					{
+						"type": "boolean",
+						"description": "Add to the selection instead of replacing it. Default false."
+					}
+				},
+				"required": [
+					"actor_ids"
+				]
+			},
+			"annotations":
+			{
+				"title": "Select Actors",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "save_changes",
+			"title": "Save Changes",
+			"description": "Saves the packages the plugin created or changed this session (and the level, with World Partition actor files, when include_levels is true).\nReturns: { ok, saved_files, warnings, error }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"include_levels":
+					{
+						"type": "boolean",
+						"description": "Also save the open level and its World Partition actor files. Default false."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Save Changes",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "remove_scenario_items",
+			"title": "Remove Scenario Items",
+			"description": "Removes actors the plugin placed (one undo step), and a job's imported assets when nothing references them.\nReturns: the actors and assets removed.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"actor_ids":
+					{
+						"type": "array",
+						"description": "Ids or labels of actors the plugin placed.",
+						"items":
+						{
+							"type": "string"
+						}
+					},
+					"job_id":
+					{
+						"type": "string",
+						"description": "Removes this job's imported assets."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Remove Scenario Items",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "execute_python",
+			"title": "Run Python",
+			"description": "Runs Unreal Python in the editor (game thread) inside one undo step. Off unless the person allows it. Output capped at 20,000 characters.\nReturns: { ok, output, result }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"code":
+					{
+						"type": "string",
+						"description": "Python source to run."
+					}
+				},
+				"required": [
+					"code"
+				]
+			},
+			"annotations":
+			{
+				"title": "Run Python",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "unreal_api_help",
+			"title": "Unreal API Help",
+			"description": "Reflection help before writing Python: a class (functions and properties) or one member (\"StaticMeshActor\", \"EditorActorSubsystem.SpawnActorFromClass\").\nReturns: { type, python, parent, about, functions, properties } for a class, or the member's signature and about.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "A class, or Class.member."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Unreal API Help",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "build_world",
+			"title": "Build World",
+			"description": "Creates and opens a new walkable level under /Game/Scenario/Worlds: sun, sky light and fog for the time of day (mist for ground fog), a ground, invisible walls around the play area, a player start and the project's third-person game mode. Generate the Scenario assets first or in parallel; pass them here or to dress_world. Fails if the open level has unsaved changes.\nReturns: { level, size_m, play_area_m, player_start_m, landmark_spot_m, game_mode, time_of_day, mist, sun, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "World name, also the level name (\"Misty Bamboo Temple\")."
+					},
+					"time_of_day":
+					{
+						"type": "string",
+						"description": "day (default), morning, golden, dusk, night or overcast.",
+						"enum": [
+							"day",
+							"morning",
+							"golden",
+							"dusk",
+							"night",
+							"overcast"
+						],
+						"default": "day"
+					},
+					"size_m":
+					{
+						"type": "number",
+						"description": "Side of the square play area in meters (40 to 600). Default 120: about a minute to walk across."
+					},
+					"ground_material":
+					{
+						"type": "string",
+						"description": "Material from a Scenario material result (created_assets path). Tiled in world space."
+					},
+					"ground_tile_m":
+					{
+						"type": "number",
+						"description": "Meters per texture tile on the ground. Default 4."
+					},
+					"sky":
+					{
+						"type": "string",
+						"description": "Material or panorama texture from a Scenario environment (skybox) result."
+					},
+					"game_mode":
+					{
+						"type": "string",
+						"description": "Blueprint game mode path. Default auto: the project's Third Person, First Person or Top Down template game mode."
+					},
+					"mist":
+					{
+						"type": "number",
+						"description": "Ground fog from 0 (clear air, default) to 1 (dense). Above 0 the fog is volumetric: light shafts and lantern glow show in it. 0.6 to 0.9 for a misty scene."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Build World",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "dress_world",
+			"title": "Dress World",
+			"description": "Lays Scenario 3D results out on a world made by build_world: a landmark at the center (faces the player start), an optional paved path from the player start to it, props with spacing (lining the path, crossing it as gates, or scattered) kept off the path, plus ground material, sky, mist and looping ambient sound. Meshes are scaled to height_m and rest on the ground. With a sky, the sun is aimed from the sun in the panorama when it shows a clear one (the result's sun says which). Call again with replace true to redo the layout.\nReturns: { level, size_m, landmark, path, props: [{ mesh, placed, asked, area, note }] (one entry per mesh), total_props, prop_lights, sun, warnings, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"landmark":
+					{
+						"type": "object",
+						"description": "The hero object at the center: what the player walks to and the film circles.",
+						"properties":
+						{
+							"mesh":
+							{
+								"type": "string",
+								"description": "Static mesh path (or its import folder)."
+							},
+							"height_m":
+							{
+								"type": "number",
+								"description": "Default 6."
+							},
+							"at_m":
+							{
+								"type": "array",
+								"items":
+								{
+									"type": "number"
+								},
+								"description": "[x, y] in meters. Default [0, 0]."
+							},
+							"front_yaw":
+							{
+								"type": "number",
+								"description": "Degrees added so the mesh's front faces the player. Default -90: Scenario 3D models (glTF) face +Y. Try 90, 0 or 180 if it faces away."
+							}
+						},
+						"required": [
+							"mesh"
+						]
+					},
+					"path":
+					{
+						"type": "object",
+						"description": "A flat paved strip from the player start to the landmark (or the world's center), in a world-aligned material. Props stay off it.",
+						"properties":
+						{
+							"material":
+							{
+								"type": "string",
+								"description": "Material from a Scenario material result (stone, gravel, planks)."
+							},
+							"width_m":
+							{
+								"type": "number",
+								"description": "Default 3.5."
+							},
+							"tile_m":
+							{
+								"type": "number",
+								"description": "Meters per texture tile. Default 2."
+							},
+							"tint":
+							{
+								"type": "array",
+								"items":
+								{
+									"type": "number"
+								},
+								"description": "[r, g, b] 0 to 1, multiplies the color."
+							}
+						},
+						"required": [
+							"material"
+						]
+					},
+					"props":
+					{
+						"type": "array",
+						"description": "One entry per Scenario mesh. 300 props at most in total.",
+						"items":
+						{
+							"type": "object",
+							"properties":
+							{
+								"mesh":
+								{
+									"type": "string"
+								},
+								"count":
+								{
+									"type": "integer",
+									"description": "Default 6."
+								},
+								"height_m":
+								{
+									"description": "Height in meters, or [min, max] for variety. Default 1.5.",
+									"oneOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "array",
+											"items":
+											{
+												"type": "number"
+											}
+										}
+									]
+								},
+								"area":
+								{
+									"type": "string",
+									"enum": [
+										"anywhere",
+										"edges",
+										"center",
+										"around_landmark",
+										"path_sides",
+										"on_path"
+									],
+									"description": "path_sides lines both sides of the path, evenly spaced (lanterns, fences). on_path puts gates and arches across the path so the player walks through them (torii): the widest side crosses the path, and a single gate marks the start of the path. Default anywhere."
+								},
+								"spacing_m":
+								{
+									"type": "number",
+									"description": "Free space between props. Default 1.5."
+								},
+								"yaw":
+								{
+									"description": "\"random\" (default), \"face_center\" or degrees. on_path sets its own.",
+									"oneOf": [
+										{
+											"type": "string"
+										},
+										{
+											"type": "number"
+										}
+									]
+								},
+								"front_yaw":
+								{
+									"type": "number",
+									"description": "Degrees added to face_center (default -90, as for the landmark) or to on_path (default 0)."
+								},
+								"light":
+								{
+									"description": "true, or {temperature_k (2200), intensity_cd (4), radius_m (4.5), height (0.63 of the prop's height)}: a warm point light inside each placed prop (lanterns, braziers). 48 lights at most per world.",
+									"oneOf": [
+										{
+											"type": "boolean"
+										},
+										{
+											"type": "object"
+										}
+									]
+								},
+								"sink_m":
+								{
+									"type": "number",
+									"description": "Sinks the prop into the ground (rocks, roots). Default 0."
+								}
+							},
+							"required": [
+								"mesh"
+							]
+						}
+					},
+					"ground_material":
+					{
+						"type": "string",
+						"description": "Material from a Scenario material result, as in build_world."
+					},
+					"ground_tile_m":
+					{
+						"type": "number",
+						"description": "Meters per texture tile on the ground."
+					},
+					"ground_tint":
+					{
+						"type": "array",
+						"items":
+						{
+							"type": "number"
+						},
+						"description": "[r, g, b] 0 to 1, multiplies the ground's color (the ground_material given, or the one already on the ground)."
+					},
+					"sky":
+					{
+						"type": "string",
+						"description": "Material or panorama texture from a Scenario environment (skybox) result."
+					},
+					"mist":
+					{
+						"type": "number",
+						"description": "Ground fog from 0 to 1, as in build_world. Omit to keep the level's."
+					},
+					"ambient":
+					{
+						"type": "string",
+						"description": "Sound from a Scenario audio result, looped over the whole world."
+					},
+					"ambient_volume":
+					{
+						"type": "number",
+						"description": "Default 0.5."
+					},
+					"time_of_day":
+					{
+						"type": "string",
+						"description": "day, morning, golden, dusk, night or overcast.",
+						"enum": [
+							"day",
+							"morning",
+							"golden",
+							"dusk",
+							"night",
+							"overcast"
+						]
+					},
+					"seed":
+					{
+						"type": "integer",
+						"description": "Change it for another layout. Default 7."
+					},
+					"replace":
+					{
+						"type": "boolean",
+						"description": "Removes the props, their lights and the landmark of the previous call first. Default true. A new path always replaces the old one."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Dress World",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "make_game",
+			"title": "Make Game",
+			"description": "Turns the open level (a kit world or a dressed template) into a small game: Scenario pickups spread over free floor (they spin and glow), an optional goal (in front of the landmark when there is one), a timer, looping music and a HUD. Winning: collect every pickup, then reach the goal. Uses the plugin's Scenario Pickup, Goal and Game Rules actors, so the game also works in a packaged build.\nReturns: { level, title, pickups, pickup_mesh, time_limit_s, music }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"title":
+					{
+						"type": "string",
+						"description": "Shown on the HUD (\"Lantern Hunt\")."
+					},
+					"pickups":
+					{
+						"type": "object",
+						"description": "What to collect: a Scenario mesh, how many, their name on the HUD and a pickup sound.",
+						"properties":
+						{
+							"mesh":
+							{
+								"type": "string"
+							},
+							"count":
+							{
+								"type": "integer",
+								"description": "1 to 40. Default 8."
+							},
+							"name":
+							{
+								"type": "string",
+								"description": "Plural, for the HUD (\"lanterns\")."
+							},
+							"height_m":
+							{
+								"type": "number",
+								"description": "Default 0.7."
+							},
+							"hover_m":
+							{
+								"type": "number",
+								"description": "Height above the floor. Default 1."
+							},
+							"sound":
+							{
+								"type": "string",
+								"description": "Short Scenario sound played on pickup."
+							}
+						},
+						"required": [
+							"mesh",
+							"name"
+						]
+					},
+					"goal":
+					{
+						"type": "object",
+						"description": "Omit for a game won by collecting everything.",
+						"properties":
+						{
+							"mesh":
+							{
+								"type": "string",
+								"description": "Optional mesh (portal, shrine, boat). Without it the goal is a glow."
+							},
+							"height_m":
+							{
+								"type": "number",
+								"description": "Default 3."
+							},
+							"at_m":
+							{
+								"type": "array",
+								"items":
+								{
+									"type": "number"
+								}
+							},
+							"needs_all_pickups":
+							{
+								"type": "boolean",
+								"description": "Default true."
+							}
+						}
+					},
+					"time_limit_s":
+					{
+						"type": "number",
+						"description": "0: no limit. Default 25 s per pickup plus 30."
+					},
+					"music":
+					{
+						"type": "string",
+						"description": "Scenario music, looped."
+					},
+					"music_volume":
+					{
+						"type": "number",
+						"description": "Default 0.6."
+					},
+					"win_sound":
+					{
+						"type": "string",
+						"description": "Scenario sound played when the player wins."
+					},
+					"lose_sound":
+					{
+						"type": "string",
+						"description": "Scenario sound played when time runs out."
+					},
+					"objective":
+					{
+						"type": "string",
+						"description": "One HUD line. Default: \"Collect every <name>, then reach the goal.\""
+					},
+					"accent":
+					{
+						"type": "array",
+						"items":
+						{
+							"type": "number"
+						},
+						"description": "HUD and glow color, [r, g, b] 0 to 1."
+					},
+					"seed":
+					{
+						"type": "integer",
+						"description": "Change it for another layout."
+					},
+					"replace":
+					{
+						"type": "boolean",
+						"description": "Removes the previous game's actors first. Default true."
+					}
+				},
+				"required": [
+					"title",
+					"pickups"
+				]
+			},
+			"annotations":
+			{
+				"title": "Make Game",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "dress_template",
+			"title": "Dress Template",
+			"description": "Copies an Epic template level of this project (third_person, platforming, combat, first_person, shooter, horror) to /Game/Scenario/Games and dresses the copy with Scenario assets: floor and block materials (world-aligned), meshes swapped for template ones (boxes, cubes, cylinders) at the same size, decor props on free floor, sky and music. The template's gameplay stays. Fails if the open level has unsaved changes.\nReturns: { level, template, materials_replaced, swapped: [{ replace, with, count }], props: [{ mesh, placed, asked }], game_mode, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "Name of the copy, also the level name."
+					},
+					"template":
+					{
+						"type": "string",
+						"description": "A name above or a level path. Default platforming."
+					},
+					"floor_material":
+					{
+						"type": "string",
+						"description": "Replaces the grey grid floors and walls."
+					},
+					"block_material":
+					{
+						"type": "string",
+						"description": "Replaces the colored blocks."
+					},
+					"tile_m":
+					{
+						"type": "number",
+						"description": "Meters per texture tile. Default 4."
+					},
+					"swaps":
+					{
+						"type": "array",
+						"description": "Template meshes to replace: which shape, and the Scenario mesh that takes its place.",
+						"items":
+						{
+							"type": "object",
+							"properties":
+							{
+								"replace":
+								{
+									"type": "string",
+									"description": "boxes (breakable crates in combat), cubes, cylinders, or a mesh path."
+								},
+								"mesh":
+								{
+									"type": "string"
+								}
+							},
+							"required": [
+								"replace",
+								"mesh"
+							]
+						}
+					},
+					"props":
+					{
+						"type": "array",
+						"description": "Scenario meshes scattered as decor on free floor.",
+						"items":
+						{
+							"type": "object",
+							"properties":
+							{
+								"mesh":
+								{
+									"type": "string"
+								},
+								"count":
+								{
+									"type": "integer"
+								},
+								"height_m":
+								{
+								}
+							},
+							"required": [
+								"mesh"
+							]
+						}
+					},
+					"sky":
+					{
+						"type": "string",
+						"description": "Material or panorama texture from a Scenario environment (skybox) result."
+					},
+					"time_of_day":
+					{
+						"type": "string",
+						"description": "day, morning, golden, dusk, night or overcast.",
+						"enum": [
+							"day",
+							"morning",
+							"golden",
+							"dusk",
+							"night",
+							"overcast"
+						]
+					},
+					"music":
+					{
+						"type": "string",
+						"description": "Scenario music, looped."
+					},
+					"music_volume":
+					{
+						"type": "number",
+						"description": "Music volume."
+					},
+					"seed":
+					{
+						"type": "integer",
+						"description": "Change it for another layout."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Dress Template",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "make_film",
+			"title": "Make Film",
+			"description": "Builds a short film in the open level as a Level Sequence: cine cameras on smooth moves (aerial, crane_down, orbit, walk, detail, rise) around the landmark, camera cuts, fade in and out, and Scenario music and sound effects. Default: six shots over duration_s. Then render_film.\nReturns: { film, sequence, level, duration_s, shots, audio, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "Film name, also the Level Sequence name."
+					},
+					"duration_s":
+					{
+						"type": "number",
+						"description": "6 to 120. Default 24."
+					},
+					"music":
+					{
+						"type": "string",
+						"description": "Scenario music for the whole film."
+					},
+					"music_volume":
+					{
+						"type": "number",
+						"description": "Default 0.9."
+					},
+					"sfx":
+					{
+						"type": "array",
+						"description": "Scenario sound effects, each at a time in the film.",
+						"items":
+						{
+							"type": "object",
+							"properties":
+							{
+								"sound":
+								{
+									"type": "string"
+								},
+								"at_s":
+								{
+									"type": "number"
+								},
+								"volume":
+								{
+									"type": "number"
+								}
+							},
+							"required": [
+								"sound",
+								"at_s"
+							]
+						}
+					},
+					"focus":
+					{
+						"description": "What the film is about: an actor label, or [x, y, z] in meters. Default: the landmark.",
+						"oneOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "array",
+								"items":
+								{
+									"type": "number"
+								}
+							}
+						]
+					},
+					"shots":
+					{
+						"type": "array",
+						"description": "Shots in order; default six over duration_s.",
+						"items":
+						{
+							"type": "object",
+							"properties":
+							{
+								"type":
+								{
+									"type": "string",
+									"enum": [
+										"aerial",
+										"crane_down",
+										"orbit",
+										"walk",
+										"detail",
+										"rise"
+									]
+								},
+								"duration_s":
+								{
+									"type": "number"
+								},
+								"focus":
+								{
+									"description": "Actor label or [x, y, z] meters for this shot."
+								}
+							},
+							"required": [
+								"type"
+							]
+						}
+					},
+					"fps":
+					{
+						"type": "integer",
+						"description": "Default 24."
+					},
+					"seed":
+					{
+						"type": "integer",
+						"description": "Change it for other camera paths."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Make Film",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "render_film",
+			"title": "Render Film",
+			"description": "Renders a film with Movie Render Queue in the editor, then encodes an MP4 with its music when ffmpeg is installed. Returns at once: poll film_status about every 20 seconds. A 24 s film at 720p draft takes a few minutes.\nReturns: { film, state, frames, resolution, output_dir, note, next }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"film":
+					{
+						"type": "string",
+						"description": "Film name or sequence path. Default: the newest film."
+					},
+					"resolution":
+					{
+						"type": "string",
+						"description": "720p (default) or 1080p.",
+						"enum": [
+							"720p",
+							"1080p"
+						],
+						"default": "720p"
+					},
+					"quality":
+					{
+						"type": "string",
+						"enum": [
+							"draft",
+							"high"
+						],
+						"description": "high: 4 temporal samples (smoother, about 4x slower). Default draft."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Render Film",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "film_status",
+			"title": "Get Film Status",
+			"description": "Where a film render is: rendering (frames_done of frames), encoding, done, failed (error), or interrupted or not_rendered (call render_film).\nReturns: { film, state, output_dir, frames, frames_done, mp4, note, error }. When done, the film is mp4, or without ffmpeg the image sequence in output_dir (note says so).",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"film":
+					{
+						"type": "string",
+						"description": "Film name or sequence path. Default: the newest film."
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Get Film Status",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "kit_status",
+			"title": "Get Kit Status",
+			"description": "What the kit made in the open level: kit world or not, size, props and their lights, landmark, path, sky, time of day, mist, pickups, goal, game rules, films. During Play it reports the player character instead (pawn, pawn_at_m); stop Play to read the level again.\nReturns: { level, kit_world } and what the kit made there, or the player character during Play.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+				}
+			},
+			"annotations":
+			{
+				"title": "Get Kit Status",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "play_level",
+			"title": "Play Level",
+			"description": "Starts (or stops) Play in the editor so the person can walk the level or play the game. Call kit_status a few seconds after starting: it reports the player character once it has spawned.\nReturns: { playing, note }.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"action":
+					{
+						"type": "string",
+						"description": "start (default) or stop.",
+						"enum": [
+							"start",
+							"stop"
+						],
+						"default": "start"
+					}
+				}
+			},
+			"annotations":
+			{
+				"title": "Play Level",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": false
+			},
+			"_meta":
+			{
+				"scenario.com/listing": "catalog"
+			}
+		},
+		{
+			"name": "unreal_tools_list",
+			"title": "List Unreal Tools",
+			"description": "Every tool of this editor's Scenario server, including those not in tools/list: the kit's worlds, games and films, Prompt Spark, the Scenario library, the Output Log. Free.\nReturns: { tools: [{ name, title, summary, lane (read, write or delete), listed }] }. listed tools can be called directly; get another tool's input schema from unreal_tools_search, then run it with unreal_tool_execute_<lane> or by its name.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+				}
+			},
+			"annotations":
+			{
+				"title": "List Unreal Tools",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "unreal_tools_search",
+			"title": "Search Unreal Tools",
+			"description": "Finds tools of this editor's Scenario server by keyword and gives their input schemas. Searches tools only: for models use list_models, for project assets find_assets. Free.\nReturns: { results: [{ name, title, lane, listed, description, inputSchema, annotations }] }; run a result with unreal_tool_execute_<lane> or by its name.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"query":
+					{
+						"type": "string",
+						"description": "Words matched against tool names, titles and descriptions, for example film or prompt."
+					},
+					"limit":
+					{
+						"type": "integer",
+						"description": "Most tools to return, 1 to 20. Default 8."
+					}
+				},
+				"required": [
+					"query"
+				]
+			},
+			"annotations":
+			{
+				"title": "Search Unreal Tools",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "unreal_tool_execute_read",
+			"title": "Run Read Tool",
+			"description": "Runs one read-only tool from unreal_tools_search by name, with the same permissions as calling it directly. Tools of the write and delete lanes are refused here, with the executor to use.\nReturns: the tool's own result.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "Tool name, as unreal_tools_list or unreal_tools_search gives it."
+					},
+					"parameters":
+					{
+						"type": "object",
+						"description": "The tool's arguments, matching its inputSchema."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Run Read Tool",
+				"readOnlyHint": true,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "unreal_tool_execute_write",
+			"title": "Run Write Tool",
+			"description": "Runs one tool of the write lane by name: it changes the project, or SPENDS Creative Units, with the same permissions and money rules as calling it directly (price first, quote_id and approved_cost; paid calls are sent once). Read and delete tools are refused here.\nReturns: the tool's own result.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "Tool name, as unreal_tools_list or unreal_tools_search gives it."
+					},
+					"parameters":
+					{
+						"type": "object",
+						"description": "The tool's arguments, matching its inputSchema."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Run Write Tool",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "unreal_tool_execute_delete",
+			"title": "Run Delete Tool",
+			"description": "Runs one destructive tool by name, such as remove_scenario_items or the kit's world, game and film tools, with the same permissions as calling it directly. Confirm with the person first. Read and write tools are refused here.\nReturns: the tool's own result.",
+			"inputSchema":
+			{
+				"type": "object",
+				"properties":
+				{
+					"name":
+					{
+						"type": "string",
+						"description": "Tool name, as unreal_tools_list or unreal_tools_search gives it."
+					},
+					"parameters":
+					{
+						"type": "object",
+						"description": "The tool's arguments, matching its inputSchema."
+					}
+				},
+				"required": [
+					"name"
+				]
+			},
+			"annotations":
+			{
+				"title": "Run Delete Tool",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"idempotentHint": false,
+				"openWorldHint": true
+			}
+		}
+	]
+}

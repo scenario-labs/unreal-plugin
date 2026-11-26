@@ -1,0 +1,301 @@
+{
+ "$comment": "GET /models/{id} replies for the trained-model tests. bases: two of Scenario's public base models as recorded, trimmed to a few inputs. trained: made-up trained models (model_test_* ids).",
+ "bases": {
+  "model_bfl-flux-1-dev": {
+   "model": {
+    "id": "model_bfl-flux-1-dev",
+    "name": "FLUX.1 Dev",
+    "shortDescription": "FLUX.1 Dev by Black Forest Labs. High-quality text-to-image and image-to-image with strong prompt adherence, ControlNet, and a top base for LoRA fine-tuning.",
+    "type": "custom",
+    "privacy": "public",
+    "capabilities": [
+     "txt2img",
+     "img2img",
+     "controlnet",
+     "outpaint"
+    ],
+    "status": "trained",
+    "inputs": [
+     {
+      "description": "A single LoRA or composition model ID. If a composition is provided, the loras and lorasScale arrays will be automatically populated from the composition's concepts. If a LoRA is provided, it will be added to the loras array.",
+      "modelTypes": [
+       "flux.1-lora",
+       "flux.1-composition"
+      ],
+      "default": "",
+      "label": "LoRA or Composition Model",
+      "name": "modelId",
+      "costImpact": false,
+      "type": "model"
+     },
+     {
+      "description": "List of one or more LoRA model IDs. If provided, this will override the LoRAs extracted from the composition (when modelId is a composition). If modelId is a LoRA and this is not provided, it will be automatically populated with the modelId.",
+      "modelTypes": [
+       "flux.1-lora"
+      ],
+      "default": [],
+      "label": "Flux LoRA",
+      "maxLength": 6,
+      "name": "loras",
+      "costImpact": false,
+      "type": "model_array"
+     },
+     {
+      "description": "Scales for the LoRA weights",
+      "label": "LoRA Scale",
+      "max": 2,
+      "min": 0,
+      "name": "lorasScale",
+      "costImpact": false,
+      "step": 0.05,
+      "type": "number_array"
+     },
+     {
+      "description": "Text prompt for image generation",
+      "label": "Prompt",
+      "maxLength": 2048,
+      "name": "prompt",
+      "costImpact": false,
+      "prompt": true,
+      "required": {
+       "always": true
+      },
+      "type": "string",
+      "promptSpark": true
+     },
+     {
+      "description": "Number of images to generate.",
+      "default": 1,
+      "group": "Settings",
+      "label": "Image Count",
+      "max": 4,
+      "min": 1,
+      "name": "numOutputs",
+      "costImpact": true,
+      "step": 1,
+      "type": "number"
+     },
+     {
+      "description": "The width of the generated images, must be a multiple of 16",
+      "default": 1104,
+      "group": "Settings",
+      "label": "Width",
+      "max": 2048,
+      "min": 128,
+      "name": "width",
+      "costImpact": false,
+      "step": 16,
+      "type": "number"
+     },
+     {
+      "description": "The height of the generated images, must be a multiple of 16",
+      "default": 832,
+      "group": "Settings",
+      "label": "Height",
+      "max": 2048,
+      "min": 128,
+      "name": "height",
+      "costImpact": false,
+      "step": 16,
+      "type": "number"
+     },
+     {
+      "description": "Used to reproduce previous results",
+      "group": "Settings",
+      "label": "Seed",
+      "max": 2147483647,
+      "min": 0,
+      "name": "seed",
+      "costImpact": false,
+      "type": "number"
+     }
+    ]
+   }
+  },
+  "model_bfl-flux-2-dev": {
+   "model": {
+    "id": "model_bfl-flux-2-dev",
+    "name": "FLUX 2 (Dev)",
+    "shortDescription": "FLUX 2 (Dev) by Black Forest Labs is an open-weight image model built for fine-tuning. Stack up to 6 LoRAs, add up to 5 reference images, and generate up to 2048x2048.",
+    "type": "custom",
+    "privacy": "public",
+    "capabilities": [
+     "txt2img",
+     "img2img"
+    ],
+    "status": "trained",
+    "inputs": [
+     {
+      "description": "A single LoRA model ID. If provided, it will be added to the loras array.",
+      "modelTypes": [
+       "flux.2-dev-lora",
+       "flux.2-dev-edit-lora"
+      ],
+      "default": "",
+      "label": "LoRA Model",
+      "name": "modelId",
+      "costImpact": false,
+      "type": "model"
+     },
+     {
+      "description": "List of one or more LoRA model IDs. If modelId is a LoRA and this is not provided, it will be automatically populated with the modelId.",
+      "modelTypes": [
+       "flux.2-dev-lora",
+       "flux.2-dev-edit-lora"
+      ],
+      "default": [],
+      "label": "Flux LoRA",
+      "maxLength": 6,
+      "name": "loras",
+      "costImpact": false,
+      "type": "model_array"
+     },
+     {
+      "description": "Scales for the LoRA weights",
+      "label": "LoRA Scale",
+      "max": 2,
+      "min": 0,
+      "name": "lorasScale",
+      "costImpact": false,
+      "step": 0.05,
+      "type": "number_array"
+     },
+     {
+      "description": "Text prompt for image generation",
+      "label": "Prompt",
+      "maxLength": 2048,
+      "name": "prompt",
+      "costImpact": false,
+      "prompt": true,
+      "required": {
+       "always": true
+      },
+      "type": "string",
+      "promptSpark": true
+     },
+     {
+      "description": "Reference images",
+      "kind": "image",
+      "label": "Reference images",
+      "maxLength": 5,
+      "name": "referenceImages",
+      "costImpact": false,
+      "parent": true,
+      "type": "file_array"
+     },
+     {
+      "description": "Number of images to generate",
+      "default": 1,
+      "group": "Settings",
+      "label": "Image Count",
+      "max": 4,
+      "min": 1,
+      "name": "numOutputs",
+      "costImpact": true,
+      "step": 1,
+      "type": "number"
+     }
+    ]
+   }
+  }
+ },
+ "trained": {
+  "model_test_style_lora": {
+   "model": {
+    "id": "model_test_style_lora",
+    "name": "Test Painted Style",
+    "shortDescription": "A made-up LoRA for the tests.",
+    "type": "flux.1-lora",
+    "privacy": "private",
+    "status": "trained",
+    "capabilities": [
+     "txt2img"
+    ],
+    "tags": [],
+    "compliantModelIds": [
+     "flux.1-dev",
+     "flux.1-schnell"
+    ],
+    "concepts": [
+     {
+      "modelId": "model_test_style_lora",
+      "scale": 0.8
+     }
+    ],
+    "parameters": {
+     "conceptPrompt": "",
+     "samplePrompts": [
+      "a red barn, FAKESTYLE",
+      "FAKESTYLE castle at night",
+      "portrait of a knight in FAKESTYLE"
+     ]
+    }
+   }
+  },
+  "model_test_scene_composition": {
+   "model": {
+    "id": "model_test_scene_composition",
+    "name": "Test Scene Mix",
+    "shortDescription": "A made-up composition for the tests.",
+    "type": "flux.1-composition",
+    "privacy": "private",
+    "status": "trained",
+    "capabilities": [
+     "txt2img",
+     "img2img"
+    ],
+    "tags": [],
+    "compliantModelIds": [
+     "flux.1-dev",
+     "flux.1-schnell"
+    ],
+    "concepts": [
+     {
+      "modelId": "model_test_concept_a",
+      "scale": 0.8
+     },
+     {
+      "modelId": "model_test_concept_b",
+      "scale": 0.6
+     }
+    ],
+    "parameters": {
+     "conceptPrompt": "test scene words"
+    }
+   }
+  },
+  "model_test_flux2_lora": {
+   "model": {
+    "id": "model_test_flux2_lora",
+    "name": "Test Flux Two Props",
+    "shortDescription": "A made-up FLUX 2 LoRA for the tests.",
+    "type": "flux.2-dev-lora",
+    "privacy": "private",
+    "status": "trained",
+    "capabilities": [
+     "txt2img"
+    ],
+    "tags": [],
+    "parameters": {
+     "samplePrompts": [
+      "one sample only, PROPSTYLE"
+     ]
+    }
+   }
+  },
+  "model_test_unknown_lora": {
+   "model": {
+    "id": "model_test_unknown_lora",
+    "name": "Test Old Style",
+    "shortDescription": "A made-up LoRA of a type no base reads.",
+    "type": "sd-xl-lora",
+    "privacy": "private",
+    "status": "trained",
+    "capabilities": [
+     "txt2img"
+    ],
+    "tags": []
+   }
+  }
+ }
+}

@@ -74,15 +74,6 @@ public:
 	static UScenarioToolResult* GetModelSchema(const FString& ModelId);
 
 	/**
-	 * Scenario's model recommendation for a prompt.
-	 * @param Prompt What to make.
-	 * @param Lane A lane as in ListModels, or auto.
-	 * @return The recommendation.
-	 */
-	UFUNCTION(meta = (AICallable))
-	static UScenarioToolResult* RecommendModels(const FString& Prompt, const FString& Lane = TEXT("auto"));
-
-	/**
 	 * Free price check of a model run. Quotes are single use and last 120 s.
 	 * @param ModelId Id from ListModels.
 	 * @param Lane Where results land; auto infers it from the model.

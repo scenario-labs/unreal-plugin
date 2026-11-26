@@ -152,7 +152,7 @@ namespace
 			Credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
 			FString User = Account;
 			Credential.UserName = const_cast<LPWSTR>(*User);
-			return CredWriteW(&Credential, 0) != FALSE;
+			return CredWriteW(&Credential, 0) != 0;
 		}
 
 		virtual bool Read(const FString& Account, FString& OutSecret) const override
@@ -172,7 +172,7 @@ namespace
 		virtual bool Delete(const FString& Account) override
 		{
 			const FString Target = TargetName(Account);
-			return CredDeleteW(*Target, CRED_TYPE_GENERIC, 0) != FALSE || GetLastError() == ERROR_NOT_FOUND;
+			return CredDeleteW(*Target, CRED_TYPE_GENERIC, 0) != 0 || GetLastError() == ERROR_NOT_FOUND;
 		}
 
 		virtual FString Describe() const override { return TEXT("Windows Credential Manager"); }

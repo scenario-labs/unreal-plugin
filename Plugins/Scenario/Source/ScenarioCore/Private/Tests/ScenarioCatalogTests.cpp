@@ -207,15 +207,14 @@ bool FScenarioCatalogRefreshTest::RunTest(const FString& Parameters)
 {
 	TSharedRef<FScenarioFakeBackend> Backend = MakeShared<FScenarioFakeBackend>();
 	int32 Pages = 0;
-	Backend->On(TEXT("models_list"), [&Pages](const TSharedPtr<FJsonObject>& Arguments)
+	Backend->On(TEXT("GET /models"), [&Pages](const FScenarioRequest& Request)
 	{
-		const TSharedPtr<FJsonObject> Filters = ScenarioJson::GetObject(Arguments, TEXT("filters"));
-		if (ScenarioJson::GetString(Filters, TEXT("privacy")) == TEXT("private"))
+		if (Request.QueryValue(TEXT("privacy")) == TEXT("private"))
 		{
 			return FScenarioReply::Ok(ScenarioJson::ParseObject(TEXT("{\"models\":[{\"id\":\"model_team_lora\",\"name\":\"Team Props\",\"type\":\"flux.1-lora\",\"privacy\":\"private\",\"status\":\"trained\",\"capabilities\":[\"txt2img\"],\"tags\":[]},{\"id\":\"model_training\",\"name\":\"Not ready\",\"status\":\"training\",\"capabilities\":[\"txt2img\"]}]}")));
 		}
 		++Pages;
-		const FString Token = ScenarioJson::GetString(Arguments, TEXT("page_token"));
+		const FString Token = Request.QueryValue(TEXT("paginationToken"));
 		if (Token.IsEmpty())
 		{
 			return FScenarioReply::Ok(ScenarioJson::ParseObject(TEXT("{\"models\":[{\"id\":\"model_a\",\"name\":\"A\",\"capabilities\":[\"txt2img\"],\"tags\":[],\"createdAt\":\"2026-01-01T00:00:00Z\"}],\"nextPaginationToken\":\"p2\"}")));
@@ -292,11 +291,9 @@ bool FScenarioSparkPromptsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("two variants from prompts"), Prompts.Num(), 2);
 	TestTrue(TEXT("first is the recommended one"), Prompts.Num() > 0 && Prompts[0].StartsWith(TEXT("A serene")));
 
-	// Without prompts: the calls, then the recommended prompt.
+	// Without prompts: the calls.
 	TSharedPtr<FJsonObject> CallsOnly = ScenarioJson::ParseObject(TEXT("{\"calls\":[{\"parameters\":{\"prompt\":\"a\"}},{\"parameters\":{\"prompt\":\"b\"}}]}"));
 	TestEqual(TEXT("from calls"), FScenarioApi::SparkPrompts(CallsOnly).Num(), 2);
-	TSharedPtr<FJsonObject> Recommended = ScenarioJson::ParseObject(TEXT("{\"prompts\":[],\"recommended_prompt\":\"c\"}"));
-	TestEqual(TEXT("from recommended_prompt"), FScenarioApi::SparkPrompts(Recommended).Num(), 1);
 	TestEqual(TEXT("empty reply"), FScenarioApi::SparkPrompts(ScenarioJson::ParseObject(TEXT("{\"prompts\":[]}"))).Num(), 0);
 	return true;
 }

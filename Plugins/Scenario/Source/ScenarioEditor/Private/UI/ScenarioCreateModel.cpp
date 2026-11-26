@@ -133,9 +133,9 @@ void FScenarioCreateModel::Subscribe()
 	if (FScenarioSession* Session = SessionOrNull())
 	{
 		SessionHandle = Session->OnChanged.AddSP(this, &FScenarioCreateModel::OnSessionChanged);
-		CatalogHandle = Session->Catalog().OnChanged.AddLambda([WeakThis = TWeakPtr<FScenarioCreateModel>(AsShared())]()
+		CatalogHandle = Session->Catalog().OnChanged.AddLambda([WeakSelf = TWeakPtr<FScenarioCreateModel>(AsShared())]()
 		{
-			if (const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin())
+			if (const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin())
 			{
 				This->OnChanged.Broadcast();
 			}
@@ -248,11 +248,37 @@ FString FScenarioCreateModel::GetModelName() const
 	return ModelId;
 }
 
+const FScenarioTrainedInfo* FScenarioCreateModel::GetTrained() const
+{
+	FScenarioSession* Session = SessionOrNull();
+	return Session && !bWorkflow && !ModelId.IsEmpty() ? Session->Catalog().FindTrained(ModelId) : nullptr;
+}
+
 FString FScenarioCreateModel::GetModelNote() const
 {
 	if (bWorkflow)
 	{
 		return WorkflowDescription;
+	}
+	// A trained model runs on its base: "LoRA via FLUX.1 Dev", then its description.
+	FString Trained;
+	if (const FScenarioTrainedInfo* Info = GetTrained())
+	{
+		Trained = Info->Label();
+	}
+	else if (FScenarioSession* Session = SessionOrNull())
+	{
+		const FScenarioCatalogModel* Model = Session->Catalog().Find(ModelId);
+		if (Model && Model->bTrained && ScenarioTrained::IsTrainedType(Model->Summary.Type) && Session->Catalog().Bases().Num() > 0)
+		{
+			Trained = Session->Catalog().TrainedInfo(*Model).Label();
+		}
+	}
+	if (!Trained.IsEmpty())
+	{
+		const FScenarioCatalogModel* Model = SessionOrNull() ? SessionOrNull()->Catalog().Find(ModelId) : nullptr;
+		const FString About = Model ? Model->Summary.ShortDescription : FString();
+		return About.IsEmpty() ? Trained : Trained + TEXT(" · ") + About;
 	}
 	if (const FScenarioLane* Lane = FScenarioLanes::Get().LaneForModel(ModelId))
 	{
@@ -402,10 +428,10 @@ void FScenarioCreateModel::LoadWorkflows(bool bForce)
 			Out.Add(Item);
 		}
 	};
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Api().ListWorkflows(TEXT("private"), TEXT("ready"), 50, FString(), {}, [WeakThis, Parse](const FScenarioReply& Team)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Api().ListWorkflows(TEXT("private"), TEXT("ready"), 50, FString(), {}, [WeakSelf, Parse](const FScenarioReply& Team)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		FScenarioSession* S = SessionOrNull();
 		if (!This.IsValid() || !S)
 		{
@@ -414,9 +440,9 @@ void FScenarioCreateModel::LoadWorkflows(bool bForce)
 		TArray<FScenarioWorkflowItem> Found;
 		Parse(Team, true, Found);
 		const FString TeamError = Team.bOk ? FString() : Team.Error.Message;
-		S->Api().ListWorkflows(TEXT("public"), TEXT("ready"), 30, FString(), { TEXT("featured") }, [WeakThis, Parse, TeamError, Found](const FScenarioReply& Featured) mutable
+		S->Api().ListWorkflows(TEXT("public"), TEXT("ready"), 30, FString(), { TEXT("featured") }, [WeakSelf, Parse, TeamError, Found](const FScenarioReply& Featured) mutable
 		{
-			const TSharedPtr<FScenarioCreateModel> Later = WeakThis.Pin();
+			const TSharedPtr<FScenarioCreateModel> Later = WeakSelf.Pin();
 			if (!Later.IsValid())
 			{
 				return;
@@ -499,10 +525,10 @@ void FScenarioCreateModel::LoadSchema()
 	}
 	bLoadingSchema = true;
 	Changed(false);
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	auto Loaded = [WeakThis, Generation](const TArray<FScenarioField>& NewFields, const FScenarioError& Error)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	auto Loaded = [WeakSelf, Generation](const TArray<FScenarioField>& NewFields, const FScenarioError& Error)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid() || Generation != This->SchemaGeneration)
 		{
 			return;
@@ -511,6 +537,7 @@ void FScenarioCreateModel::LoadSchema()
 		if (Error.Kind != EScenarioErrorKind::None)
 		{
 			This->Fields.Reset();
+			This->bTrainedForm = false;
 			This->SchemaError = Error.Kind == EScenarioErrorKind::NotFound
 				? (This->bWorkflow ? TEXT("Scenario has no workflow with this id any more.") : TEXT("Scenario has no model with this id any more. Pick another one."))
 				: Error.Message;
@@ -539,6 +566,7 @@ void FScenarioCreateModel::SchemaLoaded(const TArray<FScenarioField>& NewFields)
 	const FString OldPrompt = GetPrompt();
 
 	Fields = NewFields;
+	bTrainedForm = GetTrained() != nullptr;
 	if (!bWorkflow)
 	{
 		FScenarioLanes::Get().ApplyFieldLabels(LaneId, ModelId, Fields);
@@ -918,11 +946,11 @@ FString FScenarioCreateModel::AddReferenceFile(const FString& FieldName, const F
 	Changed(true);
 
 	const int32 Id = Reference.Id;
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
 	Subsystem->Session().Upload(Path,
-		[WeakThis, Id](const TScenarioResult<FString>& Result)
+		[WeakSelf, Id](const TScenarioResult<FString>& Result)
 		{
-			const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 			FScenarioReference* Found = This.IsValid() ? This->FindReference(Id) : nullptr;
 			if (!Found)
 			{
@@ -941,9 +969,9 @@ FString FScenarioCreateModel::AddReferenceFile(const FString& FieldName, const F
 			}
 			This->Changed(true);
 		},
-		[WeakThis, Id](float Progress)
+		[WeakSelf, Id](float Progress)
 		{
-			const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 			if (FScenarioReference* Found = This.IsValid() ? This->FindReference(Id) : nullptr)
 			{
 				Found->Progress = Progress;
@@ -1481,7 +1509,7 @@ FText FScenarioCreateModel::GetSentJobText() const
 	{
 		return FText::GetEmpty();
 	}
-	const FText Model = FText::FromString(Row->ModelName.IsEmpty() ? (Row->ModelId.IsEmpty() ? Row->WorkflowId : Row->ModelId) : Row->ModelName);
+	const FText Model = FText::FromString(!Row->TrainedModelName.IsEmpty() ? Row->TrainedModelName : Row->ModelName.IsEmpty() ? (Row->ModelId.IsEmpty() ? Row->WorkflowId : Row->ModelId) : Row->ModelName);
 	const FText Cost = FText::FromString(ScenarioCU::Format(Row->QuotedCU));
 	switch (Row->State)
 	{
@@ -1551,10 +1579,10 @@ void FScenarioCreateModel::Submit()
 	bSubmitting = true;
 	LastError.Reset();
 	OnChanged.Broadcast();
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Submit(BuildRequest(), FString(), FString(), [WeakThis](const TScenarioResult<FString>& Result)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Submit(BuildRequest(), FString(), FString(), [WeakSelf](const TScenarioResult<FString>& Result)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -1566,9 +1594,9 @@ void FScenarioCreateModel::Submit()
 		if (Result.bOk)
 		{
 			This->WaitingUntil = ScenarioNow() + 2.0;
-			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis](float)
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf](float)
 			{
-				if (const TSharedPtr<FScenarioCreateModel> Later = WeakThis.Pin())
+				if (const TSharedPtr<FScenarioCreateModel> Later = WeakSelf.Pin())
 				{
 					Later->OnChanged.Broadcast();
 				}
@@ -1627,10 +1655,10 @@ void FScenarioCreateModel::Estimate()
 	Request.Parameters->SetStringField(Missing->Name, Example);
 	bEstimating = true;
 	const FString For = ModelId;
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Price(Request, true, [WeakThis, For](const TScenarioResult<FScenarioQuote>& Result)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Price(Request, true, [WeakSelf, For](const TScenarioResult<FScenarioQuote>& Result)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -1672,10 +1700,10 @@ void FScenarioCreateModel::PriceNow(bool bAutomatic)
 	bPricing = true;
 	OnChanged.Broadcast();
 
-	TWeakPtr<FScenarioCreateModel> WeakThis = AsShared();
-	Session->Price(Request, bAutomatic, [WeakThis, Generation, Fp](const TScenarioResult<FScenarioQuote>& Result)
+	TWeakPtr<FScenarioCreateModel> WeakSelf = AsShared();
+	Session->Price(Request, bAutomatic, [WeakSelf, Generation, Fp](const TScenarioResult<FScenarioQuote>& Result)
 	{
-		const TSharedPtr<FScenarioCreateModel> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioCreateModel> This = WeakSelf.Pin();
 		if (!This.IsValid() || Generation != This->PriceGeneration)
 		{
 			// The form changed while the price was checked: this answer is for another request.
@@ -1731,7 +1759,9 @@ void FScenarioCreateModel::OnSessionChanged()
 	}
 	const bool bWasSignedOut = SessionKey.IsEmpty() || Fields.Num() == 0;
 	SessionKey = Key;
-	if (Session->IsSignedIn() && bWasSignedOut && !bLoadingSchema)
+	// A trained model's form is its base's: in another project it is read again (or says the model is not there).
+	const bool bTrainedFormLost = bTrainedForm && !GetTrained();
+	if (Session->IsSignedIn() && (bWasSignedOut || bTrainedFormLost) && !bLoadingSchema)
 	{
 		LoadSchema();
 		return;
@@ -1808,65 +1838,6 @@ void FScenarioCreateModel::RunSpark(TFunction<void(const TArray<FString>& Varian
 		FScenarioSession* Session = SessionOrNull();
 		const TSharedPtr<FJsonObject> Reply = Session ? Session->GetSparkResult(Result.Value) : nullptr;
 		OnDone(FScenarioApi::SparkPrompts(Reply), FString(), Result.Value);
-	});
-}
-
-void FScenarioCreateModel::Suggest(TFunction<void(const TArray<TPair<FString, FString>>& Models, const FString& Error)> OnDone)
-{
-	FScenarioSession* Session = SessionOrNull();
-	const FScenarioLane* Lane = GetLane();
-	if (!Session || !Session->IsReady() || !Lane)
-	{
-		OnDone({}, TEXT("Sign in and choose a project first."));
-		return;
-	}
-	FString Capability = Lane->Capability;
-	if (LaneId == TEXT("3d") && Mode == TEXT("image"))
-	{
-		Capability = TEXT("img23d");
-	}
-	FString Prompt = GetPrompt().TrimStartAndEnd();
-	if (Prompt.IsEmpty() && Lane->StarterPrompts.Num() > 0)
-	{
-		Prompt = Lane->StarterPrompts[0];
-	}
-	TWeakPtr<FScenarioSession> WeakSession = Session->AsShared();
-	Session->Api().Recommend(Capability, Prompt, 5, [WeakSession, OnDone](const FScenarioReply& Reply)
-	{
-		if (!Reply.bOk)
-		{
-			OnDone({}, Reply.Error.Message);
-			return;
-		}
-		TArray<TSharedPtr<FJsonValue>> Rows = ScenarioJson::GetArray(Reply.Value, TEXT("ranked"));
-		if (Rows.Num() == 0)
-		{
-			Rows = ScenarioJson::GetArray(Reply.Value, TEXT("models"));
-		}
-		if (Rows.Num() == 0)
-		{
-			Rows = ScenarioJson::GetArray(Reply.Value, TEXT("results"));
-		}
-		const TSharedPtr<FScenarioSession> Pinned = WeakSession.Pin();
-		const UScenarioProjectSettings& Project = UScenarioProjectSettings::Get();
-		TArray<TPair<FString, FString>> Models;
-		for (const TSharedPtr<FJsonValue>& Row : Rows)
-		{
-			const TSharedPtr<FJsonObject> Object = Row->Type == EJson::Object ? Row->AsObject() : nullptr;
-			FString Id = ScenarioJson::GetString(Object, TEXT("model_id"), ScenarioJson::GetString(Object, TEXT("id")));
-			if (Id.IsEmpty() || !Project.IsModelAllowed(Id))
-			{
-				continue;
-			}
-			FString Name = ScenarioJson::GetString(Object, TEXT("name"), ScenarioJson::GetString(Object, TEXT("model_name")));
-			if (Name.IsEmpty() && Pinned.IsValid())
-			{
-				const FScenarioCatalogModel* Known = Pinned->Catalog().Find(Id);
-				Name = Known ? Known->Summary.Name : Id;
-			}
-			Models.Add({ Id, Name });
-		}
-		OnDone(Models, Models.Num() == 0 ? TEXT("Scenario had no recommendation for this prompt.") : FString());
 	});
 }
 

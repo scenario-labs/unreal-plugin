@@ -144,12 +144,12 @@ public:
 	bool bApproveAgentSpend = false;
 
 	/**
-	 * tools/list answers with scenario_status and three tools that find, describe and call the
-	 * others, instead of every tool. For clients that load all tools into the model's context.
+	 * tools/list lists every tool, not only the core ones and the catalog that reaches the others
+	 * (the kit, Prompt Spark, the Scenario library). For clients that search tools themselves.
 	 * Takes effect when the server restarts.
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Agents")
-	bool bAgentToolSearch = false;
+	bool bAgentListEveryTool = false;
 
 	/** Anonymous usage statistics (asked once). Version 0.2 sends nothing. */
 	UPROPERTY(config, EditAnywhere, Category = "Privacy")

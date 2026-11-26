@@ -27,6 +27,7 @@
 #include "ScenarioStyle.h"
 #include "ScenarioSubsystem.h"
 #include "ScenarioThumbnails.h"
+#include "ScenarioTrained.h"
 #include "ScenarioWidgets.h"
 #include "SScenarioComposer.h"
 #include "SScenarioJobCard.h"
@@ -170,10 +171,13 @@ namespace
 		}
 		const FString* Lane = Values->Find(TEXT("Scenario.Lane"));
 		const FString* ModelId = Values->Find(TEXT("Scenario.ModelId"));
+		const FString* TrainedId = Values->Find(TEXT("Scenario.TrainedModelId"));
 		const FString* Parameters = Values->Find(TEXT("Scenario.Parameters"));
 		const FString LaneId = Lane ? *Lane : FString();
-		const FString Model = ModelId ? *ModelId : FString();
-		const FString Params = Parameters ? *Parameters : FString();
+		// A trained model's run reopens the trained model, with its form's values rather than its base's.
+		const bool bTrained = TrainedId && !TrainedId->IsEmpty();
+		const FString Model = bTrained ? *TrainedId : ModelId ? *ModelId : FString();
+		const FString Params = Parameters ? (bTrained ? ScenarioJson::Write(ScenarioTrained::FormValues(ScenarioJson::ParseObject(*Parameters))) : *Parameters) : FString();
 
 		const TSharedRef<SWindow> Window = SNew(SWindow)
 			.Title(FText::Format(LOCTEXT("GenerationTitle", "How {0} was made"), FText::FromName(Asset.AssetName)))

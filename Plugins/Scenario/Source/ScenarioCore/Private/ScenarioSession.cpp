@@ -13,8 +13,9 @@
 #include "ScenarioHttp.h"
 #include "ScenarioJson.h"
 #include "ScenarioLanes.h"
-#include "ScenarioMcpClient.h"
+#include "ScenarioRestClient.h"
 #include "ScenarioOAuth.h"
+#include "ScenarioTrained.h"
 #include "ScenarioTransfer.h"
 
 namespace
@@ -136,7 +137,7 @@ FScenarioSession::FScenarioSession(const FScenarioSessionConfig& InConfig)
 	}
 	else
 	{
-		Client = MakeShared<FScenarioMcpClient>(Transport.ToSharedRef(), Config.Endpoint.IsEmpty() ? FString(FScenarioMcpClient::DefaultEndpoint) : Config.Endpoint);
+		Client = MakeShared<FScenarioRestClient>(Transport.ToSharedRef(), Config.ApiUrl.IsEmpty() ? FString(FScenarioRestClient::DefaultApiUrl) : Config.ApiUrl);
 		Backend = Client;
 		OAuth = MakeShared<FScenarioOAuth>(Transport.ToSharedRef(), Store.ToSharedRef());
 	}
@@ -196,10 +197,10 @@ void FScenarioSession::Start()
 		UseOAuth();
 		SetConnection(EScenarioConnection::Connecting);
 		const uint32 Generation = AuthGeneration;
-		TWeakPtr<FScenarioSession> WeakThis = AsShared();
-		OAuth->Refresh([WeakThis, Generation](bool bRefreshed)
+		TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+		OAuth->Refresh([WeakSelf, Generation](bool bRefreshed)
 		{
-			const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 			if (!This.IsValid() || This->AuthGeneration != Generation)
 			{
 				return;
@@ -280,6 +281,11 @@ void FScenarioSession::UseApiKey(const FString& Key, const FString& Secret, cons
 	}
 }
 
+FString FScenarioSession::GetAccountEmail() const
+{
+	return AuthMode == EScenarioAuthMode::OAuth && OAuth.IsValid() ? OAuth->GetAccountEmail() : FString();
+}
+
 void FScenarioSession::UseOAuth()
 {
 	++AuthGeneration;
@@ -312,10 +318,10 @@ void FScenarioSession::Connected()
 {
 	SetConnection(EScenarioConnection::Connecting);
 	const uint32 Generation = AuthGeneration;
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	RefreshTeams([WeakThis, Generation](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	RefreshTeams([WeakSelf, Generation](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->AuthGeneration != Generation)
 		{
 			return;
@@ -393,10 +399,10 @@ void FScenarioSession::SignInWithBrowser(TFunction<void(const FString& Url)> OnU
 		return;
 	}
 	SetConnection(EScenarioConnection::Connecting);
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	OAuth->BeginBrowserSignIn(MoveTemp(OnUrl), [WeakThis, OnDone](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	OAuth->BeginBrowserSignIn(MoveTemp(OnUrl), [WeakSelf, OnDone](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -425,10 +431,10 @@ void FScenarioSession::SignInWithDeviceCode(TFunction<void(const FScenarioDevice
 		return;
 	}
 	SetConnection(EScenarioConnection::Connecting);
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	OAuth->BeginDeviceSignIn(MoveTemp(OnCode), [WeakThis, OnDone](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	OAuth->BeginDeviceSignIn(MoveTemp(OnCode), [WeakSelf, OnDone](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -472,10 +478,10 @@ void FScenarioSession::SignInWithApiKey(const FString& Key, const FString& Secre
 	UseApiKey(CleanKey, CleanSecret, TEXT("store"));
 	SetConnection(EScenarioConnection::Connecting);
 	const uint32 Generation = AuthGeneration;
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	ApiPtr->ListTeams([WeakThis, Generation, CleanKey, CleanSecret, OnDone](const TScenarioResult<TArray<FScenarioTeam>>& Result)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	ApiPtr->ListTeams([WeakSelf, Generation, CleanKey, CleanSecret, OnDone](const TScenarioResult<TArray<FScenarioTeam>>& Result)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->AuthGeneration != Generation)
 		{
 			return;
@@ -544,10 +550,10 @@ void FScenarioSession::SignOut()
 
 void FScenarioSession::RefreshTeams(FScenarioReplyCallback OnDone)
 {
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	ApiPtr->ListTeams([WeakThis, OnDone](const TScenarioResult<TArray<FScenarioTeam>>& Result)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	ApiPtr->ListTeams([WeakSelf, OnDone](const TScenarioResult<TArray<FScenarioTeam>>& Result)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -563,9 +569,9 @@ void FScenarioSession::RefreshTeams(FScenarioReplyCallback OnDone)
 					continue;
 				}
 				const FString TeamId = This->Teams[Index].Id;
-				This->ApiPtr->ListProjects(TeamId, [WeakThis, TeamId](const TScenarioResult<TArray<FScenarioProject>>& Projects)
+				This->ApiPtr->ListProjects(TeamId, [WeakSelf, TeamId](const TScenarioResult<TArray<FScenarioProject>>& Projects)
 				{
-					const TSharedPtr<FScenarioSession> Inner = WeakThis.Pin();
+					const TSharedPtr<FScenarioSession> Inner = WeakSelf.Pin();
 					if (!Inner.IsValid() || !Projects.bOk)
 					{
 						return;
@@ -681,11 +687,11 @@ void FScenarioSession::RefreshUsage()
 	const FDateTime Today = FDateTime::UtcNow();
 	const FString Start = FString::Printf(TEXT("%04d-%02d-01T00:00:00Z"), Today.GetYear(), Today.GetMonth());
 	const FString End = ScenarioIsoTime(Now());
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
 	const FString ProjectId = Workspace.ProjectId;
-	ApiPtr->UsageTotal(ProjectId, Start, End, [WeakThis, ProjectId](const TScenarioResult<double>& Result)
+	ApiPtr->UsageTotal(ProjectId, Start, End, [WeakSelf, ProjectId](const TScenarioResult<double>& Result)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid() || This->Workspace.ProjectId != ProjectId)
 		{
 			return;
@@ -704,7 +710,28 @@ void FScenarioSession::RefreshUsage()
 
 FString FScenarioSession::Fingerprint(const FScenarioRunRequest& Request) const
 {
-	return FScenarioQuotes::Fingerprint(Request.QuoteTarget(), Request.Parameters, Scope());
+	const FScenarioRunRequest Run = Resolve(Request);
+	return FScenarioQuotes::Fingerprint(Run.QuoteTarget(), Run.Parameters, Scope());
+}
+
+FScenarioRunRequest FScenarioSession::Resolve(const FScenarioRunRequest& Request) const
+{
+	if (Request.Kind != EScenarioQuoteKind::Model || !Request.TrainedModelId.IsEmpty())
+	{
+		return Request;
+	}
+	const FScenarioTrainedInfo* Info = CatalogPtr->FindTrained(Request.TargetId);
+	if (!Info || !Info->IsRunnable())
+	{
+		return Request;
+	}
+	// A trained model is never the model called: its base is, with the trained model in its loras or modelId input.
+	FScenarioRunRequest Run = Request;
+	Run.TargetId = Info->BaseId();
+	Run.TargetName = Info->BaseName();
+	Run.TrainedModelId = Info->Id;
+	Run.Parameters = ScenarioTrained::BaseParameters(*Info, Request.Parameters);
+	return Run;
 }
 
 const FScenarioQuote* FScenarioSession::QuoteFor(const FScenarioRunRequest& Request) const
@@ -745,20 +772,78 @@ void FScenarioSession::Price(const FScenarioRunRequest& Request, bool bAutomatic
 			TEXT("Automatic price checks are off for this session because a price check returned a job. Check the price by hand to continue."))));
 		return;
 	}
-	if (const FScenarioQuote* Existing = QuoteFor(Request))
+	const bool bUnread = Request.TrainedModelId.IsEmpty() && !CatalogPtr->FindTrained(Request.TargetId)
+		&& (CatalogPtr->NeedsResolve(Request.TargetId) || ScenarioTrained::HasFormFields(Request.Parameters));
+	if (Request.Kind == EScenarioQuoteKind::Model && bUnread)
+	{
+		// A model not read in this project yet (a trained row, a model the catalog does not list, or a trained form's payload):
+		// read how it runs first, so a trained model is priced on its base.
+		TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+		const FString ReadScope = Scope();
+		CatalogPtr->GetSchema(Request.TargetId, [WeakSelf, Request, ReadScope, OnDone](const FScenarioReply& Reply)
+		{
+			const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
+			if (!This.IsValid())
+			{
+				return;
+			}
+			if (!Reply.bOk)
+			{
+				FScenarioError Error = Reply.Error;
+				Error.bNotSent = true;
+				OnDone(FResult::Fail(Error));
+				return;
+			}
+			if (This->Scope() != ReadScope)
+			{
+				OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("The project changed while the price was checked. Check the price again."))));
+				return;
+			}
+			// Never priced unresolved: once read here, a trained model is known and anything else runs as itself.
+			if (!This->CatalogPtr->FindTrained(Request.TargetId)
+				&& (ScenarioTrained::HasFormFields(Request.Parameters) || This->CatalogPtr->NeedsResolve(Request.TargetId)))
+			{
+				OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("This request was made for a model that is not read in this project. Pick the model again."))));
+				return;
+			}
+			This->PriceResolved(Request, OnDone);
+		});
+		return;
+	}
+	PriceResolved(Request, OnDone);
+}
+
+void FScenarioSession::PriceResolved(const FScenarioRunRequest& Request, TFunction<void(const TScenarioResult<FScenarioQuote>&)> OnDone)
+{
+	using FResult = TScenarioResult<FScenarioQuote>;
+	const FScenarioRunRequest Run = Resolve(Request);
+	if (!Run.TrainedModelId.IsEmpty())
+	{
+		const FScenarioTrainedInfo* Info = CatalogPtr->FindTrained(Run.TrainedModelId);
+		const FString Problem = Info ? ScenarioTrained::PromptProblem(*Info, Run.Parameters) : FString();
+		if (!Problem.IsEmpty())
+		{
+			OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, Problem)));
+			return;
+		}
+	}
+	// A base request and a trained model's can be the same call: a quote is reused only with the same trained model.
+	const FScenarioQuote* Existing = QuoteFor(Run);
+	if (Existing && Existing->TrainedModelId == Run.TrainedModelId)
 	{
 		OnDone(FResult::Ok(*Existing));
 		return;
 	}
 
-	const EScenarioQuoteKind Kind = Request.Kind;
-	const FString Target = Request.QuoteTarget();
+	const EScenarioQuoteKind Kind = Run.Kind;
+	const FString Target = Run.QuoteTarget();
+	const FString TrainedId = Run.TrainedModelId;
 	const FString QuoteScope = Scope();
-	const TSharedPtr<FJsonObject> Params = ScenarioJson::CloneObject(Request.Parameters.IsValid() ? Request.Parameters : MakeShared<FJsonObject>());
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	auto Finish = [WeakThis, Kind, Target, QuoteScope, Params, OnDone](const TScenarioResult<FScenarioEstimate>& Result)
+	const TSharedPtr<FJsonObject> Params = ScenarioJson::CloneObject(Run.Parameters.IsValid() ? Run.Parameters : MakeShared<FJsonObject>());
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	auto Finish = [WeakSelf, Kind, Target, TrainedId, QuoteScope, Params, OnDone](const TScenarioResult<FScenarioEstimate>& Result)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -773,21 +858,21 @@ void FScenarioSession::Price(const FScenarioRunRequest& Request, bool bAutomatic
 			OnDone(FResult::Fail(SessionError(EScenarioErrorKind::Invalid, TEXT("The project changed while the price was checked. Check the price again."))));
 			return;
 		}
-		const FScenarioQuote& Quote = This->QuoteBook.Store(Kind, Target, Params, QuoteScope, Result.Value.CU, Result.Value.Discount, This->Now());
+		const FScenarioQuote& Quote = This->QuoteBook.Store(Kind, Target, Params, QuoteScope, Result.Value.CU, Result.Value.Discount, This->Now(), TrainedId);
 		OnDone(FResult::Ok(Quote));
 	};
 
 	switch (Kind)
 	{
 	case EScenarioQuoteKind::Workflow:
-		ApiPtr->EstimateWorkflow(Request.TargetId, Params, Finish);
+		ApiPtr->EstimateWorkflow(Run.TargetId, Params, Finish);
 		break;
 	case EScenarioQuoteKind::PromptSpark:
-		ApiPtr->EstimatePromptSpark(Request.TargetId, ScenarioJson::GetString(Params, TEXT("prompt")), ScenarioJson::GetStringArray(Params, TEXT("images")),
+		ApiPtr->EstimatePromptSpark(Run.TargetId, ScenarioJson::GetString(Params, TEXT("prompt")), ScenarioJson::GetStringArray(Params, TEXT("images")),
 			static_cast<int32>(ScenarioJson::GetNumber(Params, TEXT("num_results"), 1.0)), Finish);
 		break;
 	default:
-		ApiPtr->Estimate(Request.TargetId, Params, Finish);
+		ApiPtr->Estimate(Run.TargetId, Params, Finish);
 		break;
 	}
 }
@@ -806,7 +891,12 @@ FString FScenarioSession::CanSubmit(const FScenarioRunRequest& Request, const FS
 	{
 		return TEXT("Agents must pass quote_id and approved_cost from estimate_cost.");
 	}
-	const FString Fp = Fingerprint(Request);
+	const FScenarioRunRequest Run = Resolve(Request);
+	if (!Run.TrainedModelId.IsEmpty() && ScenarioTrained::AttachedId(Run.Parameters) != Run.TrainedModelId)
+	{
+		return TEXT("The trained model is missing from this request. Price it again.");
+	}
+	const FString Fp = Fingerprint(Run);
 	const double Time = Now();
 	const FScenarioQuote* Quote = QuoteId.IsEmpty() ? QuoteBook.Usable(Fp, Time) : QuoteBook.FindById(QuoteId, Time);
 	if (!Quote)
@@ -815,7 +905,7 @@ FString FScenarioSession::CanSubmit(const FScenarioRunRequest& Request, const FS
 			? TEXT("Check the price first: there is no current price for this exact request.")
 			: TEXT("This quote is unknown, used or expired (quotes last 120 seconds). Price the request again.");
 	}
-	if (Quote->Fingerprint != Fp)
+	if (Quote->Fingerprint != Fp || Quote->TrainedModelId != Run.TrainedModelId)
 	{
 		return TEXT("The request changed after it was priced. Price it again.");
 	}
@@ -841,7 +931,8 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 		return;
 	}
 
-	const FString Fp = Fingerprint(Request);
+	const FScenarioRunRequest Run = Resolve(Request);
+	const FString Fp = Fingerprint(Run);
 	const double Time = Now();
 	FScenarioQuote Quote;
 	const bool bTaken = QuoteId.IsEmpty() ? QuoteBook.Consume(Fp, Time, Quote) : QuoteBook.ConsumeById(QuoteId, Time, Quote);
@@ -851,19 +942,27 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 		return;
 	}
 
-	const TSharedPtr<FJsonObject> Params = ScenarioJson::CloneObject(Request.Parameters.IsValid() ? Request.Parameters : MakeShared<FJsonObject>());
+	const TSharedPtr<FJsonObject> Params = ScenarioJson::CloneObject(Run.Parameters.IsValid() ? Run.Parameters : MakeShared<FJsonObject>());
 	FScenarioJobRow Row;
-	Row.Kind = KindName(Request.Kind);
-	Row.Lane = Request.Lane;
-	if (Request.Kind == EScenarioQuoteKind::Workflow)
+	Row.Kind = KindName(Run.Kind);
+	Row.Lane = Run.Lane;
+	if (Run.Kind == EScenarioQuoteKind::Workflow)
 	{
-		Row.WorkflowId = Request.TargetId;
+		Row.WorkflowId = Run.TargetId;
 	}
 	else
 	{
-		Row.ModelId = Request.TargetId;
+		// A trained model's run keeps its base as the model (what Scenario's job names) and the trained model beside it.
+		Row.ModelId = Run.TargetId;
 	}
-	Row.ModelName = Request.TargetName;
+	Row.ModelName = Run.TargetName;
+	Row.TrainedModelId = Run.TrainedModelId;
+	if (!Run.TrainedModelId.IsEmpty())
+	{
+		const FScenarioTrainedInfo* Info = CatalogPtr->FindTrained(Run.TrainedModelId);
+		const FScenarioCatalogModel* Listed = CatalogPtr->Find(Run.TrainedModelId);
+		Row.TrainedModelName = Info ? Info->Name : Listed ? Listed->Summary.Name : Request.TargetId == Run.TrainedModelId ? Request.TargetName : FString();
+	}
 	Row.Prompt = PromptOf(Params);
 	Row.Parameters = Params;
 	CollectAssetIds(Params, Row.InputAssetIds);
@@ -885,10 +984,10 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 		return;
 	}
 
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	auto Fail = [WeakThis, LocalId, OnDone](const FScenarioError& Error)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	auto Fail = [WeakSelf, LocalId, OnDone](const FScenarioError& Error)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (This.IsValid())
 		{
 			if (!Error.bNotSent && (Error.bAmbiguous || FScenarioErrors::IsAmbiguousKind(Error.Kind)))
@@ -904,14 +1003,14 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 		Result.Value = LocalId;
 		OnDone(Result);
 	};
-	auto Accepted = [WeakThis, LocalId, OnDone, Fail](const TScenarioResult<FScenarioSubmitted>& Submitted)
+	auto Accepted = [WeakSelf, LocalId, OnDone, Fail](const TScenarioResult<FScenarioSubmitted>& Submitted)
 	{
 		if (!Submitted.bOk)
 		{
 			Fail(Submitted.Error);
 			return;
 		}
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (This.IsValid())
 		{
 			This->LedgerPtr->MarkSubmitted(LocalId, Submitted.Value.JobId, Submitted.Value.Status, This->Now());
@@ -921,33 +1020,34 @@ void FScenarioSession::Submit(const FScenarioRunRequest& Request, const FString&
 		OnDone(FResult::Ok(LocalId));
 	};
 
-	UE_LOG(LogScenario, Log, TEXT("Sending %s %s (%s CU quoted, %s)."), *Row.Kind, *Request.TargetId, *Quote.Exact, *Request.Source);
-	switch (Request.Kind)
+	const FString With = Run.TrainedModelId.IsEmpty() ? FString() : TEXT(" with ") + Run.TrainedModelId;
+	UE_LOG(LogScenario, Log, TEXT("Sending %s %s%s (%s CU quoted, %s)."), *Row.Kind, *Run.TargetId, *With, *Quote.Exact, *Request.Source);
+	switch (Run.Kind)
 	{
 	case EScenarioQuoteKind::Workflow:
-		ApiPtr->SubmitWorkflow(Request.TargetId, Params, Accepted);
+		ApiPtr->SubmitWorkflow(Run.TargetId, Params, Accepted);
 		break;
 	case EScenarioQuoteKind::PromptSpark:
-		ApiPtr->RunPromptSpark(Request.TargetId, ScenarioJson::GetString(Params, TEXT("prompt")), ScenarioJson::GetStringArray(Params, TEXT("images")),
+		ApiPtr->RunPromptSpark(Run.TargetId, ScenarioJson::GetString(Params, TEXT("prompt")), ScenarioJson::GetStringArray(Params, TEXT("images")),
 			static_cast<int32>(ScenarioJson::GetNumber(Params, TEXT("num_results"), 1.0)),
-			[WeakThis, LocalId, OnDone, Fail](const FScenarioReply& Reply)
+			[WeakSelf, LocalId, OnDone, Fail](const FScenarioReply& Reply)
 			{
 				if (!Reply.bOk)
 				{
 					Fail(Reply.Error);
 					return;
 				}
-				const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+				const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 				if (This.IsValid())
 				{
 					This->SparkResults.Add(LocalId, Reply.Value);
-					This->LedgerPtr->MarkSubmitted(LocalId, FScenarioMcpClient::CreatedJobId(Reply.Value), TEXT("success"), This->Now());
+					This->LedgerPtr->MarkSubmitted(LocalId, FScenarioRestClient::CreatedJobId(Reply.Value), TEXT("success"), This->Now());
 				}
 				OnDone(FResult::Ok(LocalId));
 			});
 		break;
 	default:
-		ApiPtr->Submit(Request.TargetId, Params, Accepted);
+		ApiPtr->Submit(Run.TargetId, Params, Accepted);
 		break;
 	}
 }
@@ -978,16 +1078,16 @@ void FScenarioSession::Poll(double Time)
 		}
 		Due.Add({ Row.LocalId, Row.JobId });
 	}
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
 	for (const TPair<FString, FString>& Item : Due)
 	{
 		const FString LocalId = Item.Key;
 		const FString JobId = Item.Value;
 		PollsInFlight.Add(LocalId);
 		LastPolled.Add(LocalId, Time);
-		ApiPtr->GetJob(JobId, [WeakThis, LocalId, JobId](const TScenarioResult<FScenarioJobInfo>& Result)
+		ApiPtr->GetJob(JobId, [WeakSelf, LocalId, JobId](const TScenarioResult<FScenarioJobInfo>& Result)
 		{
-			const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 			if (!This.IsValid())
 			{
 				return;
@@ -1069,10 +1169,10 @@ void FScenarioSession::CancelJob(const FString& LocalId, FScenarioReplyCallback 
 		}
 		return;
 	}
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	ApiPtr->CancelJob(Row->JobId, [WeakThis, LocalId, OnDone](const FScenarioReply& Reply)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	ApiPtr->CancelJob(Row->JobId, [WeakSelf, LocalId, OnDone](const FScenarioReply& Reply)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (This.IsValid())
 		{
 			if (Reply.bOk)
@@ -1102,10 +1202,10 @@ void FScenarioSession::CheckUnresolved(TFunction<void(int32 Linked, const FScena
 		}
 		return;
 	}
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
-	ApiPtr->ListJobs(50, [WeakThis, OnDone](const TScenarioResult<TArray<FScenarioJobInfo>>& Result)
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
+	ApiPtr->ListJobs(50, [WeakSelf, OnDone](const TScenarioResult<TArray<FScenarioJobInfo>>& Result)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -1252,14 +1352,14 @@ void FScenarioSession::StartFileDownload(const FString& LocalId, int32 FileIndex
 	}
 	const FScenarioJobFile File = Row->Files[FileIndex];
 	const FString Lane = Row->Lane;
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
 
 	// Step 1: what the file is (kind, mime, role), once.
 	if (File.Kind.IsEmpty() && File.MimeType.IsEmpty())
 	{
-		ApiPtr->GetAsset(File.AssetId, [WeakThis, LocalId, FileIndex, UrlAttempt, File](const TScenarioResult<FScenarioAssetInfo>& Info)
+		ApiPtr->GetAsset(File.AssetId, [WeakSelf, LocalId, FileIndex, UrlAttempt, File](const TScenarioResult<FScenarioAssetInfo>& Info)
 		{
-			const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+			const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 			if (!This.IsValid())
 			{
 				return;
@@ -1303,9 +1403,9 @@ void FScenarioSession::StartFileDownload(const FString& LocalId, int32 FileIndex
 	const FString Role = File.Role.IsEmpty() || File.Role == TEXT("main") ? FString() : TEXT("_") + File.Role;
 	const FString Destination = FPaths::Combine(DownloadDir(LocalId), ScenarioFiles::SafeObjectName(File.AssetId) + Role + TEXT(".") + Extension);
 
-	ApiPtr->DownloadUrl(File.AssetId, Format, [WeakThis, LocalId, FileIndex, UrlAttempt, File, Destination](const TScenarioResult<FString>& Url)
+	ApiPtr->DownloadUrl(File.AssetId, Format, [WeakSelf, LocalId, FileIndex, UrlAttempt, File, Destination](const TScenarioResult<FString>& Url)
 	{
-		const TSharedPtr<FScenarioSession> This = WeakThis.Pin();
+		const TSharedPtr<FScenarioSession> This = WeakSelf.Pin();
 		if (!This.IsValid())
 		{
 			return;
@@ -1317,9 +1417,9 @@ void FScenarioSession::StartFileDownload(const FString& LocalId, int32 FileIndex
 			This->FinishFile(LocalId, FileIndex, Failed);
 			return;
 		}
-		auto OnProgress = [WeakThis, LocalId, FileIndex](int64 Done, int64 Total)
+		auto OnProgress = [WeakSelf, LocalId, FileIndex](int64 Done, int64 Total)
 		{
-			const TSharedPtr<FScenarioSession> Inner = WeakThis.Pin();
+			const TSharedPtr<FScenarioSession> Inner = WeakSelf.Pin();
 			FDownloadJob* Job = Inner.IsValid() ? Inner->Downloads.Find(LocalId) : nullptr;
 			if (Job && Job->Done.IsValidIndex(FileIndex))
 			{
@@ -1327,9 +1427,9 @@ void FScenarioSession::StartFileDownload(const FString& LocalId, int32 FileIndex
 				Job->Total[FileIndex] = Total;
 			}
 		};
-		This->Downloader->Download(Url.Value, Destination, OnProgress, [WeakThis, LocalId, FileIndex, UrlAttempt, File](const FScenarioDownloadResult& Result)
+		This->Downloader->Download(Url.Value, Destination, OnProgress, [WeakSelf, LocalId, FileIndex, UrlAttempt, File](const FScenarioDownloadResult& Result)
 		{
-			const TSharedPtr<FScenarioSession> Inner = WeakThis.Pin();
+			const TSharedPtr<FScenarioSession> Inner = WeakSelf.Pin();
 			if (!Inner.IsValid())
 			{
 				return;
@@ -1444,7 +1544,7 @@ void FScenarioSession::Upload(const FString& Path, TFunction<void(const TScenari
 		OnDone(FResult::Ok(*Known));
 		return;
 	}
-	TWeakPtr<FScenarioSession> WeakThis = AsShared();
+	TWeakPtr<FScenarioSession> WeakSelf = AsShared();
 	Uploader->Upload(Path, Kind, ScenarioFiles::MimeForExtension(Extension),
 		[OnProgress](int64 Done, int64 Total)
 		{
@@ -1453,14 +1553,14 @@ void FScenarioSession::Upload(const FString& Path, TFunction<void(const TScenari
 				OnProgress(static_cast<float>(static_cast<double>(Done) / static_cast<double>(Total)));
 			}
 		},
-		[WeakThis, CacheKey, OnDone](const FScenarioUploadResult& Result)
+		[WeakSelf, CacheKey, OnDone](const FScenarioUploadResult& Result)
 		{
 			if (!Result.bOk)
 			{
 				OnDone(FResult::Fail(Result.Error));
 				return;
 			}
-			if (const TSharedPtr<FScenarioSession> This = WeakThis.Pin())
+			if (const TSharedPtr<FScenarioSession> This = WeakSelf.Pin())
 			{
 				This->UploadCache.Add(CacheKey, Result.AssetId);
 			}

@@ -25,19 +25,22 @@ namespace ScenarioSessionTests
 
 		FRig()
 		{
-			Backend->OnJson(TEXT("teams_list"), TEXT("{\"teams\":[{\"id\":\"team_1\",\"name\":\"Studio\",\"projects\":[{\"id\":\"proj_1\",\"name\":\"Cove\"}]}]}"));
-			Backend->OnJson(TEXT("models_list"), TEXT("{\"models\":[]}"));
-			Backend->OnJson(TEXT("usage"), TEXT("{\"totals\":{\"totalCU\":42.5}}"));
-			Backend->OnJson(TEXT("jobs_list"), TEXT("{\"jobs\":[]}"));
-			Backend->On(TEXT("model_run"), [this](const TSharedPtr<FJsonObject>& Arguments)
+			Backend->OnJson(TEXT("GET /teams"), TEXT("{\"teams\":[{\"id\":\"team_1\",\"name\":\"Studio\",\"projects\":[{\"id\":\"proj_1\",\"name\":\"Cove\"}]}]}"));
+			Backend->OnJson(TEXT("GET /models"), TEXT("{\"models\":[]}"));
+			// The catalog lists no model, so a price check reads the model first.
+			Backend->OnJson(TEXT("GET /models/*"), TEXT("{\"model\":{\"id\":\"model_flare\",\"name\":\"Flare\",\"type\":\"custom\",\"capabilities\":[\"txt2img\"],")
+				TEXT("\"inputs\":[{\"name\":\"prompt\",\"type\":\"string\"},{\"name\":\"numOutputs\",\"type\":\"number\"}]}}"));
+			Backend->OnJson(TEXT("GET /usages"), TEXT("{\"consumption\":[{\"userId\":\"user_1\",\"value\":42.5}]}"));
+			Backend->OnJson(TEXT("GET /jobs"), TEXT("{\"jobs\":[]}"));
+			Backend->On(TEXT("POST /generate/custom/*"), [this](const FScenarioRequest& Request)
 			{
-				if (ScenarioJson::GetBool(Arguments, TEXT("dry_run")))
+				if (Request.Call == EScenarioCall::DryRun)
 				{
 					return FScenarioReply::Ok(ScenarioJson::ParseObject(TEXT("{\"creativeUnitsCost\":11,\"creativeUnitsDiscount\":0}")));
 				}
 				const TArray<FScenarioJobRow>& Rows = Session->Ledger().Rows();
 				StateAtSubmit = Rows.Num() > 0 ? LexToString(Rows[0].State) : TEXT("none");
-				return FScenarioReply::Ok(ScenarioJson::ParseObject(FString::Printf(TEXT("{\"job_id\":\"job_%d\",\"status\":\"queued\"}"), ++JobCounter)));
+				return FScenarioReply::Ok(ScenarioJson::ParseObject(FString::Printf(TEXT("{\"job\":{\"jobId\":\"job_%d\",\"status\":\"queued\"}}"), ++JobCounter)));
 			});
 
 			FScenarioSessionConfig Config;
@@ -67,9 +70,9 @@ namespace ScenarioSessionTests
 		int32 PaidCalls() const
 		{
 			int32 Count = 0;
-			for (const TPair<FString, TSharedPtr<FJsonObject>>& Call : Backend->Calls)
+			for (const FScenarioRequest& Call : Backend->Calls)
 			{
-				Count += Call.Key == TEXT("model_run") && !ScenarioJson::GetBool(Call.Value, TEXT("dry_run")) ? 1 : 0;
+				Count += FScenarioFakeBackend::Matches(TEXT("POST /generate/custom/*"), Call) && Call.Call == EScenarioCall::Paid ? 1 : 0;
 			}
 			return Count;
 		}
@@ -108,7 +111,8 @@ bool FScenarioSessionConnectTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("project chosen"), Rig.Session->GetWorkspace().ProjectId, FString(TEXT("proj_1")));
 	TestEqual(TEXT("label"), Rig.Session->GetWorkspace().Label(), FString(TEXT("Studio / Cove")));
 	TestEqual(TEXT("usage this month"), Rig.Session->GetUsageThisMonth(), 42.5);
-	TestEqual(TEXT("usage asked for the project"), ScenarioJson::GetString(Rig.Backend->Calls.FindByPredicate([](const TPair<FString, TSharedPtr<FJsonObject>>& Call) { return Call.Key == TEXT("usage"); })->Value, TEXT("project_id")), FString(TEXT("proj_1")));
+	const FScenarioRequest* Usage = Rig.Backend->Last(TEXT("GET /usages"));
+	TestEqual(TEXT("usage asked for the project"), Usage ? Usage->QueryValue(TEXT("projectIds")) : FString(), FString(TEXT("proj_1")));
 
 	FRig Offline;
 	Offline.Backend->bSignedIn = false;
@@ -136,7 +140,7 @@ bool FScenarioSessionMoneyTest::RunTest(const FString& Parameters)
 	const FScenarioQuote Quote = Rig.Price(Rig.Request(TEXT("chest")));
 	TestEqual(TEXT("price"), Quote.Exact, FString(TEXT("11")));
 	Rig.Price(Rig.Request(TEXT("chest")));
-	TestEqual(TEXT("a fresh quote is reused"), Rig.Backend->CountOf(TEXT("model_run")), 1);
+	TestEqual(TEXT("a fresh quote is reused"), Rig.Backend->CountOf(TEXT("POST /generate/custom/*")), 1);
 
 	// An edit after pricing is refused.
 	TestFalse(TEXT("edited request is refused"), Rig.Submit(Rig.Request(TEXT("chest!"))).bOk);
@@ -207,9 +211,9 @@ bool FScenarioSessionUnknownTest::RunTest(const FString& Parameters)
 	const double SubmitTime = Rig.Time;
 
 	// The paid call times out: Scenario may have started the job.
-	Rig.Backend->On(TEXT("model_run"), [](const TSharedPtr<FJsonObject>& Arguments)
+	Rig.Backend->On(TEXT("POST /generate/custom/*"), [](const FScenarioRequest& Request)
 	{
-		if (ScenarioJson::GetBool(Arguments, TEXT("dry_run")))
+		if (Request.Call == EScenarioCall::DryRun)
 		{
 			return FScenarioReply::Ok(ScenarioJson::ParseObject(TEXT("{\"creativeUnitsCost\":11}")));
 		}
@@ -233,9 +237,9 @@ bool FScenarioSessionUnknownTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("one paid attempt"), Rig.PaidCalls(), 1);
 
 	// Check Scenario: one job of the same model just after the intent is the match.
-	Rig.Backend->OnJson(TEXT("jobs_list"), FString::Printf(
-		TEXT("{\"jobs\":[{\"jobId\":\"job_found\",\"modelId\":\"model_flare\",\"status\":\"in-progress\",\"createdAt\":\"%s\"},")
-		TEXT("{\"jobId\":\"job_old\",\"modelId\":\"model_flare\",\"status\":\"success\",\"createdAt\":\"%s\"}]}"),
+	Rig.Backend->OnJson(TEXT("GET /jobs"), FString::Printf(
+		TEXT("{\"jobs\":[{\"jobId\":\"job_found\",\"metadata\":{\"input\":{\"modelId\":\"model_flare\"}},\"status\":\"in-progress\",\"createdAt\":\"%s\"},")
+		TEXT("{\"jobId\":\"job_old\",\"metadata\":{\"input\":{\"modelId\":\"model_flare\"}},\"status\":\"success\",\"createdAt\":\"%s\"}]}"),
 		*ScenarioIsoTime(SubmitTime + 2.0), *ScenarioIsoTime(SubmitTime - 3600.0)));
 	int32 Linked = -1;
 	Rig.Session->CheckUnresolved([&Linked](int32 Count, const FScenarioError&) { Linked = Count; });
@@ -246,9 +250,9 @@ bool FScenarioSessionUnknownTest::RunTest(const FString& Parameters)
 
 	// Mark as not sent releases the block.
 	Rig.Price(Rig.Request(TEXT("lamp")));
-	Rig.Backend->On(TEXT("model_run"), [](const TSharedPtr<FJsonObject>& Arguments)
+	Rig.Backend->On(TEXT("POST /generate/custom/*"), [](const FScenarioRequest& Request)
 	{
-		if (ScenarioJson::GetBool(Arguments, TEXT("dry_run")))
+		if (Request.Call == EScenarioCall::DryRun)
 		{
 			return FScenarioReply::Ok(ScenarioJson::ParseObject(TEXT("{\"creativeUnitsCost\":11}")));
 		}
@@ -262,9 +266,9 @@ bool FScenarioSessionUnknownTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("no longer blocked"), Rig.Session->CanSubmit(Rig.Request(TEXT("lamp")), FString(), FString()).IsEmpty());
 
 	// A clear refusal (moderation) is Rejected and does not block.
-	Rig.Backend->On(TEXT("model_run"), [](const TSharedPtr<FJsonObject>& Arguments)
+	Rig.Backend->On(TEXT("POST /generate/custom/*"), [](const FScenarioRequest& Request)
 	{
-		if (ScenarioJson::GetBool(Arguments, TEXT("dry_run")))
+		if (Request.Call == EScenarioCall::DryRun)
 		{
 			return FScenarioReply::Ok(ScenarioJson::ParseObject(TEXT("{\"creativeUnitsCost\":11}")));
 		}
@@ -286,12 +290,12 @@ bool FScenarioSessionPollTest::RunTest(const FString& Parameters)
 
 	int32 Polls = 0;
 	FString Status = TEXT("in-progress");
-	Rig.Backend->On(TEXT("job_get"), [&Polls, &Status](const TSharedPtr<FJsonObject>& Arguments)
+	Rig.Backend->On(TEXT("GET /jobs/*"), [&Polls, &Status](const FScenarioRequest& Request)
 	{
 		++Polls;
 		return FScenarioReply::Ok(ScenarioJson::ParseObject(FString::Printf(
-			TEXT("{\"job\":{\"jobId\":\"%s\",\"status\":\"%s\",\"progress\":0.5,\"assetIds\":[\"asset_abc123\"],\"cuCost\":11}}"),
-			*ScenarioJson::GetString(Arguments, TEXT("job_id")), *Status)));
+			TEXT("{\"job\":{\"jobId\":\"%s\",\"status\":\"%s\",\"progress\":0.5,\"billing\":{\"cuCost\":11},\"metadata\":{\"assetIds\":[\"asset_abc123\"]}}}"),
+			*FPaths::GetCleanFilename(Request.Path), *Status)));
 	});
 
 	Rig.Session->Poll(Rig.Time + 1.0);
@@ -314,7 +318,7 @@ bool FScenarioSessionPollTest::RunTest(const FString& Parameters)
 	// A job Scenario no longer knows stops being polled.
 	Rig.Price(Rig.Request(TEXT("barrel")));
 	const FString Lost = Rig.Submit(Rig.Request(TEXT("barrel"))).Value;
-	Rig.Backend->On(TEXT("job_get"), [](const TSharedPtr<FJsonObject>&) { return FScenarioReply::Fail(EScenarioErrorKind::NotFound, TEXT("Job not found.")); });
+	Rig.Backend->On(TEXT("GET /jobs/*"), [](const FScenarioRequest&) { return FScenarioReply::Fail(EScenarioErrorKind::NotFound, TEXT("Job not found.")); });
 	Rig.Session->Poll(Rig.Time + 30.0);
 	TestTrue(TEXT("missing job failed"), Rig.Session->Ledger().Find(Lost)->State == EScenarioJobState::Failed);
 	return true;
@@ -324,7 +328,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioSessionWorkspaceTest, "Scenario.Core.S
 bool FScenarioSessionWorkspaceTest::RunTest(const FString& Parameters)
 {
 	FRig Rig;
-	Rig.Backend->OnJson(TEXT("teams_list"), TEXT("{\"teams\":[{\"id\":\"team_1\",\"name\":\"Studio\",\"projects\":[{\"id\":\"proj_1\",\"name\":\"Cove\"},{\"id\":\"proj_2\",\"name\":\"Reef\"}]}]}"));
+	Rig.Backend->OnJson(TEXT("GET /teams"), TEXT("{\"teams\":[{\"id\":\"team_1\",\"name\":\"Studio\",\"projects\":[{\"id\":\"proj_1\",\"name\":\"Cove\"},{\"id\":\"proj_2\",\"name\":\"Reef\"}]}]}"));
 	Rig.Session->Start();
 	// The test backend signs in like an API key, scoped to its first project.
 	TestTrue(TEXT("api key picks its project"), Rig.Session->IsReady());
