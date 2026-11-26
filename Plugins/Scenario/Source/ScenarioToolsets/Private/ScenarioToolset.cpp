@@ -220,7 +220,6 @@ const TMap<FString, FString>& UScenarioToolset::ActionsByTool()
 		{ TEXT("GetStatus"), TEXT("scenario_status") },
 		{ TEXT("ListModels"), TEXT("list_models") },
 		{ TEXT("GetModelSchema"), TEXT("model_schema") },
-		{ TEXT("RecommendModels"), TEXT("recommend_models") },
 		{ TEXT("EstimateCost"), TEXT("estimate_cost") },
 		{ TEXT("Generate"), TEXT("generate") },
 		{ TEXT("ListWorkflows"), TEXT("list_workflows") },
@@ -264,11 +263,6 @@ UScenarioToolResult* UScenarioToolset::ListModels(const FString& Lane, const FSt
 UScenarioToolResult* UScenarioToolset::GetModelSchema(const FString& ModelId)
 {
 	return Run(TEXT("model_schema"), FArgs().Str(TEXT("model_id"), ModelId));
-}
-
-UScenarioToolResult* UScenarioToolset::RecommendModels(const FString& Prompt, const FString& Lane)
-{
-	return Run(TEXT("recommend_models"), FArgs().Str(TEXT("prompt"), Prompt).Opt(TEXT("lane"), Lane, TEXT("auto")));
 }
 
 UScenarioToolResult* UScenarioToolset::EstimateCost(const FString& ModelId, const FString& Lane, const FString& Parameters)

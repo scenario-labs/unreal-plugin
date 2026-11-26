@@ -67,7 +67,8 @@ using FScenarioUploadCallback = TFunction<void(const FScenarioUploadResult&)>;
  * Uploads a local file through Scenario's multipart flow: upload_asset, a PUT
  * per part to the presigned storage URL, then upload_asset_complete. Parts are
  * read from disk on a worker thread. A part PUT is retried (it overwrites the
- * same part); the start and complete calls are not.
+ * same part); the start and complete calls are not, and the upload is then
+ * read until it is imported.
  */
 class SCENARIOCORE_API FScenarioUploader : public TSharedFromThis<FScenarioUploader>
 {

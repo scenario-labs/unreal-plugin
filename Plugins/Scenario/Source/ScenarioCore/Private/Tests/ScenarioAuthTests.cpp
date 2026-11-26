@@ -20,10 +20,10 @@
 namespace ScenarioAuthTests
 {
 	const TCHAR* Metadata = TEXT("{\"issuer\":\"https://auth.example.test\",\"authorization_endpoint\":\"https://auth.example.test/oauth/authorize\",")
-		TEXT("\"token_endpoint\":\"https://auth.example.test/oauth/token\",\"registration_endpoint\":\"https://auth.example.test/oauth/register\",")
+		TEXT("\"token_endpoint\":\"https://auth.example.test/oauth/token\",")
 		TEXT("\"device_authorization_endpoint\":\"https://auth.example.test/oauth/device\",\"revocation_endpoint\":\"https://auth.example.test/oauth/revoke\"}");
 
-	/** A small authorization server: discovery, registration, device code, token. */
+	/** A small authorization server: discovery, device code, token. */
 	struct FAuthServer
 	{
 		TArray<FString> TokenReplies;
@@ -35,10 +35,6 @@ namespace ScenarioAuthTests
 			if (Request.Url.EndsWith(TEXT("/.well-known/oauth-authorization-server")))
 			{
 				return FScenarioFakeTransport::Json(200, Metadata);
-			}
-			if (Request.Url.EndsWith(TEXT("/oauth/register")))
-			{
-				return FScenarioFakeTransport::Json(201, TEXT("{\"client_id\":\"client_test\"}"));
 			}
 			if (Request.Url.EndsWith(TEXT("/oauth/device")))
 			{
@@ -59,6 +55,25 @@ namespace ScenarioAuthTests
 			return Missing;
 		}
 	};
+
+	FScenarioOAuthApp TestApp()
+	{
+		FScenarioOAuthApp App;
+		App.Issuer = TEXT("https://auth.example.test");
+		App.ClientId = TEXT("client_test");
+		return App;
+	}
+
+	/** A memory store that refuses writes to one account. */
+	class FRefusingStore : public FScenarioMemoryCredentialStore
+	{
+	public:
+		FString RefusedAccount;
+		virtual bool Write(const FString& Account, const FString& Secret) override
+		{
+			return Account != RefusedAccount && FScenarioMemoryCredentialStore::Write(Account, Secret);
+		}
+	};
 }
 
 using namespace ScenarioAuthTests;
@@ -76,13 +91,14 @@ bool FScenarioOAuthHelpersTest::RunTest(const FString& Parameters)
 
 	FScenarioOAuthMetadata Good;
 	FScenarioOAuthMetadata::FromJson(ScenarioJson::ParseObject(Metadata), Good);
-	const FString Url = FScenarioOAuth::BuildAuthorizeUrl(Good, TEXT("client_test"), TEXT("http://127.0.0.1:38917/callback"), TEXT("challenge"), TEXT("state1"), TEXT("https://mcp.scenario.com/mcp"), FString());
+	const FString Url = FScenarioOAuth::BuildAuthorizeUrl(Good, TEXT("client_test"), TEXT("http://127.0.0.1:38917/callback"), TEXT("challenge"), TEXT("state1"), FScenarioOAuth::DefaultScope);
 	TestTrue(TEXT("authorize endpoint"), Url.StartsWith(TEXT("https://auth.example.test/oauth/authorize?")));
 	TestTrue(TEXT("code flow"), Url.Contains(TEXT("response_type=code")));
+	TestTrue(TEXT("client id"), Url.Contains(TEXT("client_id=client_test")));
 	TestTrue(TEXT("S256"), Url.Contains(TEXT("code_challenge_method=S256")));
 	TestTrue(TEXT("redirect encoded"), Url.Contains(TEXT("redirect_uri=http%3A%2F%2F127.0.0.1%3A38917%2Fcallback")));
-	TestTrue(TEXT("resource"), Url.Contains(TEXT("resource=https%3A%2F%2Fmcp.scenario.com%2Fmcp")));
-	TestFalse(TEXT("no scope by default"), Url.Contains(TEXT("scope=")));
+	TestTrue(TEXT("scope"), Url.Contains(TEXT("scope=openid%20offline_access")));
+	TestFalse(TEXT("no resource"), Url.Contains(TEXT("resource=")));
 
 	FString Code;
 	TestFalse(TEXT("state mismatch refused"), FScenarioOAuth::ReadCallback(TEXT("code=abc&state=other"), TEXT("state1"), FString(), Code).IsEmpty());
@@ -91,6 +107,64 @@ bool FScenarioOAuthHelpersTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("wrong issuer refused"), FScenarioOAuth::ReadCallback(TEXT("code=abc&state=state1&iss=https%3A%2F%2Fevil.test"), TEXT("state1"), TEXT("https://auth.example.test"), Code).IsEmpty());
 	TestTrue(TEXT("good callback"), FScenarioOAuth::ReadCallback(TEXT("code=abc&state=state1&iss=https%3A%2F%2Fauth.example.test"), TEXT("state1"), TEXT("https://auth.example.test"), Code).IsEmpty());
 	TestEqual(TEXT("code read"), Code, FString(TEXT("abc")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioOAuthAppTest, "Scenario.Core.Auth.App", SCENARIO_TEST_FLAGS)
+bool FScenarioOAuthAppTest::RunTest(const FString& Parameters)
+{
+	const FScenarioOAuthApp Production = FScenarioOAuthApp::Select(FString(), FString());
+	TestEqual(TEXT("production issuer"), Production.Issuer, FString(TEXT("https://clerk.scenario.com")));
+	TestEqual(TEXT("production client"), Production.ClientId, FString(TEXT("U67CS7IbpZy0PPe0")));
+	TestTrue(TEXT("production usable"), Production.Problem.IsEmpty());
+	TestEqual(TEXT("metadata url"), Production.MetadataUrl(), FString(TEXT("https://clerk.scenario.com/.well-known/oauth-authorization-server")));
+	TestEqual(TEXT("metadata url of an issuer with a path"), FScenarioOAuthApp::Select(TEXT("https://id.example.test/dev"), TEXT("dev_client")).MetadataUrl(),
+		FString(TEXT("https://id.example.test/.well-known/oauth-authorization-server/dev")));
+
+	const FScenarioOAuthApp Development = FScenarioOAuthApp::Select(TEXT(" https://dev.example.test/ "), TEXT("dev_client"));
+	TestEqual(TEXT("development issuer trimmed"), Development.Issuer, FString(TEXT("https://dev.example.test")));
+	TestEqual(TEXT("development client"), Development.ClientId, FString(TEXT("dev_client")));
+	TestTrue(TEXT("development usable"), Development.Problem.IsEmpty());
+
+	TestFalse(TEXT("issuer alone refused"), FScenarioOAuthApp::Select(TEXT("https://dev.example.test"), FString()).Problem.IsEmpty());
+	TestFalse(TEXT("client alone refused"), FScenarioOAuthApp::Select(FString(), TEXT("dev_client")).Problem.IsEmpty());
+	TestFalse(TEXT("http issuer refused"), FScenarioOAuthApp::Select(TEXT("http://dev.example.test"), TEXT("dev_client")).Problem.IsEmpty());
+
+	// A refused override fails the sign-in before anything is sent.
+	TSharedRef<FScenarioFakeTransport> Transport = MakeShared<FScenarioFakeTransport>();
+	TSharedRef<FScenarioOAuth> OAuth = MakeShared<FScenarioOAuth>(Transport, MakeShared<FScenarioMemoryCredentialStore>());
+	OAuth->App = FScenarioOAuthApp::Select(TEXT("https://dev.example.test"), FString());
+	FScenarioReply Result = FScenarioReply::Ok();
+	OAuth->BeginBrowserSignIn([](const FString&) {}, [&Result](const FScenarioReply& Reply) { Result = Reply; });
+	TestFalse(TEXT("refused"), Result.bOk);
+	TestEqual(TEXT("names the variables"), Result.Error.Message, OAuth->App.Problem);
+	TestEqual(TEXT("nothing sent"), Transport->Requests.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScenarioOAuthOtherAppTest, "Scenario.Core.Auth.OtherAppSession", SCENARIO_TEST_FLAGS)
+bool FScenarioOAuthOtherAppTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FScenarioFakeTransport> Transport = MakeShared<FScenarioFakeTransport>();
+	TSharedRef<FScenarioMemoryCredentialStore> Store = MakeShared<FScenarioMemoryCredentialStore>();
+	FString Saved;
+
+	// Saved by an older version, which registered its own client with the MCP's sign-in service.
+	Store->Write(TEXT("oauth-refresh"), TEXT("rt_old"));
+	Store->Write(TEXT("oauth-client"), TEXT("{\"client_id\":\"registered_per_install\",\"registered_at\":1}"));
+	TSharedRef<FScenarioOAuth> OAuth = MakeShared<FScenarioOAuth>(Transport, Store);
+	OAuth->App = TestApp();
+	TestFalse(TEXT("not resumed"), OAuth->Restore());
+	TestFalse(TEXT("no credentials"), OAuth->HasCredentials());
+	TestFalse(TEXT("old token deleted"), Store->Read(TEXT("oauth-refresh"), Saved));
+	TestFalse(TEXT("old client deleted"), Store->Read(TEXT("oauth-client"), Saved));
+
+	// Same client id from another provider (a development instance).
+	Store->Write(TEXT("oauth-refresh"), TEXT("rt_dev"));
+	Store->Write(TEXT("oauth-client"), TEXT("{\"client_id\":\"client_test\",\"issuer\":\"https://dev.example.test\"}"));
+	TestFalse(TEXT("other provider not resumed"), OAuth->Restore());
+	TestFalse(TEXT("other provider token deleted"), Store->Read(TEXT("oauth-refresh"), Saved));
+	TestEqual(TEXT("nothing sent"), Transport->Requests.Num(), 0);
 	return true;
 }
 
@@ -107,7 +181,7 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	Transport->Responder = [Server](const FScenarioFakeRequest& Request) { return Server->Handle(Request); };
 	TSharedRef<FScenarioMemoryCredentialStore> Store = MakeShared<FScenarioMemoryCredentialStore>();
 	TSharedRef<FScenarioOAuth> OAuth = MakeShared<FScenarioOAuth>(Transport, Store);
-	OAuth->MetadataUrl = TEXT("https://auth.example.test/.well-known/oauth-authorization-server");
+	OAuth->App = TestApp();
 
 	FScenarioDeviceCode Shown;
 	FScenarioReply Result = FScenarioReply::Fail(EScenarioErrorKind::Local, TEXT("not finished"));
@@ -120,14 +194,28 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("bearer"), OAuth->AuthorizationHeader(), FString(TEXT("Bearer at_1")));
 	FString Saved;
 	TestTrue(TEXT("refresh token stored"), Store->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_1"));
-	TestTrue(TEXT("client stored"), Store->Read(TEXT("oauth-client"), Saved) && Saved.Contains(TEXT("client_test")));
+	TestTrue(TEXT("client stored"), Store->Read(TEXT("oauth-client"), Saved) && Saved.Contains(TEXT("client_test")) && Saved.Contains(TEXT("https://auth.example.test")));
 	TestTrue(TEXT("device grant used"), Server->TokenBodies.Num() > 0 && Server->TokenBodies[0].Contains(TEXT("device_code")));
+	bool bRegistered = false;
+	bool bResource = false;
+	for (const FScenarioFakeRequest& Request : Transport->Requests)
+	{
+		bRegistered |= Request.Url.Contains(TEXT("register"));
+		bResource |= Request.BodyText().Contains(TEXT("resource="));
+		if (Request.Url.EndsWith(TEXT("/oauth/device")))
+		{
+			TestTrue(TEXT("device request names the app"), Request.BodyText().Contains(TEXT("client_id=client_test")));
+			TestTrue(TEXT("device request scopes"), Request.BodyText().Contains(TEXT("scope=openid%20offline_access")));
+		}
+	}
+	TestFalse(TEXT("no client registration"), bRegistered);
+	TestFalse(TEXT("no resource"), bResource);
 
 	// Next session: restore, then refresh on demand.
 	Server->TokenCalls = 0;
 	Server->TokenReplies = { TEXT("200:{\"access_token\":\"at_2\",\"expires_in\":3600}") };
 	TSharedRef<FScenarioOAuth> Next = MakeShared<FScenarioOAuth>(Transport, Store);
-	Next->MetadataUrl = OAuth->MetadataUrl;
+	Next->App = TestApp();
 	TestTrue(TEXT("restored"), Next->Restore());
 	TestTrue(TEXT("credentials without an access token"), Next->HasCredentials() && !Next->IsAccessTokenFresh());
 	bool bRefreshed = false;
@@ -135,6 +223,23 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("refreshed"), bRefreshed);
 	TestEqual(TEXT("new bearer"), Next->AuthorizationHeader(), FString(TEXT("Bearer at_2")));
 	TestTrue(TEXT("refresh grant"), Server->TokenBodies.Last().Contains(TEXT("grant_type=refresh_token")));
+	TestTrue(TEXT("refresh names the app"), Server->TokenBodies.Last().Contains(TEXT("client_id=client_test")));
+
+	// A rotated refresh token is saved even when its identity cannot be written.
+	FString ClientJson;
+	Store->Read(TEXT("oauth-client"), ClientJson);
+	TSharedRef<FRefusingStore> Refusing = MakeShared<FRefusingStore>();
+	Refusing->Write(TEXT("oauth-refresh"), TEXT("rt_1"));
+	Refusing->Write(TEXT("oauth-client"), ClientJson);
+	Refusing->RefusedAccount = TEXT("oauth-client");
+	Server->TokenCalls = 0;
+	Server->TokenReplies = { TEXT("200:{\"access_token\":\"at_3\",\"refresh_token\":\"rt_3\",\"expires_in\":3600}") };
+	TSharedRef<FScenarioOAuth> Rotating = MakeShared<FScenarioOAuth>(Transport, Refusing);
+	Rotating->App = TestApp();
+	TestTrue(TEXT("restored before rotation"), Rotating->Restore());
+	bool bRotated = false;
+	Rotating->Refresh([&bRotated](bool bOk) { bRotated = bOk; });
+	TestTrue(TEXT("rotated token saved without its identity"), bRotated && Refusing->Read(TEXT("oauth-refresh"), Saved) && Saved == TEXT("rt_3"));
 
 	// Revoked session: invalid_grant clears the stored token.
 	Server->TokenCalls = 0;
@@ -144,6 +249,7 @@ bool FScenarioOAuthDeviceTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("refresh refused"), bSecond);
 	TestFalse(TEXT("signed out"), Next->HasCredentials());
 	TestFalse(TEXT("stored token removed"), Store->Read(TEXT("oauth-refresh"), Saved) && !Saved.IsEmpty());
+	TestFalse(TEXT("stored client removed"), Store->Read(TEXT("oauth-client"), Saved));
 	return true;
 }
 
@@ -155,7 +261,7 @@ bool FScenarioOAuthDeclinedTest::RunTest(const FString& Parameters)
 	Server->TokenReplies = { TEXT("400:{\"error\":\"access_denied\"}") };
 	Transport->Responder = [Server](const FScenarioFakeRequest& Request) { return Server->Handle(Request); };
 	TSharedRef<FScenarioOAuth> OAuth = MakeShared<FScenarioOAuth>(Transport, MakeShared<FScenarioMemoryCredentialStore>());
-	OAuth->MetadataUrl = TEXT("https://auth.example.test/.well-known/oauth-authorization-server");
+	OAuth->App = TestApp();
 	FScenarioReply Result = FScenarioReply::Ok();
 	OAuth->BeginDeviceSignIn([](const FScenarioDeviceCode&) {}, [&Result](const FScenarioReply& Reply) { Result = Reply; });
 	TestFalse(TEXT("declined"), Result.bOk);

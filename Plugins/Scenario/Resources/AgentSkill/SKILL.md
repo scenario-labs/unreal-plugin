@@ -30,7 +30,7 @@ Scenario tools never edit what they did not create. The result of a Scenario job
 
 1. `scenario_status`: signed in, project, permissions (change_project, run_python), spending rules.
 2. `scene_summary` (and `object_detail`, `screenshot_viewport`) to understand the level before generating for it.
-3. `list_models` with a `lane` (image, video, 3d, material, audio, environment, render). The lane's picks come first and are the safe default. `recommend_models` asks Scenario for a pick.
+3. `list_models` with a `lane` (image, video, 3d, material, audio, environment, render). The lane's picks come first and are the safe default.
 4. `model_schema`: parameter names, options, defaults, and which change the price. File fields take Scenario asset ids.
 5. `estimate_cost` with `model_id` and `parameters`: free, returns `quote_id` and `cu_cost_exact`.
 6. `generate` with `quote_id` and `approved_cost` equal to `cu_cost_exact`, character for character. Returns `job_id`.
