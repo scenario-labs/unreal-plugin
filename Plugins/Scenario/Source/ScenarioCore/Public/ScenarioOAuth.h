@@ -62,7 +62,7 @@ public:
 	static const TCHAR* ProductionIssuer;
 	/** The production application's client id: a public client, so not a secret. */
 	static const TCHAR* ProductionClientId;
-	/** The fewest scopes the provider accepts: who the person is, and a refresh token. */
+	/** Who the person is (their id and email, shown in the editor), and a refresh token. */
 	static const TCHAR* DefaultScope;
 	/** Loopback ports tried in order; the provider accepts a loopback redirect on any port. */
 	static const TArray<int32>& RedirectPorts();
@@ -85,6 +85,8 @@ public:
 	bool Restore();
 	bool HasRefreshToken() const { return !RefreshToken.IsEmpty(); }
 	bool IsAccessTokenFresh() const;
+	/** The signed-in account's email, from the ID token; empty when unknown. Shown in the editor, never logged. */
+	const FString& GetAccountEmail() const { return AccountEmail; }
 
 	/**
 	 * Starts the browser sign-in. OnUrl receives the authorization URL to open;
@@ -96,7 +98,10 @@ public:
 	void Cancel();
 	bool IsSigningIn() const { return bSigningIn; }
 
-	/** Revokes the refresh token (best effort), removes it from the store and forgets the access token. */
+	/**
+	 * Revokes the refresh token (best effort), removes it from the store and forgets the access token.
+	 * Editors on this machine share the saved session, so the others end theirs at their next refresh.
+	 */
 	void SignOut();
 
 	/** Uses an access token from the environment (SCENARIO_ACCESS_TOKEN) for CI. True when one is set. */
@@ -110,13 +115,23 @@ public:
 		const FString& Challenge, const FString& State, const FString& Scope);
 	/** Reads ?code=&state=&iss= or ?error= from a callback query. Returns an error message or empty, and the code. */
 	static FString ReadCallback(const FString& Query, const FString& ExpectedState, const FString& ExpectedIssuer, FString& OutCode);
+	/** The claims of a JWT, without checking its signature; null when unreadable. */
+	static TSharedPtr<FJsonObject> ReadTokenClaims(const FString& Jwt);
 
 	FScenarioOAuthApp App;
 	FString Scope;
 
 private:
 	void Discover(TFunction<void(const FScenarioReply&)> OnDone);
-	void ForgetSession();
+	/**
+	 * Takes the refresh token another editor on this machine saved since this one last read or wrote it, when it
+	 * belongs to the same application, provider and account. True when taken.
+	 */
+	bool AdoptStoredSession();
+	/** Forgets the session and deletes the saved one; with bKeepNewer, not when another editor has replaced it since. */
+	void ForgetSession(bool bKeepNewer = false);
+	void SendRefresh(bool bRetried);
+	void FinishRefresh(bool bOk);
 	void PostForm(const FString& Url, const TArray<TPair<FString, FString>>& Fields, FScenarioReplyCallback OnDone);
 	void ExchangeCode(const FString& Code, const FString& RedirectUri, FScenarioReplyCallback OnDone);
 	bool ApplyTokenResponse(const TSharedPtr<FJsonObject>& Token);
@@ -130,6 +145,11 @@ private:
 	FString AccessToken;
 	double AccessExpiresAt = 0.0;
 	FString RefreshToken;
+	/** The refresh token last read from or written to the store, to tell another editor's changes from this one's. */
+	FString StoredRefreshToken;
+	/** The account's id (sub) and email, from the ID token. */
+	FString AccountId;
+	FString AccountEmail;
 
 	bool bSigningIn = false;
 	uint32 SignInGeneration = 0;

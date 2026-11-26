@@ -32,12 +32,14 @@
 
 namespace
 {
-	FString AuthText(const FScenarioSession& Session)
+	/** With bNameAccount, the account's email when known; the diagnostics leave it out. */
+	FString AuthText(const FScenarioSession& Session, bool bNameAccount = false)
 	{
+		const FString Email = bNameAccount ? Session.GetAccountEmail() : FString();
 		switch (Session.GetAuthMode())
 		{
 		case EScenarioAuthMode::OAuth:
-			return TEXT("Signed in with your Scenario account.");
+			return Email.IsEmpty() ? FString(TEXT("Signed in with your Scenario account.")) : FString::Printf(TEXT("Signed in as %s."), *Email);
 		case EScenarioAuthMode::ApiKey:
 			return Session.GetApiKeySource() == TEXT("environment")
 				? TEXT("Using the API key from the SCENARIO_API_KEY environment variable.")
@@ -397,8 +399,8 @@ void SScenarioSettingsPage::Rebuild()
 								return FText::GetEmpty();
 							}
 							const FString Team = S->GetWorkspace().TeamName;
-							return Team.IsEmpty() ? FText::FromString(AuthText(*S))
-								: FText::Format(LOCTEXT("TeamLine", "Team {0}. {1}"), FText::FromString(Team), FText::FromString(AuthText(*S)));
+							return Team.IsEmpty() ? FText::FromString(AuthText(*S, true))
+								: FText::Format(LOCTEXT("TeamLine", "Team {0}. {1}"), FText::FromString(Team), FText::FromString(AuthText(*S, true)));
 						}), EText::Meta, true)
 					]
 				]

@@ -123,6 +123,8 @@ public:
 	bool IsCredentialStoreSecure() const;
 	/** environment, store or empty: where the API key came from. */
 	const FString& GetApiKeySource() const { return ApiKeySource; }
+	/** The email of the Scenario account signed in with OAuth; empty with an API key or when unknown. */
+	FString GetAccountEmail() const;
 
 	void SignInWithBrowser(TFunction<void(const FString& Url)> OnUrl, FScenarioReplyCallback OnDone);
 	void SignInWithDeviceCode(TFunction<void(const FScenarioDeviceCode& Code)> OnCode, FScenarioReplyCallback OnDone);
